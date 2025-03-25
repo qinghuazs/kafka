@@ -66,6 +66,8 @@ import static java.util.Collections.emptyList;
  * // as messages are sent we record the sizes
  * sensor.record(messageSize);
  * </pre>
+ * 
+ * Metrics 指标
  */
 public final class Metrics implements Closeable {
 

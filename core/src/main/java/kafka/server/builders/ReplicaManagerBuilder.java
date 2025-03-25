@@ -38,7 +38,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import scala.Option;
 
 
-
+/**
+ * ReplicaManagerBuilder是Kafka中用于构建ReplicaManager实例的建造者类。
+ * 它采用建造者模式，提供了一系列setter方法来配置ReplicaManager的各项参数，包括
+ * 配置信息(KafkaConfig)、度量指标(Metrics)、时间服务(Time)、调度器(Scheduler)、
+ * 日志管理器(LogManager)、配额管理器(QuotaManagers)、元数据缓存(MetadataCache)等。
+ * 通过这种方式，它简化了ReplicaManager对象的创建过程，使配置更加灵活和清晰。
+ * 在build()方法中会对必要参数进行检查，然后创建并返回一个新的ReplicaManager实例。
+ */
 public class ReplicaManagerBuilder {
     private KafkaConfig config = null;
     private Metrics metrics = null;

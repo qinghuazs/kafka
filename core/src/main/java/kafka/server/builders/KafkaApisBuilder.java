@@ -44,7 +44,15 @@ import java.util.Collections;
 import java.util.Optional;
 
 import scala.jdk.javaapi.OptionConverters;
-
+/**
+ * KafkaApisBuilder.java是Kafka中一个重要的构建器类，用于构建KafkaApis实例。
+ * 它采用建造者模式，负责组装Kafka服务器所需的各种组件，包括
+ * 1. 请求通道(RequestChannel)
+ * 2. 复制管理器(ReplicaManager)
+ * 3. 事务协调器(TransactionCoordinator)
+ * 4. 组协调器(GroupCoordinator)等核心组件。
+ * 通过这种方式，它简化了KafkaApis对象的创建过程，提供了一种清晰且易于使用的方式来配置和初始化Kafka服务器的API处理层。
+ */
 public class KafkaApisBuilder {
     private RequestChannel requestChannel = null;
     private ForwardingManager forwardingManager = null;
