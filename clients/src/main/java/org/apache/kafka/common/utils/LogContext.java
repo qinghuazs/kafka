@@ -24,24 +24,48 @@ import org.slf4j.helpers.MessageFormatter;
 import org.slf4j.spi.LocationAwareLogger;
 
 /**
- * This class provides a way to instrument loggers with a common context which can be used to
- * automatically enrich log messages. For example, in the KafkaConsumer, it is often useful to know
- * the groupId of the consumer, so this can be added to a context object which can then be passed to
- * all of the dependent components in order to build new loggers. This removes the need to manually
- * add the groupId to each message.
+ * 该类提供了一种为日志记录器添加公共上下文的方式，用于自动丰富日志消息。
+ * 例如，在KafkaConsumer中，通常需要知道消费者的groupId，这个信息可以被添加到上下文对象中，
+ * 然后传递给所有依赖组件以构建新的日志记录器。这样就不需要在每条消息中手动添加groupId。
+ * 
+ * 主要功能：
+ * 1. 为日志消息添加统一的前缀
+ * 2. 支持不同日志级别（trace, debug, info, warn, error）
+ * 3. 支持位置感知和位置无关两种日志记录方式
+ * 4. 提供统一的日志格式化和异常处理
  */
 public class LogContext {
 
+    /**
+     * 日志前缀
+     * 用于在每条日志消息前添加统一的标识信息，如groupId、clientId等
+     */
     private final String logPrefix;
 
+    /**
+     * 创建一个带有指定前缀的日志上下文
+     * 
+     * @param logPrefix 日志前缀，如果为null则使用空字符串
+     */
     public LogContext(String logPrefix) {
         this.logPrefix = logPrefix == null ? "" : logPrefix;
     }
 
+    /**
+     * 创建一个没有前缀的日志上下文
+     */
     public LogContext() {
         this("");
     }
 
+    /**
+     * 为指定类创建一个日志记录器
+     * 
+     * @param clazz 需要记录日志的类
+     * @return 根据底层日志实现返回相应的日志记录器：
+     *         - 如果底层支持位置感知，返回LocationAwareKafkaLogger
+     *         - 否则返回LocationIgnorantKafkaLogger
+     */
     public Logger logger(Class<?> clazz) {
         Logger logger = LoggerFactory.getLogger(clazz);
         if (logger instanceof LocationAwareLogger) {
@@ -55,6 +79,10 @@ public class LogContext {
         return logPrefix;
     }
 
+    /**
+     * Kafka日志记录器的抽象基类
+     * 实现了Logger接口，提供了添加前缀的基本功能
+     */
     private abstract static class AbstractKafkaLogger implements Logger {
         private final String prefix;
 
@@ -67,6 +95,11 @@ public class LogContext {
         }
     }
 
+    /**
+     * 位置感知的Kafka日志记录器
+     * 能够记录日志产生的具体类名、方法名和行号
+     * 通过LocationAwareLogger接口实现更精确的日志记录
+     */
     private static class LocationAwareKafkaLogger extends AbstractKafkaLogger {
         private final LocationAwareLogger logger;
         private final String fqcn;
@@ -422,6 +455,15 @@ public class LogContext {
             writeLog(marker, LocationAwareLogger.INFO_INT, msg, null, t);
         }
 
+        /**
+         * 写入日志的核心方法
+         * 
+         * @param marker 日志标记
+         * @param level 日志级别
+         * @param format 日志格式
+         * @param args 格式化参数
+         * @param exception 异常信息
+         */
         private void writeLog(Marker marker, int level, String format, Object[] args, Throwable exception) {
             String message = format;
             if (args != null && args.length > 0) {
@@ -435,6 +477,11 @@ public class LogContext {
         }
     }
 
+    /**
+     * 位置无关的Kafka日志记录器
+     * 不记录日志产生的具体位置信息
+     * 直接使用标准的Logger接口进行日志记录
+     */
     private static class LocationIgnorantKafkaLogger extends AbstractKafkaLogger {
         private final Logger logger;
 
