@@ -50,34 +50,61 @@ import static org.apache.kafka.common.config.ConfigDef.ValidString.in;
  * Configuration for the Kafka Producer. Documentation for these configurations can be found in the <a
  * href="http://kafka.apache.org/documentation.html#producerconfigs">Kafka documentation</a>
  */
+/**
+ * Kafka生产者的配置类。这个类包含了所有Kafka生产者客户端的配置项。
+ * 详细的配置说明可以在Kafka官方文档中找到：http://kafka.apache.org/documentation.html#producerconfigs
+ */
 public class ProducerConfig extends AbstractConfig {
     private static final Logger log = LoggerFactory.getLogger(ProducerConfig.class);
 
     /*
-     * NOTE: DO NOT CHANGE EITHER CONFIG STRINGS OR THEIR JAVA VARIABLE NAMES AS THESE ARE PART OF THE PUBLIC API AND
-     * CHANGE WILL BREAK USER CODE.
+     * 注意：不要修改配置字符串或它们的Java变量名，因为这些是公共API的一部分，
+     * 修改会破坏用户代码。
      */
 
     private static final ConfigDef CONFIG;
 
-    /** <code>bootstrap.servers</code> */
+    /** 
+     * <code>bootstrap.servers</code>
+     * Kafka集群连接地址，格式为host1:port1,host2:port2,...
+     * 这是生产者连接Kafka集群的初始连接点，不需要包含所有的broker地址，
+     * 生产者会从初始连接中获取到完整的集群信息
+     */
     public static final String BOOTSTRAP_SERVERS_CONFIG = CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
 
-    /** <code>client.dns.lookup</code> */
+    /** 
+     * <code>client.dns.lookup</code>
+     * 配置DNS查找行为
+     */
     public static final String CLIENT_DNS_LOOKUP_CONFIG = CommonClientConfigs.CLIENT_DNS_LOOKUP_CONFIG;
 
-    /** <code>metadata.max.age.ms</code> */
+    /** 
+     * <code>metadata.max.age.ms</code>
+     * 元数据最大有效期，超过这个时间后元数据会被强制刷新
+     * 即使没有任何分区领导者变更
+     */
     public static final String METADATA_MAX_AGE_CONFIG = CommonClientConfigs.METADATA_MAX_AGE_CONFIG;
     private static final String METADATA_MAX_AGE_DOC = CommonClientConfigs.METADATA_MAX_AGE_DOC;
 
-    /** <code>metadata.max.idle.ms</code> */
+    /** 
+     * <code>metadata.max.idle.ms</code>
+     * 控制生产者对于空闲主题的元数据缓存时间
+     * 如果一个主题在这个时间内没有被生产消息，其元数据会被清除，
+     * 下次访问时会重新获取元数据
+     */
     public static final String METADATA_MAX_IDLE_CONFIG = "metadata.max.idle.ms";
     private static final String METADATA_MAX_IDLE_DOC =
             "Controls how long the producer will cache metadata for a topic that's idle. If the elapsed " +
             "time since a topic was last produced to exceeds the metadata idle duration, then the topic's " +
             "metadata is forgotten and the next access to it will force a metadata fetch request.";
 
-    /** <code>batch.size</code> */
+    /** 
+     * <code>batch.size</code>
+     * 生产者发送批次的大小配置（单位：字节）
+     * 当多条消息要发送到同一个分区时，生产者会尝试将消息打包在一起，
+     * 以减少请求次数，提高客户端和服务器的性能
+     * 默认值在Kafka 4.0中从0改为5，因为更大的批次通常能带来更好的性能
+     */
     public static final String BATCH_SIZE_CONFIG = "batch.size";
     private static final String BATCH_SIZE_DOC = "The producer will attempt to batch records together into fewer requests whenever multiple records are being sent"
                                                  + " to the same partition. This helps performance on both the client and the server. This configuration controls the "
@@ -99,7 +126,13 @@ public class ProducerConfig extends AbstractConfig {
                                                  + "The default changed from 0 to 5 in Apache Kafka 4.0 as the efficiency gains from larger batches typically result in "
                                                  + "similar or lower producer latency despite the increased linger.";
 
-    /** <code>partitioner.adaptive.partitioning.enable</code> */
+    /** 
+     * <code>partitioner.adaptive.partitioning.enable</code>
+     * 是否启用自适应分区策略
+     * 启用后，生产者会根据broker的性能自动调整消息分配，
+     * 向性能更好的broker分区发送更多消息
+     * 注意：使用自定义分区器时此配置无效
+     */
     public static final String PARTITIONER_ADPATIVE_PARTITIONING_ENABLE_CONFIG = "partitioner.adaptive.partitioning.enable";
     private static final String PARTITIONER_ADPATIVE_PARTITIONING_ENABLE_DOC =
             "When set to 'true', the producer will try to adapt to broker performance and produce more messages to partitions hosted on faster brokers. "
@@ -119,7 +152,14 @@ public class ProducerConfig extends AbstractConfig {
             + "If 'false', producer would choose a partition based on a hash of the key when a key is present. "
             + "Note: this setting has no effect if a custom partitioner is used.";
 
-    /** <code>acks</code> */
+        /** 
+     * <code>acks</code>
+     * 生产者需要服务端确认的机制配置，用于控制消息的可靠性：
+     * acks=0：生产者不等待服务端确认，消息发出即认为成功，可能丢失数据
+     * acks=1：等待leader副本确认即可，如果leader宕机且follower未同步，消息可能丢失
+     * acks=all：等待所有同步副本确认，提供最强的可靠性保证
+     * 注意：启用幂等性时必须将此值设置为'all'
+     */
     public static final String ACKS_CONFIG = "acks";
     private static final String ACKS_DOC = "The number of acknowledgments the producer requires the leader to have received before considering a request complete. This controls the "
                                            + " durability of records that are sent. The following settings are allowed: "
@@ -140,7 +180,13 @@ public class ProducerConfig extends AbstractConfig {
                                            + "Note that enabling idempotence requires this config value to be 'all'."
                                            + " If conflicting configurations are set and idempotence is not explicitly enabled, idempotence is disabled.";
 
-    /** <code>linger.ms</code> */
+        /** 
+     * <code>linger.ms</code>
+     * 发送延迟时间配置
+     * 生产者在发送批次之前等待更多消息加入批次的时间
+     * 增加此值可以提高吞吐量，但会增加延迟
+     * Kafka 4.0中默认值从0ms改为5ms，因为实践证明轻微的延迟换来的批次效率提升是值得的
+     */
     public static final String LINGER_MS_CONFIG = "linger.ms";
     private static final String LINGER_MS_DOC = "The producer groups together any records that arrive in between request transmissions into a single batched request. "
                                                 + "Normally this occurs only under load when records arrive faster than they can be sent out. However in some circumstances the client may want to "
@@ -155,14 +201,50 @@ public class ProducerConfig extends AbstractConfig {
                                                 + "The default changed from 0 to 5 in Apache Kafka 4.0 as the efficiency gains from larger batches typically result in "
                                                 + "similar or lower producer latency despite the increased linger.";
 
-    /** <code>request.timeout.ms</code> */
-    public static final String REQUEST_TIMEOUT_MS_CONFIG = CommonClientConfigs.REQUEST_TIMEOUT_MS_CONFIG;
     private static final String REQUEST_TIMEOUT_MS_DOC = CommonClientConfigs.REQUEST_TIMEOUT_MS_DOC
         + " This should be larger than <code>replica.lag.time.max.ms</code> (a broker configuration)"
         + " to reduce the possibility of message duplication due to unnecessary producer retries.";
 
-    /** <code>delivery.timeout.ms</code> */
+
+    /** 
+     * <code>buffer.memory</code>
+     * 生产者可用于缓存等待发送记录的内存总字节数
+     * 如果记录发送速度超过发送到服务器的速度，生产者会阻塞max.block.ms时间
+     * 超时后会抛出异常
+     */
+    public static final String BUFFER_MEMORY_CONFIG = "buffer.memory";
+
+    /** 
+     * <code>max.request.size</code>
+     * 生产者发送的单个请求的最大大小
+     * 这个配置限制了单个请求中批次记录的数量，以避免发送过大的请求
+     * 同时也是未压缩的记录批次大小的上限
+     */
+    public static final String MAX_REQUEST_SIZE_CONFIG = "max.request.size";
+
+    /** 
+     * <code>delivery.timeout.ms</code>
+     * 发送操作的最大允许时间，从send()调用到成功或失败的总时间限制
+     * 包括重试时间，这个值应该大于request.timeout.ms + linger.ms
+     */
     public static final String DELIVERY_TIMEOUT_MS_CONFIG = "delivery.timeout.ms";
+
+    /** 
+     * <code>request.timeout.ms</code>
+     * 生产者等待请求响应的最大时间
+     * 这个值应该比broker端的replica.lag.time.max.ms大
+     * 以减少因不必要的生产者重试导致的消息重复
+     */
+    public static final String REQUEST_TIMEOUT_MS_CONFIG = CommonClientConfigs.REQUEST_TIMEOUT_MS_CONFIG;
+
+    /** 
+     * <code>max.block.ms</code>
+     * send()方法阻塞的最大时间
+     * 当缓冲区满或元数据不可用时，send()方法会阻塞
+     * 超过这个时间会抛出TimeoutException
+     */
+    public static final String MAX_BLOCK_MS_CONFIG = "max.block.ms";
+
     private static final String DELIVERY_TIMEOUT_MS_DOC = "An upper bound on the time to report success or failure "
             + "after a call to <code>send()</code> returns. This limits the total time that a record will be delayed "
             + "prior to sending, the time to await acknowledgement from the broker (if expected), and the time allowed "
@@ -181,8 +263,6 @@ public class ProducerConfig extends AbstractConfig {
     /** <code>receive.buffer.bytes</code> */
     public static final String RECEIVE_BUFFER_CONFIG = CommonClientConfigs.RECEIVE_BUFFER_CONFIG;
 
-    /** <code>max.request.size</code> */
-    public static final String MAX_REQUEST_SIZE_CONFIG = "max.request.size";
     private static final String MAX_REQUEST_SIZE_DOC =
         "The maximum size of a request in bytes. This setting will limit the number of record " +
         "batches the producer will send in a single request to avoid sending huge requests. " +
@@ -195,8 +275,6 @@ public class ProducerConfig extends AbstractConfig {
     /** <code>reconnect.backoff.max.ms</code> */
     public static final String RECONNECT_BACKOFF_MAX_MS_CONFIG = CommonClientConfigs.RECONNECT_BACKOFF_MAX_MS_CONFIG;
 
-    /** <code>max.block.ms</code> */
-    public static final String MAX_BLOCK_MS_CONFIG = "max.block.ms";
     private static final String MAX_BLOCK_MS_DOC = "The configuration controls how long the <code>KafkaProducer</code>'s <code>send()</code>, <code>partitionsFor()</code>, "
                                                     + "<code>initTransactions()</code>, <code>sendOffsetsToTransaction()</code>, <code>commitTransaction()</code> "
                                                     + "and <code>abortTransaction()</code> methods will block. "
@@ -206,8 +284,6 @@ public class ProducerConfig extends AbstractConfig {
                                                     + "The transaction-related methods always block, but may timeout if "
                                                     + "the transaction coordinator could not be discovered or did not respond within the timeout.";
 
-    /** <code>buffer.memory</code> */
-    public static final String BUFFER_MEMORY_CONFIG = "buffer.memory";
     private static final String BUFFER_MEMORY_DOC = "The total bytes of memory the producer can use to buffer records waiting to be sent to the server. If records are "
                                                     + "sent faster than they can be delivered to the server the producer will block for <code>" + MAX_BLOCK_MS_CONFIG + "</code> after which it will fail with an exception."
                                                     + "<p>"
@@ -227,8 +303,15 @@ public class ProducerConfig extends AbstractConfig {
     public static final String ENABLE_METRICS_PUSH_CONFIG = CommonClientConfigs.ENABLE_METRICS_PUSH_CONFIG;
     public static final String ENABLE_METRICS_PUSH_DOC = CommonClientConfigs.ENABLE_METRICS_PUSH_DOC;
 
-    /** <code>compression.type</code> */
+    /** <code>compression.type</code>
+     * 生产者的消息压缩类型配置
+     * 可选值：none, gzip, snappy, lz4, zstd
+     * 压缩可以减少网络传输和存储开销，但会增加CPU开销
+     * 默认值是none(不压缩)
+     */
     public static final String COMPRESSION_TYPE_CONFIG = "compression.type";
+
+
     private static final String COMPRESSION_TYPE_DOC = "The compression type for all data generated by the producer. The default is none (i.e. no compression). Valid "
                                                        + " values are <code>none</code>, <code>gzip</code>, <code>snappy</code>, <code>lz4</code>, or <code>zstd</code>. "
                                                        + "Compression is of full batches of data, so the efficacy of batching will also impact the compression ratio (more batching means better compression).";
