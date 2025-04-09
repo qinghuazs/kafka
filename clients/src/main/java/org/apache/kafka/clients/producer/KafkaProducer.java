@@ -608,12 +608,23 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         this.clientTelemetryReporter = clientTelemetryReporter;
     }
 
-    // visible for testing
+    /**
+     * 创建一个新的Sender实例，用于处理消息发送的核心组件
+     * @param logContext 日志上下文
+     * @param kafkaClient Kafka网络客户端
+     * @param metadata 生产者元数据
+     * @return 新的Sender实例
+     */
     Sender newSender(LogContext logContext, KafkaClient kafkaClient, ProducerMetadata metadata) {
+        // 获取每个连接允许的最大未完成请求数
         int maxInflightRequests = producerConfig.getInt(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION);
+        // 获取请求超时时间配置
         int requestTimeoutMs = producerConfig.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
+        // 创建生产者指标注册表
         ProducerMetrics metricsRegistry = new ProducerMetrics(this.metrics);
+        // 创建限流时间传感器，用于监控限流情况
         Sensor throttleTimeSensor = Sender.throttleTimeSensor(metricsRegistry.senderMetrics);
+        // 创建或使用提供的KafkaClient，用于网络通信
         KafkaClient client = kafkaClient != null ? kafkaClient : ClientUtils.createNetworkClient(producerConfig,
                 this.metrics,
                 "producer",
@@ -625,50 +636,81 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 throttleTimeSensor,
                 clientTelemetryReporter.map(ClientTelemetryReporter::telemetrySender).orElse(null));
 
+        // 获取消息确认机制配置（acks）
         short acks = Short.parseShort(producerConfig.getString(ProducerConfig.ACKS_CONFIG));
+        // 创建并返回新的Sender实例，它负责将消息转换为请求并发送到Kafka集群
         return new Sender(logContext,
                 client,
                 metadata,
-                this.accumulator,
-                maxInflightRequests == 1,
-                producerConfig.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG),
-                acks,
-                producerConfig.getInt(ProducerConfig.RETRIES_CONFIG),
-                metricsRegistry.senderMetrics,
-                time,
-                requestTimeoutMs,
-                producerConfig.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG),
-                this.transactionManager,
-                apiVersions);
+                this.accumulator,  // 记录累加器，用于缓存待发送的消息
+                maxInflightRequests == 1,  // 是否启用幂等性发送
+                producerConfig.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG),  // 最大请求大小
+                acks,  // 消息确认级别
+                producerConfig.getInt(ProducerConfig.RETRIES_CONFIG),  // 重试次数
+                metricsRegistry.senderMetrics,  // 发送者指标
+                time,  // 时间工具
+                requestTimeoutMs,  // 请求超时时间
+                producerConfig.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG),  // 重试间隔时间
+                this.transactionManager,  // 事务管理器
+                apiVersions);  // API版本信息
     }
 
+    /**
+     * 配置生产者的消息压缩方式
+     * 根据配置文件中指定的压缩类型（GZIP、LZ4、ZSTD等）创建对应的压缩器实例
+     * 每种压缩类型都可以通过level参数来控制压缩级别，在压缩率和性能之间进行权衡
+     *
+     * @param config 生产者配置对象，包含压缩类型和压缩级别等配置信息
+     * @return 返回配置好的Compression对象，用于消息压缩
+     */
     private static Compression configureCompression(ProducerConfig config) {
+        // 从配置中获取压缩类型名称并转换为CompressionType枚举
         CompressionType type = CompressionType.forName(config.getString(ProducerConfig.COMPRESSION_TYPE_CONFIG));
         switch (type) {
             case GZIP: {
+                // 配置GZIP压缩，可通过compression.gzip.level参数控制压缩级别
                 return Compression.gzip()
                         .level(config.getInt(ProducerConfig.COMPRESSION_GZIP_LEVEL_CONFIG))
                         .build();
             }
             case LZ4: {
+                // 配置LZ4压缩，可通过compression.lz4.level参数控制压缩级别
                 return Compression.lz4()
                         .level(config.getInt(ProducerConfig.COMPRESSION_LZ4_LEVEL_CONFIG))
                         .build();
             }
             case ZSTD: {
+                // 配置ZSTD压缩，可通过compression.zstd.level参数控制压缩级别
                 return Compression.zstd()
                         .level(config.getInt(ProducerConfig.COMPRESSION_ZSTD_LEVEL_CONFIG))
                         .build();
             }
             default:
+                // 对于其他压缩类型（如none或未知类型），使用默认配置创建压缩器
                 return Compression.of(type).build();
         }
     }
 
+    /**
+     * 获取生产者的消息发送延迟时间配置
+     * 该配置用于控制消息在发送前的等待时间，以便可以将多个消息打包在一起发送
+     * 返回值不会超过Integer.MAX_VALUE
+     */
     private static int lingerMs(ProducerConfig config) {
         return (int) Math.min(config.getLong(ProducerConfig.LINGER_MS_CONFIG), Integer.MAX_VALUE);
     }
 
+    /**
+     * 配置消息投递超时时间
+     * 该方法确保delivery.timeout.ms的值合理，必须大于等于linger.ms + request.timeout.ms
+     * 如果用户显式设置了一个不合理的值，将抛出异常
+     * 如果使用默认值且不合理，将自动调整为linger.ms + request.timeout.ms
+     *
+     * @param config 生产者配置
+     * @param log 日志记录器
+     * @return 经过验证和可能调整的投递超时时间（毫秒）
+     * @throws ConfigException 当用户显式设置的delivery.timeout.ms值小于linger.ms + request.timeout.ms时
+     */
     private static int configureDeliveryTimeout(ProducerConfig config, Logger log) {
         int deliveryTimeoutMs = config.getInt(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG);
         int lingerMs = lingerMs(config);
@@ -692,6 +734,15 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         return deliveryTimeoutMs;
     }
 
+    /**
+     * 配置生产者的事务状态
+     * 当启用幂等性时，将创建TransactionManager实例
+     * 如果设置了transactional.id，则自动启用幂等性并创建支持事务的生产者
+     *
+     * @param config 生产者配置
+     * @param logContext 日志上下文
+     * @return 事务管理器实例，如果未启用幂等性则返回null
+     */
     private TransactionManager configureTransactionState(ProducerConfig config,
                                                          LogContext logContext) {
         TransactionManager transactionManager = null;
@@ -720,30 +771,26 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     }
 
     /**
-     * Needs to be called before any other methods when the {@code transactional.id} is set in the configuration.
-     * This method does the following:
+     * 当配置了 {@code transactional.id} 时，在调用其他方法之前必须先调用此方法。
+     * 此方法执行以下操作：
      * <ol>
-     * <li>Ensures any transactions initiated by previous instances of the producer with the same
-     *      {@code transactional.id} are completed. If the previous instance had failed with a transaction in
-     *      progress, it will be aborted. If the last transaction had begun completion,
-     *      but not yet finished, this method awaits its completion.</li>
-     * <li>Gets the internal producer id and epoch, used in all future transactional
-     *      messages issued by the producer.</li>
+     * <li>确保使用相同 {@code transactional.id} 的之前生产者实例的所有事务都已完成。
+     *     如果之前的实例在事务进行中失败，该事务将被中止。如果最后一个事务已开始完成但尚未结束，
+     *     此方法将等待其完成。</li>
+     * <li>获取内部生产者ID和epoch值，用于生产者后续发送的所有事务消息。</li>
      * </ol>
-     * Note that this method will raise {@link TimeoutException} if the transactional state cannot
-     * be initialized before expiration of {@code max.block.ms}. Additionally, it will raise {@link InterruptException}
-     * if interrupted. It is safe to retry in either case, but once the transactional state has been successfully
-     * initialized, this method should no longer be used.
+     * 注意：如果事务状态在 {@code max.block.ms} 超时前无法初始化，此方法将抛出 {@link TimeoutException}。
+     * 另外，如果方法被中断，将抛出 {@link InterruptException}。这两种情况下都可以安全重试，
+     * 但一旦事务状态初始化成功，就不应再使用此方法。
      *
-     * @throws IllegalStateException if no {@code transactional.id} has been configured
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException fatal error indicating the broker
-     *         does not support transactions (i.e. if its version is lower than 0.11.0.0)
-     * @throws org.apache.kafka.common.errors.AuthorizationException error indicating that the configured
-     *         transactional.id is not authorized, or the idempotent producer id is unavailable. See the exception for
-     *         more details.  User may retry this function call after fixing the permission.
-     * @throws KafkaException if the producer has encountered a previous fatal error or for any other unexpected error
-     * @throws TimeoutException if the time taken for initialize the transaction has surpassed <code>max.block.ms</code>.
-     * @throws InterruptException if the thread is interrupted while blocked
+     * @throws IllegalStateException 如果未配置 {@code transactional.id}
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 致命错误，表示broker不支持事务
+     *         （即版本低于0.11.0.0）
+     * @throws org.apache.kafka.common.errors.AuthorizationException 错误表明配置的transactional.id未获授权，
+     *         或幂等性生产者ID不可用。详见异常信息。修复权限后用户可重试此方法。
+     * @throws KafkaException 如果生产者遇到之前的致命错误或任何其他意外错误
+     * @throws TimeoutException 如果初始化事务的时间超过了 <code>max.block.ms</code>
+     * @throws InterruptException 如果线程在阻塞时被中断
      */
     public void initTransactions() {
         throwIfNoTransactionManager();
@@ -757,76 +804,83 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     }
 
     /**
-     * Should be called before the start of each new transaction. Note that prior to the first invocation
-     * of this method, you must invoke {@link #initTransactions()} exactly one time.
-     *
-     * @throws IllegalStateException if no {@code transactional.id} has been configured or if {@link #initTransactions()}
-     *         has not yet been invoked
-     * @throws ProducerFencedException if another producer with the same transactional.id is active
-     * @throws org.apache.kafka.common.errors.InvalidProducerEpochException if the producer has attempted to produce with an old epoch
-     *         to the partition leader. See the exception for more details
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException fatal error indicating the broker
-     *         does not support transactions (i.e. if its version is lower than 0.11.0.0)
-     * @throws org.apache.kafka.common.errors.AuthorizationException fatal error indicating that the configured
-     *         {@code transactional.id} is not authorized. See the exception for more details
-     * @throws KafkaException if the producer has encountered a previous fatal error or for any other unexpected error
+     * 开始一个新的事务。
+     * 
+     * 该方法用于开启一个新的事务，使得后续的所有生产操作都成为事务的一部分，直到调用commitTransaction()或abortTransaction()。
+     * 
+     * 使用场景：
+     * 1. 需要将多个消息作为一个原子单元发送时
+     * 2. 需要实现精确一次（exactly-once）语义时
+     * 3. 需要跨多个分区/主题进行原子写入时
+     * 
+     * 前置条件：
+     * 1. 生产者必须配置了transactional.id
+     * 2. 必须已经调用过initTransactions()方法
+     * 3. 当前没有正在进行的事务
+     * 
+     * 注意事项：
+     * 1. 在一个事务完成（提交或中止）之前，不能开始新的事务
+     * 2. 如果生产者实例被隔离（fenced），该方法将抛出ProducerFencedException
+     * 3. 事务一旦开始，所有后续的发送操作都将是事务的一部分
+     * 
+     * @throws ProducerFencedException 如果生产者被隔离（即另一个具有相同transactional.id的生产者已经开始工作）
+     * @throws IllegalStateException 如果生产者未配置事务功能，或者已经有一个进行中的事务
+     * @throws KafkaException 如果在开始事务时发生其他错误
      */
     public void beginTransaction() throws ProducerFencedException {
         throwIfNoTransactionManager();
         throwIfProducerClosed();
         long now = time.nanoseconds();
+        //开始事务
         transactionManager.beginTransaction();
+        //生产者指标记录事务开启检间隔？
         producerMetrics.recordBeginTxn(time.nanoseconds() - now);
     }
 
     /**
-     * Sends a list of specified offsets to the consumer group coordinator, and also marks
-     * those offsets as part of the current transaction. These offsets will be considered
-     * committed only if the transaction is committed successfully. The committed offset should
-     * be the next message your application will consume, i.e. {@code nextRecordToBeProcessed.offset()}
-     * (or {@link ConsumerRecords#nextOffsets()}). You should also add the leader epoch as commit metadata,
-     * which can be obtained from {@link ConsumerRecord#leaderEpoch()} or {@link ConsumerRecords#nextOffsets()}.
+     * 将指定的偏移量列表发送到消费者组协调器，并将这些偏移量标记为当前事务的一部分。
+     * 这些偏移量只有在事务成功提交后才会被视为已提交。已提交的偏移量应该是应用程序将要消费的下一条消息，
+     * 即 {@code nextRecordToBeProcessed.offset()}（或 {@link ConsumerRecords#nextOffsets()}）。
+     * 你还应该添加领导者纪元作为提交元数据，可以从 {@link ConsumerRecord#leaderEpoch()} 或 
+     * {@link ConsumerRecords#nextOffsets()} 获取。
+     * 
      * <p>
-     * This method should be used when you need to batch consumed and produced messages
-     * together, typically in a consume-transform-produce pattern. Thus, the specified
-     * {@code groupMetadata} should be extracted from the used {@link KafkaConsumer consumer} via
-     * {@link KafkaConsumer#groupMetadata()} to leverage consumer group metadata. This will provide
-     * stronger fencing than just supplying the {@code consumerGroupId} and passing in {@code new ConsumerGroupMetadata(consumerGroupId)},
-     * however note that the full set of consumer group metadata returned by {@link KafkaConsumer#groupMetadata()}
-     * requires the brokers to be on version 2.5 or newer to understand.
+     * 此方法应在需要批量处理已消费和已生产的消息时使用，通常用于消费-转换-生产模式。因此，指定的
+     * {@code groupMetadata} 应通过 {@link KafkaConsumer#groupMetadata()} 从使用的 
+     * {@link KafkaConsumer consumer} 中提取，以利用消费者组元数据。这将提供比仅提供 
+     * {@code consumerGroupId} 并传入 {@code new ConsumerGroupMetadata(consumerGroupId)} 
+     * 更强的隔离性。但请注意，{@link KafkaConsumer#groupMetadata()} 返回的完整消费者组元数据
+     * 需要 broker 版本在 2.5 或更高版本才能理解。
      *
      * <p>
-     * This method is a blocking call that waits until the request has been received and acknowledged by the consumer group
-     * coordinator; but the offsets are not considered as committed until the transaction itself is successfully committed later (via
-     * the {@link #commitTransaction()} call).
+     * 这是一个阻塞调用，会等待请求被消费者组协调器接收和确认；但这些偏移量直到事务本身通过
+     * {@link #commitTransaction()} 调用成功提交后才会被视为已提交。
      *
      * <p>
-     * Note, that the consumer should have {@code enable.auto.commit=false} and should
-     * also not commit offsets manually (via {@link KafkaConsumer#commitSync(Map) sync} or
-     * {@link KafkaConsumer#commitAsync(Map, OffsetCommitCallback) async} commits).
-     * This method will raise {@link TimeoutException} if the producer cannot send offsets before expiration of {@code max.block.ms}.
-     * Additionally, it will raise {@link InterruptException} if interrupted.
+     * 注意，消费者应该设置 {@code enable.auto.commit=false}，并且不应该手动提交偏移量
+     * （通过 {@link KafkaConsumer#commitSync(Map) 同步} 或 
+     * {@link KafkaConsumer#commitAsync(Map, OffsetCommitCallback) 异步} 提交）。
+     * 如果生产者在 {@code max.block.ms} 过期前无法发送偏移量，此方法将抛出 {@link TimeoutException}。
+     * 另外，如果被中断，它将抛出 {@link InterruptException}。
      *
-     * @throws IllegalStateException if no transactional.id has been configured or no transaction has been started.
-     * @throws ProducerFencedException fatal error indicating another producer with the same transactional.id is active
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException fatal error indicating the broker
-     *         does not support transactions (i.e. if its version is lower than 0.11.0.0) or
-     *         the broker doesn't support the latest version of transactional API with all consumer group metadata
-     *         (i.e. if its version is lower than 2.5.0).
-     * @throws org.apache.kafka.common.errors.UnsupportedForMessageFormatException fatal error indicating the message
-     *         format used for the offsets topic on the broker does not support transactions
-     * @throws org.apache.kafka.common.errors.AuthorizationException fatal error indicating that the configured
-     *         transactional.id is not authorized, or the consumer group id is not authorized.
-     * @throws org.apache.kafka.clients.consumer.CommitFailedException if the commit failed and cannot be retried
-     *         (e.g. if the consumer has been kicked out of the group). Users should handle this by aborting the transaction.
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this producer instance gets fenced by broker due to a
-     *                                                                  mis-configured consumer instance id within group metadata.
-     * @throws org.apache.kafka.common.errors.InvalidProducerEpochException if the producer has attempted to produce with an old epoch
-     *         to the partition leader. See the exception for more details
-     * @throws KafkaException if the producer has encountered a previous fatal or abortable error, or for any
-     *         other unexpected error
-     * @throws TimeoutException if the time taken for sending the offsets has surpassed <code>max.block.ms</code>.
-     * @throws InterruptException if the thread is interrupted while blocked
+     * @throws IllegalStateException 如果未配置 transactional.id 或未启动事务
+     * @throws ProducerFencedException 致命错误，表示具有相同 transactional.id 的另一个生产者处于活动状态
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 致命错误，表示 broker
+     *         不支持事务（即版本低于 0.11.0.0）或 broker 不支持具有所有消费者组元数据的最新版本事务 API
+     *         （即版本低于 2.5.0）
+     * @throws org.apache.kafka.common.errors.UnsupportedForMessageFormatException 致命错误，表示
+     *         broker 上偏移量主题使用的消息格式不支持事务
+     * @throws org.apache.kafka.common.errors.AuthorizationException 致命错误，表示配置的
+     *         transactional.id 或消费者组 id 未获得授权
+     * @throws org.apache.kafka.clients.consumer.CommitFailedException 如果提交失败且无法重试
+     *         （例如，如果消费者已被踢出组）。用户应通过中止事务来处理这种情况
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 如果此生产者实例由于组元数据中
+     *         消费者实例 id 配置错误而被 broker 隔离
+     * @throws org.apache.kafka.common.errors.InvalidProducerEpochException 如果生产者尝试使用旧的
+     *         epoch 向分区领导者生产。有关详细信息，请参见异常
+     * @throws KafkaException 如果生产者遇到先前的致命或可中止错误，或任何其他意外错误
+     * @throws TimeoutException 如果发送偏移量所花费的时间超过了 <code>max.block.ms</code>
+     * @throws InterruptException 如果线程在阻塞时被中断
      */
     public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets,
                                          ConsumerGroupMetadata groupMetadata) throws ProducerFencedException {
@@ -835,124 +889,145 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         throwIfProducerClosed();
 
         if (!offsets.isEmpty()) {
+            // 记录发送偏移量操作的开始时间，用于性能监控
             long start = time.nanoseconds();
+            // 调用事务管理器将消费者偏移量添加到当前事务中
             TransactionalRequestResult result = transactionManager.sendOffsetsToTransaction(offsets, groupMetadata);
+            // 唤醒发送线程，确保请求能够立即被处理
             sender.wakeup();
+            // 等待请求完成，最长等待时间由maxBlockTimeMs指定
             result.await(maxBlockTimeMs, TimeUnit.MILLISECONDS);
+            // 记录发送偏移量操作的执行时间，用于监控和性能分析
             producerMetrics.recordSendOffsets(time.nanoseconds() - start);
         }
     }
 
     /**
-     * Commits the ongoing transaction. This method will flush any unsent records before actually committing the transaction.
+     * 提交当前正在进行的事务。本方法会在实际提交事务之前先刷新所有未发送的记录。
      * <p>
-     * Further, if any of the {@link #send(ProducerRecord)} calls which were part of the transaction hit irrecoverable
-     * errors, this method will throw the last received exception immediately and the transaction will not be committed.
-     * So all {@link #send(ProducerRecord)} calls in a transaction must succeed in order for this method to succeed.
+     * 如果事务中的任何 {@link #send(ProducerRecord)} 调用遇到不可恢复的错误，本方法会立即抛出最后收到的异常，
+     * 且事务不会被提交。因此，事务中的所有 {@link #send(ProducerRecord)} 调用都必须成功，该方法才能成功执行。
      * <p>
-     * If the transaction is committed successfully and this method returns without throwing an exception, it is guaranteed
-     * that all {@link Callback callbacks} for records in the transaction will have been invoked and completed.
-     * Note that exceptions thrown by callbacks are ignored; the producer proceeds to commit the transaction in any case.
+     * 如果事务成功提交且本方法没有抛出异常，则保证事务中所有记录的 {@link Callback 回调函数} 都已被调用并完成。
+     * 注意：回调函数抛出的异常会被忽略，生产者会继续提交事务。
      * <p>
-     * Note that this method will raise {@link TimeoutException} if the transaction cannot be committed before expiration
-     * of {@code max.block.ms}, but this does not mean the request did not actually reach the broker. In fact, it only indicates
-     * that we cannot get the acknowledgement response in time, so it's up to the application's logic
-     * to decide how to handle timeouts.
-     * Additionally, it will raise {@link InterruptException} if interrupted.
-     * It is safe to retry in either case, but it is not possible to attempt a different operation (such as abortTransaction)
-     * since the commit may already be in the progress of completing. If not retrying, the only option is to close the producer.
+     * 需要注意的是，如果事务无法在 {@code max.block.ms} 过期之前完成提交，本方法会抛出 {@link TimeoutException}，
+     * 但这并不意味着请求没有到达broker。实际上，这只表示我们无法及时获得确认响应，因此如何处理超时情况取决于应用程序的逻辑。
+     * 此外，如果线程被中断，会抛出 {@link InterruptException}。
+     * 在这两种情况下重试都是安全的，但由于提交可能已经在进行中，此时不可能尝试其他操作（如abortTransaction）。
+     * 如果不进行重试，唯一的选择就是关闭生产者。
      *
-     * @throws IllegalStateException if no transactional.id has been configured or no transaction has been started
-     * @throws ProducerFencedException fatal error indicating another producer with the same transactional.id is active
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException fatal error indicating the broker
-     *         does not support transactions (i.e. if its version is lower than 0.11.0.0)
-     * @throws org.apache.kafka.common.errors.AuthorizationException fatal error indicating that the configured
-     *         transactional.id is not authorized. See the exception for more details
-     * @throws org.apache.kafka.common.errors.InvalidProducerEpochException if the producer has attempted to produce with an old epoch
-     *         to the partition leader. See the exception for more details
-     * @throws KafkaException if the producer has encountered a previous fatal or abortable error, or for any
-     *         other unexpected error
-     * @throws TimeoutException if the time taken for committing the transaction has surpassed <code>max.block.ms</code>.
-     * @throws InterruptException if the thread is interrupted while blocked
+     * @throws IllegalStateException 如果未配置transactional.id或未启动事务
+     * @throws ProducerFencedException 致命错误，表示另一个具有相同transactional.id的生产者处于活动状态
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 致命错误，表示broker不支持事务
+     *         （即版本低于0.11.0.0）
+     * @throws org.apache.kafka.common.errors.AuthorizationException 致命错误，表示配置的transactional.id未被授权
+     * @throws org.apache.kafka.common.errors.InvalidProducerEpochException 如果生产者尝试使用旧的epoch向分区leader发送消息
+     * @throws KafkaException 如果生产者遇到之前的致命或可中止错误，或任何其他意外错误
+     * @throws TimeoutException 如果提交事务所需时间超过了 <code>max.block.ms</code>
+     * @throws InterruptException 如果线程在阻塞时被中断
      */
     public void commitTransaction() throws ProducerFencedException {
+        // 检查事务管理器是否存在，如果不存在则抛出异常
         throwIfNoTransactionManager();
+        // 检查生产者是否已关闭，如果已关闭则抛出异常
         throwIfProducerClosed();
+        // 记录事务提交开始时间，用于性能监控
         long commitStart = time.nanoseconds();
+        // 调用事务管理器开始提交事务，返回事务请求结果对象
         TransactionalRequestResult result = transactionManager.beginCommit();
+        // 唤醒发送线程，处理事务提交请求
         sender.wakeup();
+        // 等待事务提交完成，如果超过最大阻塞时间则抛出超时异常
         result.await(maxBlockTimeMs, TimeUnit.MILLISECONDS);
+        // 记录事务提交的耗时指标
         producerMetrics.recordCommitTxn(time.nanoseconds() - commitStart);
     }
 
     /**
-     * Aborts the ongoing transaction. Any unflushed produce messages will be aborted when this call is made.
-     * This call will throw an exception immediately if any prior {@link #send(ProducerRecord)} calls failed with a
-     * {@link ProducerFencedException} or an instance of {@link org.apache.kafka.common.errors.AuthorizationException}.
+     * 中止当前正在进行的事务。当调用此方法时，所有未刷新的生产消息都将被中止。
+     * 如果之前的任何 {@link #send(ProducerRecord)} 调用失败并抛出了
+     * {@link ProducerFencedException} 或 {@link org.apache.kafka.common.errors.AuthorizationException} 异常，
+     * 此方法将立即抛出异常。
      * <p>
-     * Note that this method will raise {@link TimeoutException} if the transaction cannot be aborted before expiration
-     * of {@code max.block.ms}, but this does not mean the request did not actually reach the broker. In fact, it only indicates
-     * that we cannot get the acknowledgement response in time, so it's up to the application's logic
-     * to decide how to handle timeouts. Additionally, it will raise {@link InterruptException} if interrupted.
-     * It is safe to retry in either case, but it is not possible to attempt a different operation (such as {@link #commitTransaction})
-     * since the abort may already be in the progress of completing. If not retrying, the only option is to close the producer.
+     * 注意：如果事务无法在 {@code max.block.ms} 过期之前中止，此方法将抛出 {@link TimeoutException}，
+     * 但这并不意味着请求实际上没有到达代理服务器。事实上，这仅表示我们无法及时获得确认响应，
+     * 因此如何处理超时取决于应用程序的逻辑。此外，如果线程被中断，它将抛出 {@link InterruptException}。
+     * 在这两种情况下重试都是安全的，但由于中止操作可能已经在进行中，无法尝试其他操作（如 {@link #commitTransaction}）。
+     * 如果不重试，唯一的选择就是关闭生产者。
      *
-     * @throws IllegalStateException if no transactional.id has been configured or no transaction has been started
-     * @throws ProducerFencedException fatal error indicating another producer with the same transactional.id is active
-     * @throws org.apache.kafka.common.errors.InvalidProducerEpochException if the producer has attempted to produce with an old epoch
-     *         to the partition leader. See the exception for more details
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException fatal error indicating the broker
-     *         does not support transactions (i.e. if its version is lower than 0.11.0.0)
-     * @throws org.apache.kafka.common.errors.AuthorizationException fatal error indicating that the configured
-     *         transactional.id is not authorized. See the exception for more details
-     * @throws KafkaException if the producer has encountered a previous fatal error or for any other unexpected error
-     * @throws TimeoutException if the time taken for aborting the transaction has surpassed <code>max.block.ms</code>.
-     * @throws InterruptException if the thread is interrupted while blocked
+     * @throws IllegalStateException 如果未配置 transactional.id 或未启动事务
+     * @throws ProducerFencedException 致命错误，表示具有相同 transactional.id 的另一个生产者处于活动状态
+     * @throws org.apache.kafka.common.errors.InvalidProducerEpochException 如果生产者尝试使用旧的 epoch 向分区领导者生产消息
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 致命错误，表示代理服务器不支持事务（即版本低于 0.11.0.0）
+     * @throws org.apache.kafka.common.errors.AuthorizationException 致命错误，表示配置的 transactional.id 未获得授权
+     * @throws KafkaException 如果生产者遇到先前的致命错误或任何其他意外错误
+     * @throws TimeoutException 如果中止事务所花费的时间超过了 <code>max.block.ms</code>
+     * @throws InterruptException 如果线程在阻塞时被中断
      */
     public void abortTransaction() throws ProducerFencedException {
+        // 检查事务管理器是否存在，如果不存在则抛出异常
         throwIfNoTransactionManager();
+        // 检查生产者是否已关闭，如果已关闭则抛出异常
         throwIfProducerClosed();
+        // 记录中止事务的日志信息
         log.info("Aborting incomplete transaction");
+        // 记录中止事务的开始时间（纳秒级）
         long abortStart = time.nanoseconds();
+        // 调用事务管理器开始中止事务操作
         TransactionalRequestResult result = transactionManager.beginAbort();
+        // 唤醒发送线程，确保中止请求能够立即被处理
         sender.wakeup();
+        // 等待中止操作完成，最长等待时间由 maxBlockTimeMs 指定
         result.await(maxBlockTimeMs, TimeUnit.MILLISECONDS);
+        // 记录事务中止操作的性能指标（耗时）
         producerMetrics.recordAbortTxn(time.nanoseconds() - abortStart);
     }
 
     /**
-     * Asynchronously send a record to a topic. Equivalent to <code>send(record, null)</code>.
-     * See {@link #send(ProducerRecord, Callback)} for details.
+     * 异步发送一条消息记录到指定的主题。
+     * 这是一个不带回调函数的简化版本，等同于调用 <code>send(record, null)</code>。
+     * <p>
+     * 该方法具有以下特点：
+     * <ul>
+     * <li>异步执行：调用后立即返回，不会阻塞等待消息发送完成</li>
+     * <li>返回Future对象：可以通过Future获取发送结果，但不会主动通知</li>
+     * <li>自动重试：发送失败时会根据配置自动重试</li>
+     * <li>线程安全：可以从多个线程同时调用</li>
+     * </ul>
+     * 更多详细信息请参见 {@link #send(ProducerRecord, Callback)} 方法的文档。
+     *
+     * @param record 要发送的消息记录，包含目标主题、分区（可选）、时间戳（可选）、键（可选）和值
+     * @return 返回一个Future对象，可用于获取发送结果的元数据。元数据包含消息的主题、分区、偏移量等信息
      */
     @Override
     public Future<RecordMetadata> send(ProducerRecord<K, V> record) {
+        // 调用带回调参数的send方法，传入null作为回调函数
+        // 这意味着发送完成后不会收到通知，需要通过返回的Future对象来获取结果
         return send(record, null);
     }
 
     /**
-     * Asynchronously send a record to a topic and invoke the provided callback when the send has been acknowledged.
+     * 异步发送消息记录到主题，并在发送确认后调用提供的回调函数。
      * <p>
-     * The send is asynchronous and this method will return immediately (except for rare cases described below)
-     * once the record has been stored in the buffer of records waiting to be sent.
-     * This allows sending many records in parallel without blocking to wait for the response after each one.
-     * Can block for the following cases: 1) For the first record being sent to 
-     * the cluster by this client for the given topic. In this case it will block for up to {@code max.block.ms} milliseconds if 
-     * Kafka cluster is unreachable; 2) Allocating a buffer if buffer pool doesn't have any free buffers.
+     * 发送操作是异步的，该方法在消息记录被存储到发送缓冲区后会立即返回（除了以下罕见情况）。
+     * 这允许并行发送多条消息而无需在每条消息后都阻塞等待响应。
+     * 可能会阻塞的情况：
+     * 1) 当客户端首次向指定主题发送消息时。在这种情况下，如果Kafka集群不可达，将阻塞最多{@code max.block.ms}毫秒；
+     * 2) 当缓冲池没有空闲缓冲区时，在分配缓冲区时会阻塞。
      * <p>
-     * The result of the send is a {@link RecordMetadata} specifying the partition the record was sent to, the offset
-     * it was assigned and the timestamp of the record. If the producer is configured with acks = 0, the {@link RecordMetadata}
-     * will have offset = -1 because the producer does not wait for the acknowledgement from the broker.
-     * If {@link org.apache.kafka.common.record.TimestampType#CREATE_TIME CreateTime} is used by the topic, the timestamp
-     * will be the user provided timestamp or the record send time if the user did not specify a timestamp for the
-     * record. If {@link org.apache.kafka.common.record.TimestampType#LOG_APPEND_TIME LogAppendTime} is used for the
-     * topic, the timestamp will be the Kafka broker local time when the message is appended.
+     * 发送结果是一个{@link RecordMetadata}对象，指定了消息发送到的分区、分配的偏移量和时间戳。
+     * 如果生产者配置acks=0，则{@link RecordMetadata}的offset将为-1，因为生产者不会等待来自broker的确认。
+     * 时间戳的处理有两种情况：
+     * - 如果主题使用{@link org.apache.kafka.common.record.TimestampType#CREATE_TIME CreateTime}，
+     *   时间戳将是用户提供的时间戳或记录发送时间（如果用户未指定）。
+     * - 如果主题使用{@link org.apache.kafka.common.record.TimestampType#LOG_APPEND_TIME LogAppendTime}，
+     *   时间戳将是消息追加时Kafka broker的本地时间。
      * <p>
-     * Since the send call is asynchronous it returns a {@link java.util.concurrent.Future Future} for the
-     * {@link RecordMetadata} that will be assigned to this record. Invoking {@link java.util.concurrent.Future#get()
-     * get()} on this future will block until the associated request completes and then return the metadata for the record
-     * or throw any exception that occurred while sending the record.
+     * 由于send调用是异步的，它返回一个{@link java.util.concurrent.Future Future}对象，用于获取{@link RecordMetadata}。
+     * 调用future的{@link java.util.concurrent.Future#get() get()}方法将阻塞直到请求完成，然后返回消息的元数据或抛出发送过程中发生的异常。
      * <p>
-     * If you want to simulate a simple blocking call you can call the <code>get()</code> method immediately:
+     * 如果想模拟同步调用，可以立即调用<code>get()</code>方法：
      *
      * <pre>
      * {@code
@@ -962,8 +1037,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
      * producer.send(record).get();
      * }</pre>
      * <p>
-     * Fully non-blocking usage can make use of the {@link Callback} parameter to provide a callback that
-     * will be invoked when the request is complete.
+     * 完全非阻塞的用法可以使用{@link Callback}参数提供一个回调函数，该函数将在请求完成时被调用：
      *
      * <pre>
      * {@code
@@ -981,8 +1055,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
      * }
      * </pre>
      *
-     * Callbacks for records being sent to the same partition are guaranteed to execute in order. That is, in the
-     * following example <code>callback1</code> is guaranteed to execute before <code>callback2</code>:
+     * 发送到同一分区的消息的回调函数保证按顺序执行。例如，在以下示例中，
+     * <code>callback1</code>保证在<code>callback2</code>之前执行：
      *
      * <pre>
      * {@code
@@ -991,89 +1065,108 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
      * }
      * </pre>
      * <p>
-     * When used as part of a transaction, it is not necessary to define a callback or check the result of the future
-     * in order to detect errors from <code>send</code>. If any of the send calls failed with an irrecoverable error,
-     * the final {@link #commitTransaction()} call will fail and throw the exception from the last failed send. When
-     * this happens, your application should call {@link #abortTransaction()} to reset the state and continue to send
-     * data.
+     * 在事务中使用时，无需定义回调或检查future的结果来检测<code>send</code>的错误。
+     * 如果任何send调用遇到不可恢复的错误，最终的{@link #commitTransaction()}调用将失败并抛出最后一个失败send的异常。
+     * 当这种情况发生时，应用程序应调用{@link #abortTransaction()}来重置状态并继续发送数据。
      * </p>
      * <p>
-     * Some transactional send errors cannot be resolved with a call to {@link #abortTransaction()}.  In particular,
-     * if a transactional send finishes with a {@link ProducerFencedException}, a {@link org.apache.kafka.common.errors.OutOfOrderSequenceException},
-     * a {@link org.apache.kafka.common.errors.UnsupportedVersionException}, or an
-     * {@link org.apache.kafka.common.errors.AuthorizationException}, then the only option left is to call {@link #close()}.
-     * Fatal errors cause the producer to enter a defunct state in which future API calls will continue to raise
-     * the same underlying error wrapped in a new {@link KafkaException}.
+     * 某些事务性发送错误无法通过调用{@link #abortTransaction()}来解决。特别是，
+     * 如果事务性发送以{@link ProducerFencedException}、{@link org.apache.kafka.common.errors.OutOfOrderSequenceException}、
+     * {@link org.apache.kafka.common.errors.UnsupportedVersionException}或
+     * {@link org.apache.kafka.common.errors.AuthorizationException}结束，
+     * 唯一的选择就是调用{@link #close()}。
+     * 致命错误会导致生产者进入失效状态，未来的API调用将继续抛出包装在新的{@link KafkaException}中的相同底层错误。
      * </p>
      * <p>
-     * It is a similar picture when idempotence is enabled, but no <code>transactional.id</code> has been configured.
-     * In this case, {@link org.apache.kafka.common.errors.UnsupportedVersionException} and
-     * {@link org.apache.kafka.common.errors.AuthorizationException} are considered fatal errors. However,
-     * {@link ProducerFencedException} does not need to be handled. Additionally, it is possible to continue
-     * sending after receiving an {@link org.apache.kafka.common.errors.OutOfOrderSequenceException}, but doing so
-     * can result in out of order delivery of pending messages. To ensure proper ordering, you should close the
-     * producer and create a new instance.
+     * 当启用幂等性但未配置<code>transactional.id</code>时情况类似。
+     * 在这种情况下，{@link org.apache.kafka.common.errors.UnsupportedVersionException}和
+     * {@link org.apache.kafka.common.errors.AuthorizationException}被视为致命错误。
+     * 但是，不需要处理{@link ProducerFencedException}。
+     * 此外，在收到{@link org.apache.kafka.common.errors.OutOfOrderSequenceException}后可以继续发送，
+     * 但这样做可能导致待处理消息的乱序传递。为确保正确的顺序，应关闭生产者并创建新实例。
      * </p>
      * <p>
-     * If the message format of the destination topic is not upgraded to 0.11.0.0, idempotent and transactional
-     * produce requests will fail with an {@link org.apache.kafka.common.errors.UnsupportedForMessageFormatException}
-     * error. If this is encountered during a transaction, it is possible to abort and continue. But note that future
-     * sends to the same topic will continue receiving the same exception until the topic is upgraded.
+     * 如果目标主题的消息格式未升级到0.11.0.0，幂等和事务性生产请求将失败，
+     * 并出现{@link org.apache.kafka.common.errors.UnsupportedForMessageFormatException}错误。
+     * 如果在事务中遇到此错误，可以中止并继续。但请注意，在主题升级之前，
+     * 发送到同一主题的后续请求将继续收到相同的异常。
      * </p>
      * <p>
-     * Note that callbacks will generally execute in the I/O thread of the producer and so should be reasonably fast or
-     * they will delay the sending of messages from other threads. If you want to execute blocking or computationally
-     * expensive callbacks it is recommended to use your own {@link java.util.concurrent.Executor} in the callback body
-     * to parallelize processing.
+     * 注意，回调通常在生产者的I/O线程中执行，因此应该相当快，
+     * 否则会延迟其他线程的消息发送。如果要执行阻塞或计算密集型的回调，
+     * 建议在回调体中使用自己的{@link java.util.concurrent.Executor}来并行处理。
      *
-     * @param record The record to send
-     * @param callback A user-supplied callback to execute when the record has been acknowledged by the server (null
-     *        indicates no callback)
+     * @param record 要发送的消息记录
+     * @param callback 当服务器确认记录后要执行的用户提供的回调（null表示无回调）
      *
-     * @throws IllegalStateException if a transactional.id has been configured and no transaction has been started, or
-     *                               when send is invoked after producer has been closed.
-     * @throws InterruptException If the thread is interrupted while blocked
-     * @throws SerializationException If the key or value are not valid objects given the configured serializers
-     * @throws KafkaException If a Kafka related error occurs that does not belong to the public API exceptions.
+     * @throws IllegalStateException 如果配置了transactional.id但未启动事务，或在生产者关闭后调用send
+     * @throws InterruptException 如果线程在阻塞时被中断
+     * @throws SerializationException 如果key或value对于配置的序列化器而言不是有效对象
+     * @throws KafkaException 如果发生不属于公共API异常的Kafka相关错误
      */
     @Override
     public Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
-        // intercept the record, which can be potentially modified; this method does not throw exceptions
+        // 拦截记录，可能会被修改；此方法不会抛出异常
         ProducerRecord<K, V> interceptedRecord = this.interceptors.onSend(record);
+        // 执行实际的发送操作
         return doSend(interceptedRecord, callback);
     }
 
-    // Verify that this producer instance has not been closed. This method throws IllegalStateException if the producer
-    // has already been closed.
+    /**
+     * 验证当前生产者实例是否已关闭。如果生产者已经关闭，则抛出IllegalStateException异常。
+     * 
+     * 该方法在执行生产者操作前进行状态检查，确保生产者处于可用状态。检查包括两个条件：
+     * 1. sender对象不为null - sender是负责实际消息发送的后台线程，为null表示生产者未正确初始化或已被关闭
+     * 2. sender处于运行状态 - 通过isRunning()方法检查sender线程是否正在运行
+     * 
+     * 当生产者关闭后，所有的生产者操作（如发送消息）都将失败，这是为了防止：
+     * - 向已关闭的生产者发送新消息
+     * - 访问已释放的资源
+     * - 产生不一致的状态
+     * 
+     * @throws IllegalStateException 如果生产者已经关闭，表示当前操作无法执行
+     */
     private void throwIfProducerClosed() {
         if (sender == null || !sender.isRunning())
             throw new IllegalStateException("Cannot perform operation after producer has been closed");
     }
 
     /**
-     * Implementation of asynchronously send a record to a topic.
+     * 异步发送消息记录到指定主题的实现方法。
+     * 该方法实现了消息发送的完整流程，包括：
+     * 1. 获取集群元数据
+     * 2. 序列化消息的key和value
+     * 3. 计算目标分区
+     * 4. 将消息添加到累加器中
+     * 5. 处理事务相关逻辑
+     * 6. 异常处理
      */
     private Future<RecordMetadata> doSend(ProducerRecord<K, V> record, Callback callback) {
-        // Append callback takes care of the following:
-        //  - call interceptors and user callback on completion
-        //  - remember partition that is calculated in RecordAccumulator.append
+        // 创建追加回调，用于处理以下功能：
+        // - 在发送完成时调用拦截器和用户回调
+        // - 记住在RecordAccumulator.append中计算的分区
         AppendCallbacks appendCallbacks = new AppendCallbacks(callback, this.interceptors, record);
 
         try {
+            // 检查生产者是否已关闭
             throwIfProducerClosed();
-            // first make sure the metadata for the topic is available
-            long nowMs = time.milliseconds();
+            // 首先确保主题的元数据可用
+            long nowMs = time.milliseconds();  // 获取当前时间戳
             ClusterAndWaitTime clusterAndWaitTime;
             try {
+                // 等待获取主题元数据，如果超时则抛出异常
                 clusterAndWaitTime = waitOnMetadata(record.topic(), record.partition(), nowMs, maxBlockTimeMs);
             } catch (KafkaException e) {
                 if (metadata.isClosed())
                     throw new KafkaException("Producer closed while send in progress", e);
                 throw e;
             }
+            // 更新当前时间并计算剩余等待时间
             nowMs += clusterAndWaitTime.waitedOnMetadataMs;
             long remainingWaitMs = Math.max(0, maxBlockTimeMs - clusterAndWaitTime.waitedOnMetadataMs);
             Cluster cluster = clusterAndWaitTime.cluster;
+            
+            // 序列化消息的key
             byte[] serializedKey;
             try {
                 serializedKey = keySerializerPlugin.get().serialize(record.topic(), record.headers(), record.key());
@@ -1082,6 +1175,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                         " to class " + producerConfig.getClass(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG).getName() +
                         " specified in key.serializer", cce);
             }
+            
+            // 序列化消息的value
             byte[] serializedValue;
             try {
                 serializedValue = valueSerializerPlugin.get().serialize(record.topic(), record.headers(), record.value());
@@ -1091,64 +1186,77 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                         " specified in value.serializer", cce);
             }
 
-            // Try to calculate partition, but note that after this call it can be RecordMetadata.UNKNOWN_PARTITION,
-            // which means that the RecordAccumulator would pick a partition using built-in logic (which may
-            // take into account broker load, the amount of data produced to each partition, etc.).
+            // 计算消息的目标分区
+            // 注意：这里返回的可能是UNKNOWN_PARTITION，此时RecordAccumulator会使用内置逻辑选择分区
+            // （可能考虑broker负载、每个分区的数据量等因素）
             int partition = partition(record, serializedKey, serializedValue, cluster);
 
+            // 设置消息头为只读并获取头部数组
             setReadOnly(record.headers());
             Header[] headers = record.headers().toArray();
 
+            // 估算序列化后消息的大小上限
             int serializedSize = AbstractRecords.estimateSizeInBytesUpperBound(RecordBatch.CURRENT_MAGIC_VALUE,
                     compression.type(), serializedKey, serializedValue, headers);
+            // 确保消息大小在有效范围内
             ensureValidRecordSize(serializedSize);
+            // 获取消息时间戳，如果未指定则使用当前时间
             long timestamp = record.timestamp() == null ? nowMs : record.timestamp();
 
-            // Append the record to the accumulator.  Note, that the actual partition may be
-            // calculated there and can be accessed via appendCallbacks.topicPartition.
+            // 将消息追加到累加器中
+            // 注意：实际的分区可能在这里计算，可以通过appendCallbacks.topicPartition获取
             RecordAccumulator.RecordAppendResult result = accumulator.append(record.topic(), partition, timestamp, serializedKey,
                     serializedValue, headers, appendCallbacks, remainingWaitMs, nowMs, cluster);
+            // 确保分区已经确定
             assert appendCallbacks.getPartition() != RecordMetadata.UNKNOWN_PARTITION;
 
-            // Add the partition to the transaction (if in progress) after it has been successfully
-            // appended to the accumulator. We cannot do it before because the partition may be
-            // unknown. Note that the `Sender` will refuse to dequeue
-            // batches from the accumulator until they have been added to the transaction.
+            // 如果正在进行事务，将分区添加到事务中
+            // 这必须在消息成功追加到累加器之后进行，因为之前分区可能未知
+            // 注意：在分区被添加到事务之前，Sender不会从累加器中取出批次
             if (transactionManager != null) {
                 transactionManager.maybeAddPartition(appendCallbacks.topicPartition());
             }
 
+            // 如果批次已满或创建了新批次，唤醒发送线程
             if (result.batchIsFull || result.newBatchCreated) {
                 log.trace("Waking up the sender since topic {} partition {} is either full or getting a new batch", record.topic(), appendCallbacks.getPartition());
                 this.sender.wakeup();
             }
             return result.future;
-            // handling exceptions and record the errors;
-            // for API exceptions return them in the future,
-            // for other exceptions throw directly
+            
+        // 异常处理部分
+        // 对于API异常，将其包装在Future中返回
+        // 对于其他异常，直接抛出
         } catch (ApiException e) {
+            // 记录调试日志
             log.debug("Exception occurred during message send:", e);
+            // 如果设置了回调，则调用回调通知发送失败
             if (callback != null) {
                 TopicPartition tp = appendCallbacks.topicPartition();
                 RecordMetadata nullMetadata = new RecordMetadata(tp, -1, -1, RecordBatch.NO_TIMESTAMP, -1, -1);
                 callback.onCompletion(nullMetadata, e);
             }
+            // 记录错误并通知拦截器
             this.errors.record();
             this.interceptors.onSendError(record, appendCallbacks.topicPartition(), e);
+            // 如果在事务中，可能需要转换到错误状态
             if (transactionManager != null) {
                 transactionManager.maybeTransitionToErrorState(e);
             }
             return new FutureFailure(e);
         } catch (InterruptedException e) {
+            // 处理中断异常
             this.errors.record();
             this.interceptors.onSendError(record, appendCallbacks.topicPartition(), e);
             throw new InterruptException(e);
         } catch (KafkaException e) {
+            // 处理Kafka异常
             this.errors.record();
             this.interceptors.onSendError(record, appendCallbacks.topicPartition(), e);
             throw e;
         } catch (Exception e) {
-            // we notify interceptor about all exceptions, since onSend is called before anything else in this method
+            // 处理其他所有异常
+            // 通知拦截器发生错误，因为onSend是在方法中最先调用的
             this.interceptors.onSendError(record, appendCallbacks.topicPartition(), e);
             throw e;
         }
@@ -1565,6 +1673,18 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         }
     }
 
+    /**
+     * 验证消费者组元数据的有效性
+     * 
+     * 此方法用于验证传入的消费者组元数据是否有效。主要进行两项检查：
+     * 1. 确保元数据对象不为空
+     * 2. 当generationId大于0时，确保memberId不是未知的（UNKNOWN_MEMBER_ID）
+     * 
+     * @param groupMetadata 待验证的消费者组元数据
+     * @throws IllegalArgumentException 当元数据无效时抛出，可能的情况：
+     *                                  - 元数据对象为null
+     *                                  - generationId > 0但memberId未知
+     */
     private void throwIfInvalidGroupMetadata(ConsumerGroupMetadata groupMetadata) {
         if (groupMetadata == null) {
             throw new IllegalArgumentException("Consumer group metadata could not be null");
@@ -1574,13 +1694,24 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         }
     }
 
+    /**
+     * 检查事务管理器是否已初始化
+     * 
+     * 在执行事务相关操作前，此方法会检查事务管理器（TransactionManager）是否存在。
+     * 如果要使用事务功能，必须通过配置transactional.id来启用事务支持。
+     * 
+     * @throws IllegalStateException 当尝试使用事务功能但事务管理器未初始化时抛出
+     */
     private void throwIfNoTransactionManager() {
         if (transactionManager == null)
             throw new IllegalStateException("Cannot use transactional methods without enabling transactions " +
                     "by setting the " + ProducerConfig.TRANSACTIONAL_ID_CONFIG + " configuration property");
     }
 
-    // Visible for testing
+    /**
+     * 获取clientId
+     * @return
+     */
     String getClientId() {
         return clientId;
     }

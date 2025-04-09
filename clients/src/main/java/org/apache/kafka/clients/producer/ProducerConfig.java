@@ -303,7 +303,8 @@ public class ProducerConfig extends AbstractConfig {
     public static final String ENABLE_METRICS_PUSH_CONFIG = CommonClientConfigs.ENABLE_METRICS_PUSH_CONFIG;
     public static final String ENABLE_METRICS_PUSH_DOC = CommonClientConfigs.ENABLE_METRICS_PUSH_DOC;
 
-    /** <code>compression.type</code>
+    /** 
+     * <code>compression.type</code>
      * 生产者的消息压缩类型配置
      * 可选值：none, gzip, snappy, lz4, zstd
      * 压缩可以减少网络传输和存储开销，但会增加CPU开销
