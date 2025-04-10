@@ -99,13 +99,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 
 /**
- * A Kafka client that publishes records to the Kafka cluster.
+ * Kafka客户端，用于向Kafka集群发布消息记录。
  * <P>
- * The producer is <i>thread safe</i> and sharing a single producer instance across threads will generally be faster than
- * having multiple instances.
+ * 生产者是线程安全的，在多个线程间共享单个生产者实例通常比创建多个实例更快。
  * <p>
- * Here is a simple example of using the producer to send records with strings containing sequential numbers as the key/value
- * pairs.
+ * 下面是一个使用生产者发送消息的简单示例，其中键值对都是包含序列号的字符串。
  * <pre>
  * {@code
  * Properties props = new Properties();
@@ -121,128 +119,46 @@ import java.util.concurrent.atomic.AtomicReference;
  * producer.close();
  * }</pre>
  * <p>
- * The producer consists of a pool of buffer space that holds records that haven't yet been transmitted to the server
- * as well as a background I/O thread that is responsible for turning these records into requests and transmitting them
- * to the cluster. Failure to close the producer after use will leak these resources.
- * 生产者包含一个缓冲池，用于存储尚未传输到服务器的记录，同时还有一个后台 I/O 线程负责将这些记录转换为请求并将其传输到集群。
- * 如果使用后未关闭生产者，将会导致这些资源泄漏。
- * - 缓冲池：暂存待发送的消息记录
- * - 后台 I/O 线程：处理实际的消息发送工作
- * 同时强调了在使用完生产者后必须调用 close() 方法来释放资源，否则会造成资源泄漏。
+ * 生产者的主要组成部分：
+ * 1. 缓冲池：用于存储尚未传输到服务器的消息记录
+ * 2. 后台I/O线程：负责将这些记录转换为请求并发送到集群
+ * 重要提示：如果在使用后不调用close()方法关闭生产者，将会导致资源泄漏。
  * <p>
- * The {@link #send(ProducerRecord) send()} method is asynchronous. When called, it adds the record to a buffer of pending record sends
- * and immediately returns. This allows the producer to batch together individual records for efficiency.
+ * {@link #send(ProducerRecord) send()}方法是异步的。调用时，它会将记录添加到待发送记录的缓冲区中并立即返回。
+ *  这种机制允许生产者将多个独立的记录打包在一起以提高效率。
  * <p>
- * The <code>acks</code> config controls the criteria under which requests are considered complete. The default setting "all"
- * will result in blocking on the full commit of the record, the slowest but most durable setting.
+ * acks配置控制请求被视为完成的条件：
+ * - 默认值"all"会等待所有副本完成提交，这是最慢但最持久的设置
  * <p>
- * If the request fails, the producer can automatically retry. The <code>retries</code> setting defaults to <code>Integer.MAX_VALUE</code>, and
- * it's recommended to use <code>delivery.timeout.ms</code> to control retry behavior, instead of <code>retries</code>.
+ * 如果请求失败，生产者可以自动重试：
+ * - retries默认值为Integer.MAX_VALUE
+ * - 建议使用delivery.timeout.ms来控制重试行为，而不是直接设置retries
  * <p>
- * The producer maintains buffers of unsent records for each partition. These buffers are of a size specified by
- * the <code>batch.size</code> config. Making this larger can result in more batching, but requires more memory (since we will
- * generally have one of these buffers for each active partition).
+ * 生产者为每个分区维护未发送记录的缓冲区：
+ * - 缓冲区大小由batch.size配置指定
+ * - 增大该值可以实现更多批处理，但需要更多内存（因为每个活动分区都有一个缓冲区）
  * <p>
- * By default a buffer is available to send immediately even if there is additional unused space in the buffer. However if you
- * want to reduce the number of requests you can set <code>linger.ms</code> to something greater than 0. This will
- * instruct the producer to wait up to that number of milliseconds before sending a request in hope that more records will
- * arrive to fill up the same batch. This is analogous to Nagle's algorithm in TCP. For example, in the code snippet above,
- * likely all 100 records would be sent in a single request since we set our linger time to 1 millisecond. However this setting
- * would add 1 millisecond of latency to our request waiting for more records to arrive if we didn't fill up the buffer. Note that
- * records that arrive close together in time will generally batch together even with <code>linger.ms=0</code>. So, under heavy load,
- * batching will occur regardless of the linger configuration; however setting this to something larger than 0 can lead to fewer, more
- * efficient requests when not under maximal load at the cost of a small amount of latency.
+ * 关于发送时机和批处理：
+ * - 默认情况下，只要有数据就立即发送，即使缓冲区还有空间
+ * - 可以设置linger.ms > 0来减少请求数量，这会让生产者等待一段时间以收集更多消息
+ * - 类似于TCP的Nagle算法
+ * - 在高负载下，即使linger.ms=0也会自动进行批处理
+ * - 增加linger.ms可以在中等负载下实现更有效的批处理，但会增加少量延迟
  * <p>
- * The <code>buffer.memory</code> controls the total amount of memory available to the producer for buffering. If records
- * are sent faster than they can be transmitted to the server then this buffer space will be exhausted. When the buffer space is
- * exhausted additional send calls will block. The threshold for time to block is determined by <code>max.block.ms</code> after which it returns
- * a failed future with BufferExhaustedException.
+ * 内存管理：
+ * - buffer.memory控制生产者可用于缓冲的总内存量
+ * - 如果发送速度超过传输速度，缓冲空间会被耗尽
+ * - 当缓冲空间耗尽时，新的发送调用会阻塞
+ * - max.block.ms决定阻塞的最大时间，超过后会抛出BufferExhaustedException
  * <p>
- * The <code>key.serializer</code> and <code>value.serializer</code> instruct how to turn the key and value objects the user provides with
- * their <code>ProducerRecord</code> into bytes. You can use the included {@link org.apache.kafka.common.serialization.ByteArraySerializer} or
- * {@link org.apache.kafka.common.serialization.StringSerializer} for simple byte or string types.
+ * 序列化配置：
+ * - key.serializer和value.serializer指定如何将键值对象转换为字节
+ * - 对于简单类型，可以使用内置的ByteArraySerializer或StringSerializer
  * <p>
- * From Kafka 0.11, the KafkaProducer supports two additional modes: the idempotent producer and the transactional producer.
- * The idempotent producer strengthens Kafka's delivery semantics from at least once to exactly once delivery. In particular
- * producer retries will no longer introduce duplicates. The transactional producer allows an application to send messages
- * to multiple partitions (and topics!) atomically.
- * </p>
- * <p>
- * From Kafka 3.0, the <code>enable.idempotence</code> configuration defaults to true. When enabling idempotence,
- * <code>retries</code> config will default to <code>Integer.MAX_VALUE</code> and the <code>acks</code> config will
- * default to <code>all</code>. There are no API changes for the idempotent producer, so existing applications will
- * not need to be modified to take advantage of this feature.
- * </p>
- * <p>
- * To take advantage of the idempotent producer, it is imperative to avoid application level re-sends since these cannot
- * be de-duplicated. As such, if an application enables idempotence, it is recommended to leave the <code>retries</code>
- * config unset, as it will be defaulted to <code>Integer.MAX_VALUE</code>. Additionally, if a {@link #send(ProducerRecord)}
- * returns an error even with infinite retries (for instance if the message expires in the buffer before being sent),
- * then it is recommended to shut down the producer and check the contents of the last produced message to ensure that
- * it is not duplicated. Finally, the producer can only guarantee idempotence for messages sent within a single session.
- * </p>
- * <p>To use the transactional producer and the attendant APIs, you must set the <code>transactional.id</code>
- * configuration property. If the <code>transactional.id</code> is set, idempotence is automatically enabled along with
- * the producer configs which idempotence depends on. Further, topics which are included in transactions should be configured
- * for durability. In particular, the <code>replication.factor</code> should be at least <code>3</code>, and the
- * <code>min.insync.replicas</code> for these topics should be set to 2. Finally, in order for transactional guarantees
- * to be realized from end-to-end, the consumers must be configured to read only committed messages as well.
- * </p>
- * <p>
- * The purpose of the <code>transactional.id</code> is to enable transaction recovery across multiple sessions of a
- * single producer instance. It would typically be derived from the shard identifier in a partitioned, stateful, application.
- * As such, it should be unique to each producer instance running within a partitioned application.
- * </p>
- * <p>All the new transactional APIs are blocking and will throw exceptions on failure. The example
- * below illustrates how the new APIs are meant to be used. It is similar to the example above, except that all
- * 100 messages are part of a single transaction.
- * </p>
- * <p>
- * <pre>
- * {@code
- * Properties props = new Properties();
- * props.put("bootstrap.servers", "localhost:9092");
- * props.put("transactional.id", "my-transactional-id");
- * Producer<String, String> producer = new KafkaProducer<>(props, new StringSerializer(), new StringSerializer());
- *
- * producer.initTransactions();
- *
- * try {
- *     producer.beginTransaction();
- *     for (int i = 0; i < 100; i++)
- *         producer.send(new ProducerRecord<>("my-topic", Integer.toString(i), Integer.toString(i)));
- *     producer.commitTransaction();
- * } catch (ProducerFencedException | OutOfOrderSequenceException | AuthorizationException e) {
- *     // We can't recover from these exceptions, so our only option is to close the producer and exit.
- *     producer.close();
- * } catch (KafkaException e) {
- *     // For all other exceptions, just abort the transaction and try again.
- *     producer.abortTransaction();
- * }
- * producer.close();
- * } </pre>
- * </p>
- * <p>
- * As is hinted at in the example, there can be only one open transaction per producer. All messages sent between the
- * {@link #beginTransaction()} and {@link #commitTransaction()} calls will be part of a single transaction. When the
- * <code>transactional.id</code> is specified, all messages sent by the producer must be part of a transaction.
- * </p>
- * <p>
- * The transactional producer uses exceptions to communicate error states. In particular, it is not required
- * to specify callbacks for <code>producer.send()</code> or to call <code>.get()</code> on the returned Future: a
- * <code>KafkaException</code> would be thrown if any of the
- * <code>producer.send()</code> or transactional calls hit an irrecoverable error during a transaction. See the {@link #send(ProducerRecord)}
- * documentation for more details about detecting errors from a transactional send.
- * </p>
- * </p>By calling
- * <code>producer.abortTransaction()</code> upon receiving a <code>KafkaException</code> we can ensure that any
- * successful writes are marked as aborted, hence keeping the transactional guarantees.
- * </p>
- * <p>
- * This client can communicate with brokers that are version 0.10.0 or newer. Older or newer brokers may not support
- * certain client features.  For instance, the transactional APIs need broker versions 0.11.0 or later. You will receive an
- * <code>UnsupportedVersionException</code> when invoking an API that is not available in the running broker version.
- * </p>
+ * 从Kafka 0.11版本开始，KafkaProducer支持两种额外的模式：
+ * 幂等生产者和事务性生产者。
+ * - 幂等生产者加强了Kafka的传递语义，从"至少一次"提升为"精确一次"传递。特别是在生产者重试时不会再引入重复消息。
+ * - 事务性生产者允许应用程序以原子方式向多个分区（甚至多个主题！）发送消息。
  */
 public class KafkaProducer<K, V> implements Producer<K, V> {
 
