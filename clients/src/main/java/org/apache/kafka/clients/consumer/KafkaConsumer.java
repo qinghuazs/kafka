@@ -1253,339 +1253,439 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     }
 
     /**
-     * Seek to the last offset for each of the given partitions. This function evaluates lazily, seeking to the
-     * final offset in all partitions only when {@link #poll(Duration)} or {@link #position(TopicPartition)} are called.
-     * If no partitions are provided, seek to the final offset for all of the currently assigned partitions.
+     * 将消费者的消费位置移动到指定分区的末尾位置。
      * <p>
-     * If {@code isolation.level=read_committed}, the end offset will be the Last Stable Offset, i.e., the offset
-     * of the first message with an open transaction.
+     * 该方法的主要特点和使用说明：
+     * <ul>
+     * <li>延迟执行：该方法采用延迟执行策略，只有在调用{@link #poll(Duration)}或{@link #position(TopicPartition)}时
+     *     才会真正执行定位操作。这种设计可以优化性能，避免不必要的网络请求。</li>
+     * <li>分区指定：
+     *   - 如果提供了具体的分区列表，则只会将这些分区的消费位置移动到末尾
+     *   - 如果没有提供分区（传入空集合），则会将所有当前分配给该消费者的分区的消费位置都移动到末尾</li>
+     * <li>事务支持：当消费者配置了{@code isolation.level=read_committed}时，末尾位置指的是最后稳定位移（Last Stable Offset），
+     *     即第一条带有开放事务的消息的位置。这确保了事务隔离性。</li>
+     * </ul>
+     * 
+     * 使用场景：
+     * <ul>
+     * <li>当消费者需要从最新的数据开始消费时</li>
+     * <li>在数据处理过程中需要跳过一些历史数据时</li>
+     * <li>在消费者重启后需要立即处理最新数据而不是历史数据时</li>
+     * </ul>
      *
-     * @throws IllegalArgumentException if {@code partitions} is {@code null}
-     * @throws IllegalStateException if any of the provided partitions are not currently assigned to this consumer
+     * @param partitions 需要定位到末尾的分区集合。如果为空集合，则对所有已分配的分区进行操作
+     * @throws IllegalArgumentException 如果参数{@code partitions}为null
+     * @throws IllegalStateException 如果指定的分区中有任何一个没有被分配给当前消费者
      */
     @Override
     public void seekToEnd(Collection<TopicPartition> partitions) {
+        // 调用委托对象的seekToEnd方法执行实际的定位操作
+        // 这里使用了委托模式，具体实现可能是AsyncKafkaConsumer或ClassicKafkaConsumer
         delegate.seekToEnd(partitions);
     }
 
     /**
-     * Get the offset of the <i>next record</i> that will be fetched (if a record with that offset exists).
-     * This method may issue a remote call to the server if there is no current position for the given partition.
+     * 获取指定分区的当前消费位置，即下一条将要获取的记录的位移（如果该位移存在对应的记录）。
      * <p>
-     * This call will block until either the position could be determined or an unrecoverable error is
-     * encountered (in which case it is thrown to the caller), or the timeout specified by {@code default.api.timeout.ms} expires
-     * (in which case a {@link org.apache.kafka.common.errors.TimeoutException} is thrown to the caller).
+     * 该方法的主要特点和工作机制：
+     * <ul>
+     * <li>远程调用：如果本地没有指定分区的当前位置信息，该方法可能会发起对服务器的远程调用</li>
+     * <li>阻塞操作：该方法会阻塞执行，直到出现以下情况之一：
+     *   - 成功确定位置
+     *   - 遇到不可恢复的错误（此时会抛出异常）
+     *   - 超过配置的超时时间{@code default.api.timeout.ms}（此时会抛出超时异常）</li>
+     * <li>位置含义：返回的位置表示消费者将要获取的下一条记录的位移，而不是最后一条已消费记录的位移</li>
+     * </ul>
+     * 
+     * 使用场景：
+     * <ul>
+     * <li>需要获知当前消费进度时</li>
+     * <li>在手动提交位移前需要确认当前位置时</li>
+     * <li>在实现自定义的位移管理策略时</li>
+     * </ul>
      *
-     * @param partition The partition to get the position for
-     * @return The current position of the consumer (that is, the offset of the next record to be fetched)
-     * @throws IllegalStateException if the provided TopicPartition is not assigned to this consumer
-     * @throws org.apache.kafka.clients.consumer.InvalidOffsetException if no offset is currently defined for
-     *             the partition
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException if the consumer attempts to fetch stable offsets
-     *             when the broker doesn't support this feature
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
-     * @throws org.apache.kafka.common.errors.TimeoutException if the position cannot be determined before the
-     *             timeout specified by {@code default.api.timeout.ms} expires
+     * @param partition 要获取位置的分区
+     * @return 消费者的当前位置（即下一条要获取的记录的位移）
+     * @throws IllegalStateException 如果指定的TopicPartition没有被分配给当前消费者
+     * @throws org.apache.kafka.clients.consumer.InvalidOffsetException 如果当前没有为该分区定义位移
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在调用此方法之前或期间调用了{@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果调用线程在调用此方法之前或期间被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有主题或配置的groupId的授权
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 如果消费者尝试获取稳定位移，但broker不支持该特性
+     * @throws org.apache.kafka.common.KafkaException 发生其他不可恢复的错误时
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在配置的超时时间内无法确定位置
      */
     @Override
     public long position(TopicPartition partition) {
+        // 调用委托对象的position方法获取指定分区的位置
+        // 返回值是下一条要获取的记录的位移
         return delegate.position(partition);
     }
 
     /**
-     * Get the offset of the <i>next record</i> that will be fetched (if a record with that offset exists).
-     * This method may issue a remote call to the server if there is no current position
-     * for the given partition.
+     * 获取将要获取的<i>下一条记录</i>的位移（如果该位移处存在记录）。
+     * 如果给定分区当前没有位置信息，此方法可能会向服务器发起远程调用。
      * <p>
-     * This call will block until the position can be determined, an unrecoverable error is
-     * encountered (in which case it is thrown to the caller), or the timeout expires.
+     * 此方法将阻塞直到以下情况之一发生：
+     * 1. 成功确定位置
+     * 2. 遇到不可恢复的错误（此时错误会抛给调用者）
+     * 3. 超时时间到期
      *
-     * @param partition The partition to get the position for
-     * @param timeout The maximum amount of time to await determination of the current position
-     * @return The current position of the consumer (that is, the offset of the next record to be fetched)
-     * @throws IllegalStateException if the provided TopicPartition is not assigned to this consumer
-     * @throws org.apache.kafka.clients.consumer.InvalidOffsetException if no offset is currently defined for
-     *             the partition
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.TimeoutException if the position cannot be determined before the
-     *             passed timeout expires
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
+     * @param partition 要获取位置的分区
+     * @param timeout 等待确定当前位置的最长时间
+     * @return 消费者的当前位置（即下一条要获取的记录的位移）
+     * @throws IllegalStateException 如果提供的TopicPartition未分配给此消费者
+     * @throws org.apache.kafka.clients.consumer.InvalidOffsetException 如果当前分区未定义位移
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在调用此方法之前或期间调用了{@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果在调用此方法之前或期间调用线程被中断
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在超时时间到期前无法确定位置
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败。详见异常说明
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果未被授权访问主题或配置的groupId。详见异常说明
+     * @throws org.apache.kafka.common.KafkaException 其他任何不可恢复的错误
      */
     @Override
     public long position(TopicPartition partition, final Duration timeout) {
+        // 将请求委托给实际的消费者实现类处理
         return delegate.position(partition, timeout);
     }
 
     /**
-     * Get the last committed offsets for the given partitions (whether the commit happened by this process or
-     * another). The returned offsets will be used as the position for the consumer in the event of a failure.
+     * 获取给定分区的最后提交的位移（无论是由当前进程还是其他进程提交的）。
+     * 返回的位移值将在消费者发生故障时用作其恢复位置。
      * <p>
-     * If any of the partitions requested do not exist, an exception would be thrown.
+     * 如果请求的任何分区不存在，将抛出异常。
      * <p>
-     * This call will do a remote call to get the latest committed offsets from the server, and will block until the
-     * committed offsets are gotten successfully, an unrecoverable error is encountered (in which case it is thrown to
-     * the caller), or the timeout specified by {@code default.api.timeout.ms} expires (in which case a
-     * {@link org.apache.kafka.common.errors.TimeoutException} is thrown to the caller).
+     * 此方法会向服务器发起远程调用以获取最新的已提交位移，并将阻塞直到以下情况之一发生：
+     * 1. 成功获取已提交的位移
+     * 2. 遇到不可恢复的错误（此时错误会抛给调用者）
+     * 3. 配置的{@code default.api.timeout.ms}超时时间到期（此时会向调用者抛出
+     * {@link org.apache.kafka.common.errors.TimeoutException}异常）
      *
-     * @param partitions The partitions to check
-     * @return The latest committed offsets for the given partitions; {@code null} will be returned for the
-     *         partition if there is no such message.
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException if the consumer attempts to fetch stable offsets
-     *             when the broker doesn't support this feature
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
-     * @throws org.apache.kafka.common.errors.TimeoutException if the committed offset cannot be found before
-     *             the timeout specified by {@code default.api.timeout.ms} expires.
+     * @param partitions 要检查的分区集合
+     * @return 给定分区的最新已提交位移；如果分区没有对应的消息，则返回{@code null}
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在调用此方法之前或期间调用了{@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果在调用此方法之前或期间调用线程被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败。详见异常说明
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果未被授权访问主题或配置的groupId。详见异常说明
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 如果消费者尝试获取稳定位移，但broker不支持此功能
+     * @throws org.apache.kafka.common.KafkaException 其他任何不可恢复的错误
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在配置的{@code default.api.timeout.ms}超时时间到期前无法找到已提交的位移
      */
     @Override
     public Map<TopicPartition, OffsetAndMetadata> committed(final Set<TopicPartition> partitions) {
+        // 将请求委托给实际的消费者实现类处理
         return delegate.committed(partitions);
     }
 
     /**
-     * Get the last committed offsets for the given partitions (whether the commit happened by this process or
-     * another). The returned offsets will be used as the position for the consumer in the event of a failure.
+     * 获取指定分区的最后提交位移（无论是由当前进程还是其他进程提交的）。
+     * 这些返回的位移值将在消费者发生故障时用作其恢复位置。
      * <p>
-     * If any of the partitions requested do not exist, an exception would be thrown.
+     * 工作原理：
+     * 1. 该方法会向Kafka服务器发起远程调用，获取最新的已提交位移
+     * 2. 如果请求的任何分区不存在，将抛出异常
+     * 3. 这是一个阻塞调用，会等待服务器响应
      * <p>
-     * This call will block to do a remote call to get the latest committed offsets from the server.
+     * 使用场景：
+     * - 在消费者重启或故障恢复时确定从哪个位置开始消费
+     * - 监控消费进度
+     * - 手动位移管理时获取当前提交点
      *
-     * @param partitions The partitions to check
-     * @param timeout  The maximum amount of time to await the latest committed offsets
-     * @return The latest committed offsets for the given partitions; {@code null} will be returned for the
-     *         partition if there is no such message.
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
-     * @throws org.apache.kafka.common.errors.TimeoutException if the committed offset cannot be found before
-     *             expiration of the timeout
+     * @param partitions 要检查的分区集合
+     * @param timeout 等待获取最新提交位移的最大时间
+     * @return 指定分区的最新提交位移映射表；如果某个分区没有提交过位移，则该分区对应的值为{@code null}
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在调用此方法之前或期间调用了{@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果调用线程在调用此方法之前或期间被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有访问主题或配置的groupId的权限
+     * @throws org.apache.kafka.common.KafkaException 发生其他不可恢复的错误时
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在超时时间内无法获取已提交的位移
      */
     @Override
     public Map<TopicPartition, OffsetAndMetadata> committed(final Set<TopicPartition> partitions, final Duration timeout) {
+        // 将请求委托给内部的delegate对象处理，它负责实际的位移获取逻辑
         return delegate.committed(partitions, timeout);
     }
 
     /**
-     * Determines the client's unique client instance ID used for telemetry. This ID is unique to
-     * this specific client instance and will not change after it is initially generated.
-     * The ID is useful for correlating client operations with telemetry sent to the broker and
-     * to its eventual monitoring destinations.
+     * 获取用于遥测的客户端唯一实例ID。这个ID对于当前客户端实例来说是唯一的，
+     * 一旦生成就不会改变。该ID用于关联客户端操作与发送到broker及其最终监控目标的遥测数据。
      * <p>
-     * If telemetry is enabled, this will first require a connection to the cluster to generate
-     * the unique client instance ID. This method waits up to {@code timeout} for the consumer
-     * client to complete the request.
+     * 工作原理：
+     * 1. 如果启用了遥测功能，方法首先需要连接到集群以生成唯一的客户端实例ID
+     * 2. 方法会等待最多{@code timeout}时间让消费者客户端完成请求
+     * 3. 生成的ID在客户端实例的整个生命周期内保持不变
      * <p>
-     * Client telemetry is controlled by the {@link ConsumerConfig#ENABLE_METRICS_PUSH_CONFIG}
-     * configuration option.
+     * 使用场景：
+     * - 跟踪和关联客户端操作
+     * - 监控特定客户端实例的行为
+     * - 排查问题时识别具体的客户端实例
+     * <p>
+     * 注意：客户端遥测功能由{@link ConsumerConfig#ENABLE_METRICS_PUSH_CONFIG}配置项控制
      *
-     * @param timeout The maximum time to wait for consumer client to determine its client instance ID.
-     *                The value must be non-negative. Specifying a timeout of zero means do not
-     *                wait for the initial request to complete if it hasn't already.
-     * @throws InterruptException If the thread is interrupted while blocked.
-     * @throws KafkaException If an unexpected error occurs while trying to determine the client
-     *                        instance ID, though this error does not necessarily imply the
-     *                        consumer client is otherwise unusable.
-     * @throws IllegalArgumentException If the {@code timeout} is negative.
-     * @throws IllegalStateException If telemetry is not enabled ie, config `{@code enable.metrics.push}`
-     *                               is set to `{@code false}`.
-     * @return The client's assigned instance id used for metrics collection.
+     * @param timeout 等待消费者客户端确定其客户端实例ID的最大时间。
+     *                该值必须非负。指定超时时间为零表示如果请求尚未完成则不等待。
+     * @throws InterruptException 如果线程在阻塞时被中断
+     * @throws KafkaException 如果在尝试确定客户端实例ID时发生意外错误
+     *                        （注意：此错误不一定表示消费者客户端不可用）
+     * @throws IllegalArgumentException 如果{@code timeout}为负数
+     * @throws IllegalStateException 如果未启用遥测功能（即配置`{@code enable.metrics.push}`
+     *                               设置为`{@code false}`）
+     * @return 用于指标收集的客户端分配实例ID
      */
     @Override
     public Uuid clientInstanceId(Duration timeout) {
+        // 将请求委托给内部的delegate对象处理，它负责实际的客户端实例ID获取逻辑
         return delegate.clientInstanceId(timeout);
     }
 
-  /**
-     * Get the metrics kept by the consumer
+    /**
+     * 获取消费者维护的所有监控指标
+     * <p>
+     * 该方法返回消费者内部收集的各种性能指标，包括但不限于：
+     * - 消息消费速率
+     * - 请求延迟
+     * - 网络I/O统计
+     * - 消费者组协调统计等
+     * <p>
+     * 这些指标对于监控消费者的运行状况和性能表现非常有用。
+     *
+     * @return 返回一个Map，其中：
+     *         - 键（MetricName）：指标的唯一标识符，包含指标名称、标签等信息
+     *         - 值（Metric）：具体的指标值，可以是数值型或其他类型
      */
     @Override
     public Map<MetricName, ? extends Metric> metrics() {
+        // 委托给内部实现类获取指标信息
         return delegate.metrics();
     }
 
     /**
-     * Get metadata about the partitions for a given topic. This method will issue a remote call to the server if it
-     * does not already have any metadata about the given topic.
+     * 获取指定主题的分区元数据信息
+     * <p>
+     * 该方法会返回主题的所有分区信息。如果消费者本地没有缓存该主题的元数据，
+     * 将会向Kafka服务器发起远程调用来获取。
      *
-     * @param topic The topic to get partition metadata for
+     * @param topic 要获取分区元数据的主题名称
      *
-     * @return The list of partitions, which will be empty when the given topic is not found
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the specified topic. See the exception for more details
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offset metadata could not be fetched before
-     *         the amount of time allocated by {@code default.api.timeout.ms} expires.
+     * @return 返回主题的分区信息列表。如果主题不存在，则返回空列表。
+     *         每个PartitionInfo对象包含：
+     *         - 分区号
+     *         - leader副本所在的broker
+     *         - 所有副本列表
+     *         - 同步副本列表等信息
+     *
+     * @throws org.apache.kafka.common.errors.WakeupException 
+     *             如果在方法执行期间调用了{@link #wakeup()}方法
+     * @throws org.apache.kafka.common.errors.InterruptException 
+     *             如果执行线程在方法执行期间被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 
+     *             如果认证失败。详见异常信息
+     * @throws org.apache.kafka.common.errors.AuthorizationException 
+     *             如果没有权限访问指定的主题。详见异常信息
+     * @throws org.apache.kafka.common.KafkaException 
+     *             发生其他不可恢复的错误时抛出
+     * @throws org.apache.kafka.common.errors.TimeoutException 
+     *             如果在{@code default.api.timeout.ms}配置的时间内无法获取元数据
      */
     @Override
     public List<PartitionInfo> partitionsFor(String topic) {
+        // 委托给内部实现类获取主题分区信息
         return delegate.partitionsFor(topic);
     }
 
     /**
-     * Get metadata about the partitions for a given topic. This method will issue a remote call to the server if it
-     * does not already have any metadata about the given topic.
+     * 获取指定主题的分区元数据信息，支持自定义超时时间
+     * <p>
+     * 该方法的功能与{@link #partitionsFor(String)}相同，但允许调用者指定等待元数据的最长时间。
+     * 如果在超时时间内无法获取元数据，将抛出TimeoutException异常。
      *
-     * @param topic The topic to get partition metadata for
-     * @param timeout The maximum of time to await topic metadata
+     * @param topic 要获取分区元数据的主题名称
+     * @param timeout 等待获取主题元数据的最长时间
      *
-     * @return The list of partitions, which will be empty when the given topic is not found
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the specified topic. See
-     *             the exception for more details
-     * @throws org.apache.kafka.common.errors.TimeoutException if topic metadata cannot be fetched before expiration
-     *             of the passed timeout
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
+     * @return 返回主题的分区信息列表。如果主题不存在，则返回空列表。
+     *         每个PartitionInfo对象包含：
+     *         - 分区号
+     *         - leader副本所在的broker
+     *         - 所有副本列表
+     *         - 同步副本列表等信息
+     *
+     * @throws org.apache.kafka.common.errors.WakeupException 
+     *             如果在方法执行期间调用了{@link #wakeup()}方法
+     * @throws org.apache.kafka.common.errors.InterruptException 
+     *             如果执行线程在方法执行期间被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 
+     *             如果认证失败。详见异常信息
+     * @throws org.apache.kafka.common.errors.AuthorizationException 
+     *             如果没有权限访问指定的主题。详见异常信息
+     * @throws org.apache.kafka.common.errors.TimeoutException 
+     *             如果在指定的超时时间内无法获取主题元数据
+     * @throws org.apache.kafka.common.KafkaException 
+     *             发生其他不可恢复的错误时抛出
      */
     @Override
     public List<PartitionInfo> partitionsFor(String topic, Duration timeout) {
+        // 委托给内部实现类获取主题分区信息，使用指定的超时时间
         return delegate.partitionsFor(topic, timeout);
     }
 
     /**
-     * Get metadata about partitions for all topics that the user is authorized to view. This method will issue a
-     * remote call to the server.
-
-     * @return The map of topics and its partitions
+     * 获取用户有权查看的所有主题的分区元数据信息。该方法会向服务器发起远程调用。
+     * 
+     * 实现说明：
+     * - 该方法使用默认的超时时间（由default.api.timeout.ms配置）
+     * - 通过委托对象（delegate）执行实际的元数据获取操作
+     * - 返回的Map中，key为主题名称，value为该主题的分区信息列表
      *
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offset metadata could not be fetched before
-     *         the amount of time allocated by {@code default.api.timeout.ms} expires.
+     * @return 包含主题及其分区信息的映射表，其中：
+     *         - key: 主题名称（String类型）
+     *         - value: 主题的分区信息列表（List<PartitionInfo>类型）
+     *
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在方法执行期间调用了{@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果执行线程在方法执行期间被中断
+     * @throws org.apache.kafka.common.KafkaException 发生其他不可恢复的错误时抛出
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在配置的超时时间（default.api.timeout.ms）内无法获取元数据
      */
     @Override
     public Map<String, List<PartitionInfo>> listTopics() {
+        // 调用委托对象的listTopics方法获取主题元数据
         return delegate.listTopics();
     }
 
     /**
-     * Get metadata about partitions for all topics that the user is authorized to view. This method will issue a
-     * remote call to the server.
+     * 获取用户有权查看的所有主题的分区元数据信息。该方法会向服务器发起远程调用。
+     * 
+     * 实现说明：
+     * - 该方法允许用户指定自定义的超时时间
+     * - 通过委托对象（delegate）执行实际的元数据获取操作
+     * - 超时时间到达后，如果仍未获取到元数据，将抛出TimeoutException
      *
-     * @param timeout The maximum time this operation will block to fetch topic metadata
+     * @param timeout 获取主题元数据的最大阻塞时间
      *
-     * @return The map of topics and its partitions
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.TimeoutException if the topic metadata could not be fetched before
-     *             expiration of the passed timeout
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors
+     * @return 包含主题及其分区信息的映射表，其中：
+     *         - key: 主题名称（String类型）
+     *         - value: 主题的分区信息列表（List<PartitionInfo>类型）
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在方法执行期间调用了{@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果执行线程在方法执行期间被中断
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在指定的超时时间内无法获取主题元数据
+     * @throws org.apache.kafka.common.KafkaException 发生其他不可恢复的错误时抛出
      */
     @Override
     public Map<String, List<PartitionInfo>> listTopics(Duration timeout) {
+        // 调用委托对象的listTopics方法，传入自定义超时时间
         return delegate.listTopics(timeout);
     }
 
     /**
-     * Suspend fetching from the requested partitions. Future calls to {@link #poll(Duration)} will not return
-     * any records from these partitions until they have been resumed using {@link #resume(Collection)}.
-     * Note that this method does not affect partition subscription. In particular, it does not cause a group
-     * rebalance when automatic assignment is used.
+     * 暂停从指定分区获取消息。在调用{@link #resume(Collection)}恢复这些分区之前，
+     * 后续的{@link #poll(Duration)}调用将不会返回这些分区的任何记录。
+     * 
+     * 实现说明：
+     * - 该方法不会影响分区的订阅状态
+     * - 在使用自动分配时，不会触发消费者组的重平衡
+     * - 暂停状态在重平衡后不会保留
+     * - 通过委托对象（delegate）执行实际的暂停操作
+     * 
+     * 使用场景：
+     * - 当消费者需要临时停止处理某些分区的消息时
+     * - 处理消息积压，需要给消费者一些时间来处理已获取的消息
+     * - 实现背压（back-pressure）机制
      *
-     * Note: Rebalance will not preserve the pause/resume state.
-     * @param partitions The partitions which should be paused
-     * @throws IllegalStateException if any of the provided partitions are not currently assigned to this consumer
+     * @param partitions 需要暂停的分区集合
+     * @throws IllegalStateException 如果指定的分区中有任何一个当前未分配给该消费者
      */
     @Override
     public void pause(Collection<TopicPartition> partitions) {
+        // 调用委托对象的pause方法暂停指定分区的消息获取
         delegate.pause(partitions);
     }
 
     /**
-     * Resume specified partitions which have been paused with {@link #pause(Collection)}. New calls to
-     * {@link #poll(Duration)} will return records from these partitions if there are any to be fetched.
-     * If the partitions were not previously paused, this method is a no-op.
-     * @param partitions The partitions which should be resumed
-     * @throws IllegalStateException if any of the provided partitions are not currently assigned to this consumer
+     * 恢复之前通过{@link #pause(Collection)}方法暂停的指定分区。
+     * <p>
+     * 功能说明：
+     * - 恢复后，新的{@link #poll(Duration)}调用将从这些分区获取记录（如果有可获取的记录）
+     * - 如果指定的分区之前未被暂停，则此方法不执行任何操作
+     * <p>
+     * 实现细节：
+     * - 通过委托对象（delegate）执行实际的恢复操作
+     * - 恢复操作是幂等的，多次恢复同一分区不会产生副作用
+     *
+     * @param partitions 需要恢复的分区集合
+     * @throws IllegalStateException 如果提供的任何分区当前未分配给此消费者
      */
     @Override
     public void resume(Collection<TopicPartition> partitions) {
+        // 调用委托对象的resume方法执行实际的分区恢复操作
         delegate.resume(partitions);
     }
 
     /**
-     * Add the provided application metric for subscription.
-     * This metric will be added to this client's metrics
-     * that are available for subscription and sent as
-     * telemetry data to the broker.
-     * The provided metric must map to an OTLP metric data point
-     * type in the OpenTelemetry v1 metrics protobuf message types.
-     * Specifically, the metric should be one of the following:
+     * 为订阅添加应用程序度量指标。
+     * <p>
+     * 功能说明：
+     * - 将提供的度量指标添加到客户端的指标集合中
+     * - 这些指标可用于订阅，并作为遥测数据发送给broker
+     * <p>
+     * 指标类型要求：
+     * 提供的指标必须映射到OpenTelemetry v1指标协议中的数据点类型，具体支持：
      * <ul>
      *  <li>
-     *     `Sum`: Monotonic total count meter (Counter). Suitable for metrics like total number of X, e.g., total bytes sent.
+     *     `Sum`类型：单调递增的计数器，适用于累计值，如：已发送的总字节数
      *  </li>
      *  <li>
-     *     `Gauge`: Non-monotonic current value meter (UpDownCounter). Suitable for metrics like current value of Y, e.g., current queue count.
+     *     `Gauge`类型：非单调的当前值计数器，适用于瞬时值，如：当前队列长度
      *  </li>
      * </ul>
-     * Metrics not matching these types are silently ignored.
-     * Executing this method for a previously registered metric is a benign operation and results in updating that metrics entry.
+     * <p>
+     * 注意事项：
+     * - 不匹配上述类型的指标将被静默忽略
+     * - 重复注册同一指标将更新该指标的条目，这是一个安全的操作
      *
-     * @param metric The application metric to register
+     * @param metric 要注册的应用程序度量指标
      */
     @Override
     public void registerMetricForSubscription(KafkaMetric metric) {
+        // 调用委托对象的registerMetricForSubscription方法注册度量指标
         delegate.registerMetricForSubscription(metric);
     }
 
     /**
-     * Remove the provided application metric for subscription.
-     * This metric is removed from this client's metrics
-     * and will not be available for subscription any longer.
-     * Executing this method with a metric that has not been registered is a
-     * benign operation and does not result in any action taken (no-op).
+     * 移除已订阅的应用程序度量指标。
+     * <p>
+     * 功能说明：
+     * - 从客户端的指标集合中移除指定的度量指标
+     * - 移除后，该指标将不再可用于订阅
+     * <p>
+     * 实现细节：
+     * - 通过委托对象执行实际的移除操作
+     * - 如果要移除的指标之前未注册，这是一个无害操作，不会执行任何实际动作
      *
-     * @param metric The application metric to remove
+     * @param metric 要移除的应用程序度量指标
      */
     @Override
     public void unregisterMetricFromSubscription(KafkaMetric metric) {
+        // 调用委托对象的unregisterMetricFromSubscription方法移除度量指标
         delegate.unregisterMetricFromSubscription(metric);
     }
 
     /**
-     * Get the set of partitions that were previously paused by a call to {@link #pause(Collection)}.
+     * 获取之前通过{@link #pause(Collection)}方法暂停的分区集合。
+     * <p>
+     * 功能说明：
+     * - 返回当前已暂停的所有分区
+     * - 这些分区在恢复之前不会通过poll操作返回任何记录
+     * <p>
+     * 实现细节：
+     * - 通过委托对象获取暂停的分区集合
+     * - 返回的集合是只读的，不能修改
      *
-     * @return The set of paused partitions
+     * @return 已暂停的分区集合
      */
     @Override
     public Set<TopicPartition> paused() {
+        // 调用委托对象的paused方法获取已暂停的分区集合
         return delegate.paused();
     }
 
