@@ -47,10 +47,6 @@ import static org.apache.kafka.common.config.ConfigDef.Range.between;
 import static org.apache.kafka.common.config.ConfigDef.ValidString.in;
 
 /**
- * Configuration for the Kafka Producer. Documentation for these configurations can be found in the <a
- * href="http://kafka.apache.org/documentation.html#producerconfigs">Kafka documentation</a>
- */
-/**
  * Kafka生产者的配置类。这个类包含了所有Kafka生产者客户端的配置项。
  * 详细的配置说明可以在Kafka官方文档中找到：http://kafka.apache.org/documentation.html#producerconfigs
  */
@@ -138,7 +134,15 @@ public class ProducerConfig extends AbstractConfig {
             "When set to 'true', the producer will try to adapt to broker performance and produce more messages to partitions hosted on faster brokers. "
             + "If 'false', producer will try to distribute messages uniformly. Note: this setting has no effect if a custom partitioner is used";
 
-    /** <code>partitioner.availability.timeout.ms</code> */
+    /** 
+     * <code>partitioner.availability.timeout.ms</code>
+     * 分区可用性超时配置
+     * 如果一个broker在这个时间内无法处理来自某个分区的生产请求，
+     * 分区器会将该分区标记为不可用
+     * 设置为0则禁用此功能
+     * 注意：当使用自定义分区器或禁用自适应分区（partitioner.adaptive.partitioning.enable=false）时，
+     * 此配置无效
+     */
     public static final String PARTITIONER_AVAILABILITY_TIMEOUT_MS_CONFIG = "partitioner.availability.timeout.ms";
     private static final String PARTITIONER_AVAILABILITY_TIMEOUT_MS_DOC =
             "If a broker cannot process produce requests from a partition for <code>" + PARTITIONER_AVAILABILITY_TIMEOUT_MS_CONFIG + "</code> time, "
@@ -146,13 +150,19 @@ public class ProducerConfig extends AbstractConfig {
             + "Note: this setting has no effect if a custom partitioner is used or <code>" + PARTITIONER_ADPATIVE_PARTITIONING_ENABLE_CONFIG
             + "</code> is set to 'false'";
 
-    /** <code>partitioner.ignore.keys</code> */
+    /** 
+     * <code>partitioner.ignore.keys</code>
+     * 是否忽略消息键进行分区分配
+     * 设置为true时，生产者不会使用消息的key来选择分区
+     * 设置为false时，当消息包含key时，生产者会根据key的哈希值选择分区
+     * 注意：使用自定义分区器时此配置无效
+     */
     public static final String PARTITIONER_IGNORE_KEYS_CONFIG = "partitioner.ignore.keys";
     private static final String PARTITIONER_IGNORE_KEYS_DOC = "When set to 'true' the producer won't use record keys to choose a partition. "
             + "If 'false', producer would choose a partition based on a hash of the key when a key is present. "
             + "Note: this setting has no effect if a custom partitioner is used.";
 
-        /** 
+   /** 
      * <code>acks</code>
      * 生产者需要服务端确认的机制配置，用于控制消息的可靠性：
      * acks=0：生产者不等待服务端确认，消息发出即认为成功，可能丢失数据
@@ -180,7 +190,7 @@ public class ProducerConfig extends AbstractConfig {
                                            + "Note that enabling idempotence requires this config value to be 'all'."
                                            + " If conflicting configurations are set and idempotence is not explicitly enabled, idempotence is disabled.";
 
-        /** 
+   /** 
      * <code>linger.ms</code>
      * 发送延迟时间配置
      * 生产者在发送批次之前等待更多消息加入批次的时间
@@ -201,6 +211,13 @@ public class ProducerConfig extends AbstractConfig {
                                                 + "The default changed from 0 to 5 in Apache Kafka 4.0 as the efficiency gains from larger batches typically result in "
                                                 + "similar or lower producer latency despite the increased linger.";
 
+   /** 
+     * <code>request.timeout.ms</code>
+     * 生产者等待请求响应的最大时间
+     * 这个值应该比broker端的replica.lag.time.max.ms大
+     * 以减少因不必要的生产者重试导致的消息重复
+     */
+    public static final String REQUEST_TIMEOUT_MS_CONFIG = CommonClientConfigs.REQUEST_TIMEOUT_MS_CONFIG;
     private static final String REQUEST_TIMEOUT_MS_DOC = CommonClientConfigs.REQUEST_TIMEOUT_MS_DOC
         + " This should be larger than <code>replica.lag.time.max.ms</code> (a broker configuration)"
         + " to reduce the possibility of message duplication due to unnecessary producer retries.";
@@ -221,6 +238,11 @@ public class ProducerConfig extends AbstractConfig {
      * 同时也是未压缩的记录批次大小的上限
      */
     public static final String MAX_REQUEST_SIZE_CONFIG = "max.request.size";
+    private static final String MAX_REQUEST_SIZE_DOC =
+        "The maximum size of a request in bytes. This setting will limit the number of record " +
+        "batches the producer will send in a single request to avoid sending huge requests. " +
+        "This is also effectively a cap on the maximum uncompressed record batch size. Note that the server " +
+        "has its own cap on the record batch size (after compression if compression is enabled) which may be different from this.";
 
     /** 
      * <code>delivery.timeout.ms</code>
@@ -228,14 +250,15 @@ public class ProducerConfig extends AbstractConfig {
      * 包括重试时间，这个值应该大于request.timeout.ms + linger.ms
      */
     public static final String DELIVERY_TIMEOUT_MS_CONFIG = "delivery.timeout.ms";
+    private static final String DELIVERY_TIMEOUT_MS_DOC = "An upper bound on the time to report success or failure "
+    + "after a call to <code>send()</code> returns. This limits the total time that a record will be delayed "
+    + "prior to sending, the time to await acknowledgement from the broker (if expected), and the time allowed "
+    + "for retriable send failures. The producer may report failure to send a record earlier than this config if "
+    + "either an unrecoverable error is encountered, the retries have been exhausted, "
+    + "or the record is added to a batch which reached an earlier delivery expiration deadline. "
+    + "The value of this config should be greater than or equal to the sum of <code>" + REQUEST_TIMEOUT_MS_CONFIG + "</code> "
+    + "and <code>" + LINGER_MS_CONFIG + "</code>.";
 
-    /** 
-     * <code>request.timeout.ms</code>
-     * 生产者等待请求响应的最大时间
-     * 这个值应该比broker端的replica.lag.time.max.ms大
-     * 以减少因不必要的生产者重试导致的消息重复
-     */
-    public static final String REQUEST_TIMEOUT_MS_CONFIG = CommonClientConfigs.REQUEST_TIMEOUT_MS_CONFIG;
 
     /** 
      * <code>max.block.ms</code>
@@ -245,34 +268,44 @@ public class ProducerConfig extends AbstractConfig {
      */
     public static final String MAX_BLOCK_MS_CONFIG = "max.block.ms";
 
-    private static final String DELIVERY_TIMEOUT_MS_DOC = "An upper bound on the time to report success or failure "
-            + "after a call to <code>send()</code> returns. This limits the total time that a record will be delayed "
-            + "prior to sending, the time to await acknowledgement from the broker (if expected), and the time allowed "
-            + "for retriable send failures. The producer may report failure to send a record earlier than this config if "
-            + "either an unrecoverable error is encountered, the retries have been exhausted, "
-            + "or the record is added to a batch which reached an earlier delivery expiration deadline. "
-            + "The value of this config should be greater than or equal to the sum of <code>" + REQUEST_TIMEOUT_MS_CONFIG + "</code> "
-            + "and <code>" + LINGER_MS_CONFIG + "</code>.";
-
-    /** <code>client.id</code> */
+    /** 
+     * <code>client.id</code>
+     * 生产者客户端的标识ID
+     * 用于在服务端日志中识别消息来源，便于追踪调试
+     * 如果不设置则自动生成一个
+     */
     public static final String CLIENT_ID_CONFIG = CommonClientConfigs.CLIENT_ID_CONFIG;
 
-    /** <code>send.buffer.bytes</code> */
+    /** 
+     * <code>send.buffer.bytes</code>
+     * TCP发送缓冲区大小
+     * 如果设置为-1，则使用操作系统默认值
+     * 建议在高吞吐量场景下适当增大此值
+     */
     public static final String SEND_BUFFER_CONFIG = CommonClientConfigs.SEND_BUFFER_CONFIG;
 
-    /** <code>receive.buffer.bytes</code> */
+    /** 
+     * <code>receive.buffer.bytes</code>
+     * TCP接收缓冲区大小
+     * 如果设置为-1，则使用操作系统默认值
+     * 建议在高吞吐量场景下适当增大此值
+     */
     public static final String RECEIVE_BUFFER_CONFIG = CommonClientConfigs.RECEIVE_BUFFER_CONFIG;
 
-    private static final String MAX_REQUEST_SIZE_DOC =
-        "The maximum size of a request in bytes. This setting will limit the number of record " +
-        "batches the producer will send in a single request to avoid sending huge requests. " +
-        "This is also effectively a cap on the maximum uncompressed record batch size. Note that the server " +
-        "has its own cap on the record batch size (after compression if compression is enabled) which may be different from this.";
-
-    /** <code>reconnect.backoff.ms</code> */
+    /** 
+     * <code>reconnect.backoff.ms</code>
+     * 重新连接主机之前的等待时间
+     * 避免在连接失败时立即重试，这样可以减轻服务器负载
+     * 支持指数退避机制，实际等待时间会随着重试次数增加
+     */
     public static final String RECONNECT_BACKOFF_MS_CONFIG = CommonClientConfigs.RECONNECT_BACKOFF_MS_CONFIG;
 
-    /** <code>reconnect.backoff.max.ms</code> */
+    /** 
+     * <code>reconnect.backoff.max.ms</code>
+     * 重连退避时间的最大值
+     * 用于限制指数退避机制的最大等待时间
+     * 防止在网络问题持续存在时等待时间过长
+     */
     public static final String RECONNECT_BACKOFF_MAX_MS_CONFIG = CommonClientConfigs.RECONNECT_BACKOFF_MAX_MS_CONFIG;
 
     private static final String MAX_BLOCK_MS_DOC = "The configuration controls how long the <code>KafkaProducer</code>'s <code>send()</code>, <code>partitionsFor()</code>, "
@@ -291,16 +324,31 @@ public class ProducerConfig extends AbstractConfig {
                                                     + "not all memory the producer uses is used for buffering. Some additional memory will be used for compression (if "
                                                     + "compression is enabled) as well as for maintaining in-flight requests.";
 
-    /** <code>retry.backoff.ms</code> */
+    /** 
+     * <code>retry.backoff.ms</code>
+     * 重试发送失败消息之前的等待时间
+     * 避免在发送失败时立即重试，这样可以减轻服务器负载
+     * 支持指数退避机制，实际等待时间会随着重试次数增加
+     */
     public static final String RETRY_BACKOFF_MS_CONFIG = CommonClientConfigs.RETRY_BACKOFF_MS_CONFIG;
 
-    /** <code>retry.backoff.max.ms</code> */
+    /** 
+     * <code>retry.backoff.max.ms</code>
+     * 重试退避时间的最大值
+     * 用于限制指数退避机制的最大等待时间
+     * 防止在发送失败持续存在时等待时间过长
+     */
     public static final String RETRY_BACKOFF_MAX_MS_CONFIG = CommonClientConfigs.RETRY_BACKOFF_MAX_MS_CONFIG;
 
-    /**
+    /** 
      * <code>enable.metrics.push</code>
+     * 是否启用指标推送功能
+     * 当设置为true时，生产者会主动将性能指标推送到监控系统
+     * 这对于大规模集群的监控和性能调优非常有用
+     * 默认值为false，表示不启用指标推送
      */
     public static final String ENABLE_METRICS_PUSH_CONFIG = CommonClientConfigs.ENABLE_METRICS_PUSH_CONFIG;
+    // 使用通用客户端配置中的文档说明
     public static final String ENABLE_METRICS_PUSH_DOC = CommonClientConfigs.ENABLE_METRICS_PUSH_DOC;
 
     /** 
@@ -311,43 +359,105 @@ public class ProducerConfig extends AbstractConfig {
      * 默认值是none(不压缩)
      */
     public static final String COMPRESSION_TYPE_CONFIG = "compression.type";
-
-
     private static final String COMPRESSION_TYPE_DOC = "The compression type for all data generated by the producer. The default is none (i.e. no compression). Valid "
                                                        + " values are <code>none</code>, <code>gzip</code>, <code>snappy</code>, <code>lz4</code>, or <code>zstd</code>. "
                                                        + "Compression is of full batches of data, so the efficacy of batching will also impact the compression ratio (more batching means better compression).";
 
-    /** <code>compression.gzip.level</code> */
+    /** 
+     * <code>compression.gzip.level</code>
+     * GZIP压缩级别配置
+     * 当compression.type设置为gzip时，此配置决定压缩级别
+     * 可选值范围：-1到9
+     * -1：默认压缩级别（通常是6）
+     * 0：不压缩
+     * 1：最快压缩，压缩比最低
+     * 9：最慢压缩，压缩比最高
+     * 建议：对于对延迟敏感的场景使用较低的压缩级别（1-3），
+     * 对于需要节省网络带宽的场景使用较高的压缩级别（7-9）
+     */
     public static final String COMPRESSION_GZIP_LEVEL_CONFIG = "compression.gzip.level";
     private static final String COMPRESSION_GZIP_LEVEL_DOC = "The compression level to use if " + COMPRESSION_TYPE_CONFIG + " is set to <code>gzip</code>.";
 
-    /** <code>compression.lz4.level</code> */
+    /** 
+     * <code>compression.lz4.level</code>
+     * LZ4压缩级别配置
+     * 当compression.type设置为lz4时，此配置决定压缩级别
+     * 可选值范围：1到12（LZ4-HC压缩模式）
+     * 值越大，压缩比越高，但CPU消耗也越大
+     * LZ4以其快速的压缩速度著称，即使在较低压缩级别下也能提供不错的压缩比
+     * 建议：大多数场景使用默认值即可，如果CPU资源充足且需要更高压缩比，
+     * 可以考虑使用更高的压缩级别
+     */
     public static final String COMPRESSION_LZ4_LEVEL_CONFIG = "compression.lz4.level";
     private static final String COMPRESSION_LZ4_LEVEL_DOC = "The compression level to use if " + COMPRESSION_TYPE_CONFIG + " is set to <code>lz4</code>.";
 
-    /** <code>compression.zstd.level</code> */
+    /** 
+     * <code>compression.zstd.level</code>
+     * Zstandard压缩级别配置
+     * 当compression.type设置为zstd时，此配置决定压缩级别
+     * 可选值范围：-131072到22
+     * 负值：启用特殊的实时压缩模式，绝对值越大，压缩速度越快，但压缩比越低
+     * 1-22：普通压缩模式，值越大压缩比越高，但压缩速度越慢
+     * 建议：
+     * - 对于实时性要求高的场景，可以使用负值
+     * - 对于普通场景，使用1-3级别可以获得较好的压缩速度和压缩比平衡
+     * - 对于存档或需要极高压缩比的场景，可以使用更高级别（10-22）
+     */
     public static final String COMPRESSION_ZSTD_LEVEL_CONFIG = "compression.zstd.level";
     private static final String COMPRESSION_ZSTD_LEVEL_DOC = "The compression level to use if " + COMPRESSION_TYPE_CONFIG + " is set to <code>zstd</code>.";
 
-    /** <code>metrics.sample.window.ms</code> */
+    /** 
+     * <code>metrics.sample.window.ms</code>
+     * 性能指标采样的时间窗口大小
+     * 用于计算性能指标的滑动窗口周期
+     * 例如吞吐量等指标会在此窗口内进行计算
+     */
     public static final String METRICS_SAMPLE_WINDOW_MS_CONFIG = CommonClientConfigs.METRICS_SAMPLE_WINDOW_MS_CONFIG;
 
-    /** <code>metrics.num.samples</code> */
+    /** 
+     * <code>metrics.num.samples</code>
+     * 性能指标采样的样本数量
+     * 用于维护性能指标的样本数
+     * 样本数越多，指标越平滑，但消耗的内存也越多
+     */
     public static final String METRICS_NUM_SAMPLES_CONFIG = CommonClientConfigs.METRICS_NUM_SAMPLES_CONFIG;
 
-    /**
+    /** 
      * <code>metrics.recording.level</code>
+     * 指标记录级别配置
+     * 控制生产者的指标收集详细程度，可选值：
+     * - INFO：只记录基本指标，如消息发送速率、延迟等
+     * - DEBUG：记录更详细的指标，包括每个主题和分区级别的指标
+     * 默认为INFO级别，在需要更细粒度监控时可以设置为DEBUG
+     * 注意：DEBUG级别会产生更多的指标数据，可能增加JMX开销
      */
     public static final String METRICS_RECORDING_LEVEL_CONFIG = CommonClientConfigs.METRICS_RECORDING_LEVEL_CONFIG;
 
-    /** <code>metric.reporters</code> */
+    /** 
+     * <code>metric.reporters</code>
+     * 指标报告器的实现类列表
+     * 用于收集和报告生产者的性能指标
+     * 可以实现自定义的指标收集器
+     */
     public static final String METRIC_REPORTER_CLASSES_CONFIG = CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG;
 
-    // max.in.flight.requests.per.connection should be less than or equal to 5 when idempotence producer enabled to ensure message ordering
-    // The value 5 is aligned with ProducerStateEntry#NUM_BATCHES_TO_RETAIN.
+    /** 
+     * 当启用生产者幂等性时，每个连接的最大未完成请求数必须小于或等于5，这是为了确保消息顺序。
+     * 这个限制值5与ProducerStateEntry#NUM_BATCHES_TO_RETAIN保持一致，原因如下：
+     * 1. 幂等性生产者需要在服务端维护消息状态，以检测重复消息
+     * 2. 服务端为每个生产者维护一个固定大小的状态缓存，大小由NUM_BATCHES_TO_RETAIN决定
+     * 3. 如果未完成请求数超过这个限制，可能导致服务端状态缓存溢出，影响幂等性保证
+     * 4. 同时这个限制也有助于减少内存使用和网络拥塞
+     */
     private static final int MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION_FOR_IDEMPOTENCE = 5;
 
-    /** <code>max.in.flight.requests.per.connection</code> */
+    /** 
+     * <code>max.in.flight.requests.per.connection</code>
+     * 每个连接最大的未确认请求数
+     * 限制客户端在单个连接上能够发送的未确认请求数量
+     * 当启用幂等性时，此值必须小于等于5，以保证消息顺序
+     * 如果未启用幂等性且此值大于1，可能会因为重试导致消息乱序
+     */
     public static final String MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION = "max.in.flight.requests.per.connection";
     private static final String MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION_DOC = "The maximum number of unacknowledged requests the client will send on a single connection before blocking."
                                                                             + " Note that if this configuration is set to be greater than 1 and <code>enable.idempotence</code> is set to false, there is a risk of"
@@ -356,7 +466,20 @@ public class ProducerConfig extends AbstractConfig {
                                                                             + " Additionally, enabling idempotence requires the value of this configuration to be less than or equal to " + MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION_FOR_IDEMPOTENCE + ","
                                                                             + " because broker only retains at most 5 batches for each producer. If the value is more than 5, previous batches may be removed on broker side.";
 
-    /** <code>retries</code> */
+    /** 
+     * <code>retries</code>
+     * 重试次数配置
+     * 当设置大于0的值时，如果消息发送失败且错误是可重试的，客户端会重新发送消息
+     * 注意事项：
+     * 1. 重试行为与客户端收到错误后手动重发消息的效果相同
+     * 2. 如果在重试耗尽前delivery.timeout.ms配置的超时时间到期，发送请求会失败
+     * 3. 建议不要直接设置此配置，而是通过delivery.timeout.ms来控制重试行为
+     * 4. 启用幂等性时，此值必须大于0
+     * 5. 如果设置了冲突的配置且未显式启用幂等性，则幂等性将被禁用
+     * 6. 当enable.idempotence=false且max.in.flight.requests.per.connection>1时，
+     *    允许重试可能会改变消息顺序，因为如果向同一分区发送两个批次，第一个失败并重试，
+     *    但第二个成功，则第二个批次的消息可能先出现
+     */
     public static final String RETRIES_CONFIG = CommonClientConfigs.RETRIES_CONFIG;
     private static final String RETRIES_DOC = "Setting a value greater than zero will cause the client to resend any record whose send fails with a potentially transient error."
             + " Note that this retry is no different than if the client resent the record upon receiving the error."
@@ -372,24 +495,62 @@ public class ProducerConfig extends AbstractConfig {
             + " ordering of records because if two batches are sent to a single partition, and the first fails and is retried but the second"
             + " succeeds, then the records in the second batch may appear first.";
 
-    /** <code>key.serializer</code> */
+
+    /** 
+     * <code>key.serializer</code>
+     * 消息键的序列化器类
+     * 必须实现org.apache.kafka.common.serialization.Serializer接口
+     * 用于将消息的key转换为字节数组以便网络传输
+     */
     public static final String KEY_SERIALIZER_CLASS_CONFIG = "key.serializer";
     public static final String KEY_SERIALIZER_CLASS_DOC = "Serializer class for key that implements the <code>org.apache.kafka.common.serialization.Serializer</code> interface.";
 
-    /** <code>value.serializer</code> */
+    /** 
+     * <code>value.serializer</code>
+     * 消息值的序列化器类
+     * 必须实现org.apache.kafka.common.serialization.Serializer接口
+     * 用于将消息的value转换为字节数组以便网络传输
+     */
     public static final String VALUE_SERIALIZER_CLASS_CONFIG = "value.serializer";
     public static final String VALUE_SERIALIZER_CLASS_DOC = "Serializer class for value that implements the <code>org.apache.kafka.common.serialization.Serializer</code> interface.";
 
-    /** <code>socket.connection.setup.timeout.ms</code> */
+    /** 
+     * <code>socket.connection.setup.timeout.ms</code>
+     * Socket连接建立超时时间
+     * 建立TCP连接的超时时间，如果在此时间内无法建立连接，则连接失败
+     */
     public static final String SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG = CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG;
 
-    /** <code>socket.connection.setup.timeout.max.ms</code> */
+    /** 
+     * <code>socket.connection.setup.timeout.max.ms</code>
+     * Socket连接建立最大超时时间
+     * 在重试连接时，超时时间会指数增加，此配置限制了最大超时时间
+     */
     public static final String SOCKET_CONNECTION_SETUP_TIMEOUT_MAX_MS_CONFIG = CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MAX_MS_CONFIG;
 
-    /** <code>connections.max.idle.ms</code> */
+    /** 
+     * <code>connections.max.idle.ms</code>
+     * 连接最大空闲时间
+     * 如果连接空闲超过此时间，将被关闭
+     * 这有助于释放不活跃的连接占用的资源
+     */
     public static final String CONNECTIONS_MAX_IDLE_MS_CONFIG = CommonClientConfigs.CONNECTIONS_MAX_IDLE_MS_CONFIG;
 
-    /** <code>partitioner.class</code> */
+    /** 
+     * <code>partitioner.class</code>
+     * 分区器类配置
+     * 决定消息发送到哪个分区的策略类。可用选项：
+     * 1. 默认分区器（不设置此配置时使用）：
+     *    - 当分区中累积的数据达到batch.size时发送
+     *    - 如果指定了key，根据key的哈希值选择分区
+     *    - 如果没有key，使用粘性分区策略（当达到batch.size时更换分区）
+     * 2. RoundRobinPartitioner：
+     *    - 轮询策略，消息依次发送到不同分区
+     *    - 不考虑消息是否有key
+     *    - 注意：新建批次时可能导致分布不均（参见KAFKA-9965）
+     * 3. 自定义分区器：
+     *    - 实现Partitioner接口来自定义分区逻辑
+     */
     public static final String PARTITIONER_CLASS_CONFIG = "partitioner.class";
     private static final String PARTITIONER_CLASS_DOC = "Determines which partition to send a record to when records are produced. Available options are:" +
             "<ul>" +
@@ -408,13 +569,34 @@ public class ProducerConfig extends AbstractConfig {
             "</ul>" +
             "<p>Implementing the <code>org.apache.kafka.clients.producer.Partitioner</code> interface allows you to plug in a custom partitioner.";
 
-    /** <code>interceptor.classes</code> */
+    /** 
+     * <code>interceptor.classes</code>
+     * 拦截器类配置
+     * 指定一组拦截器类，用于在消息发送到Kafka集群之前进行拦截处理
+     * 通过实现ProducerInterceptor接口，可以：
+     * 1. 在消息发送前修改或转换消息
+     * 2. 监控和跟踪消息发送过程
+     * 3. 实现自定义的消息处理逻辑
+     * 默认情况下没有配置任何拦截器
+     */
     public static final String INTERCEPTOR_CLASSES_CONFIG = "interceptor.classes";
     public static final String INTERCEPTOR_CLASSES_DOC = "A list of classes to use as interceptors. "
                                                         + "Implementing the <code>org.apache.kafka.clients.producer.ProducerInterceptor</code> interface allows you to intercept (and possibly mutate) the records "
                                                         + "received by the producer before they are published to the Kafka cluster. By default, there are no interceptors.";
 
-    /** <code>enable.idempotence</code> */
+    /** 
+     * <code>enable.idempotence</code>
+     * 是否启用幂等性
+     * 当设置为true时，生产者确保每条消息只会被写入一次，即使发生重试
+     * 启用幂等性的要求：
+     * 1. max.in.flight.requests.per.connection必须小于等于5
+     * 2. retries必须大于0
+     * 3. acks必须设置为'all'
+     * 重要说明：
+     * 1. 如果没有设置冲突配置，幂等性默认启用
+     * 2. 如果设置了冲突配置且未显式启用幂等性，则幂等性被禁用
+     * 3. 如果显式启用幂等性但存在冲突配置，将抛出ConfigException
+     */
     public static final String ENABLE_IDEMPOTENCE_CONFIG = "enable.idempotence";
     public static final String ENABLE_IDEMPOTENCE_DOC = "When set to 'true', the producer will ensure that exactly one copy of each message is written in the stream. If 'false', producer "
                                                         + "retries due to broker failures, etc., may write duplicates of the retried message in the stream. "
@@ -426,29 +608,69 @@ public class ProducerConfig extends AbstractConfig {
                                                         + "If conflicting configurations are set and idempotence is not explicitly enabled, idempotence is disabled. "
                                                         + "If idempotence is explicitly enabled and conflicting configurations are set, a <code>ConfigException</code> is thrown.";
 
-    /** <code> transaction.timeout.ms </code> */
+    /** 
+     * <code>transaction.timeout.ms</code>
+     * 事务超时时间
+     * 事务保持打开状态的最大时间，超过此时间协调器会主动中止事务
+     * 事务开始时间点是添加第一个分区时
+     * 注意：如果此值大于broker的transaction.max.timeout.ms设置，
+     * 请求会失败并抛出InvalidTxnTimeoutException异常
+     */
     public static final String TRANSACTION_TIMEOUT_CONFIG = "transaction.timeout.ms";
     public static final String TRANSACTION_TIMEOUT_DOC = "The maximum amount of time in milliseconds that a transaction will remain open before the coordinator proactively aborts it. " +
             "The start of the transaction is set at the time that the first partition is added to it. " +
             "If this value is larger than the <code>transaction.max.timeout.ms</code> setting in the broker, the request will fail with a <code>InvalidTxnTimeoutException</code> error.";
 
-    /** <code> transactional.id </code> */
+    /** 
+     * <code>transactional.id</code>
+     * 事务ID配置
+     * 用于实现跨多个生产者会话的可靠性语义
+     * 重要特性：
+     * 1. 允许确保使用相同事务ID的事务在开始新事务前已完成
+     * 2. 如果未提供事务ID，生产者只能使用幂等性投递
+     * 3. 配置事务ID会自动启用幂等性
+     * 4. 默认不配置事务ID，意味着不能使用事务
+     * 注意：默认情况下，事务需要至少三个broker的集群（生产环境推荐）
+     * 开发环境可以通过调整broker的transaction.state.log.replication.factor来改变这个要求
+     */
     public static final String TRANSACTIONAL_ID_CONFIG = "transactional.id";
     public static final String TRANSACTIONAL_ID_DOC = "The TransactionalId to use for transactional delivery. This enables reliability semantics which span multiple producer sessions since it allows the client to guarantee that transactions using the same TransactionalId have been completed prior to starting any new transactions. If no TransactionalId is provided, then the producer is limited to idempotent delivery. " +
             "If a TransactionalId is configured, <code>enable.idempotence</code> is implied. " +
             "By default the TransactionId is not configured, which means transactions cannot be used. " +
             "Note that, by default, transactions require a cluster of at least three brokers which is the recommended setting for production; for development you can change this, by adjusting broker setting <code>transaction.state.log.replication.factor</code>.";
 
-    /**
+    /** 
      * <code>security.providers</code>
+     * 自定义安全提供者配置
+     * 用于指定一组自定义的安全提供者实现类，这些提供者用于实现特定的安全机制
+     * 配置格式为：provider_name:provider_class;provider_name2:provider_class2
+     * 例如："CUSTOM_PROVIDER:com.example.CustomProvider"
+     * 
+     * 使用场景：
+     * 1. 需要使用自定义加密算法时
+     * 2. 需要实现特定的安全认证机制时
+     * 3. 需要扩展Kafka默认的安全功能时
+     * 
+     * 注意事项：
+     * 1. 提供者类必须实现java.security.Provider接口
+     * 2. 多个提供者按照配置顺序进行优先级排序
+     * 3. 自定义提供者会在JVM默认提供者之前被加载
      */
     public static final String SECURITY_PROVIDERS_CONFIG = SecurityConfig.SECURITY_PROVIDERS_CONFIG;
     private static final String SECURITY_PROVIDERS_DOC = SecurityConfig.SECURITY_PROVIDERS_DOC;
 
+    // 用于生成唯一的生产者客户端ID的计数器
     private static final AtomicInteger PRODUCER_CLIENT_ID_SEQUENCE = new AtomicInteger(1);
 
+    /**
+     * 静态初始化块，用于定义所有Kafka生产者的配置项
+     * 使用ConfigDef来定义每个配置的类型、默认值、验证规则和重要性级别
+     */
     static {
-        CONFIG = new ConfigDef().define(BOOTSTRAP_SERVERS_CONFIG, Type.LIST, Collections.emptyList(), new ConfigDef.NonNullValidator(), Importance.HIGH, CommonClientConfigs.BOOTSTRAP_SERVERS_DOC)
+        // 初始化配置定义对象
+        CONFIG = new ConfigDef()
+                // 定义bootstrap.servers配置：Kafka集群连接地址列表
+                .define(BOOTSTRAP_SERVERS_CONFIG, Type.LIST, Collections.emptyList(), new ConfigDef.NonNullValidator(), Importance.HIGH, CommonClientConfigs.BOOTSTRAP_SERVERS_DOC)
                                 .define(CLIENT_DNS_LOOKUP_CONFIG,
                                         Type.STRING,
                                         ClientDnsLookup.USE_ALL_DNS_IPS.toString(),
@@ -625,32 +847,67 @@ public class ProducerConfig extends AbstractConfig {
                                         CommonClientConfigs.METADATA_RECOVERY_REBOOTSTRAP_TRIGGER_MS_DOC);
     }
 
+    /**
+     * 处理解析后的配置
+     * 该方法在配置解析完成后被调用，用于执行额外的配置验证和处理
+     *
+     * @param parsedValues 解析后的配置值Map
+     * @return 处理后的配置值Map
+     */
     @Override
     protected Map<String, Object> postProcessParsedConfig(final Map<String, Object> parsedValues) {
+        // 验证SASL机制配置
         CommonClientConfigs.postValidateSaslMechanismConfig(this);
+        // 检查并警告禁用指数退避
         CommonClientConfigs.warnDisablingExponentialBackoff(this);
+        // 处理重连退避相关配置
         Map<String, Object> refinedConfigs = CommonClientConfigs.postProcessReconnectBackoffConfigs(this, parsedValues);
+        // 处理并验证幂等性相关配置
         postProcessAndValidateIdempotenceConfigs(refinedConfigs);
+        // 处理客户端ID配置
         maybeOverrideClientId(refinedConfigs);
         return refinedConfigs;
     }
 
+    /**
+     * 处理客户端ID配置
+     * 如果用户没有配置client.id，则自动生成一个
+     * 生成规则：如果配置了transactional.id，使用其值作为后缀；否则使用自增序号
+     *
+     * @param configs 配置Map
+     */
     private void maybeOverrideClientId(final Map<String, Object> configs) {
         String refinedClientId;
+        // 检查用户是否配置了client.id
         boolean userConfiguredClientId = this.originals().containsKey(CLIENT_ID_CONFIG);
         if (userConfiguredClientId) {
+            // 如果用户配置了，直接使用用户配置的值
             refinedClientId = this.getString(CLIENT_ID_CONFIG);
         } else {
+            // 如果用户没有配置，则自动生成一个client.id  格式为：producer-[<transactionalId>|<序号>]
             String transactionalId = this.getString(TRANSACTIONAL_ID_CONFIG);
             refinedClientId = "producer-" + (transactionalId != null ? transactionalId : PRODUCER_CLIENT_ID_SEQUENCE.getAndIncrement());
         }
         configs.put(CLIENT_ID_CONFIG, refinedClientId);
     }
 
+    /**
+     * 处理和验证幂等性相关的配置
+     * 主要检查：
+     * 1. retries配置是否合适
+     * 2. acks配置是否为'all'
+     * 3. max.in.flight.requests.per.connection是否不超过5
+     * 4. 事务ID配置是否合法
+     *
+     * @param configs 配置Map
+     */
     private void postProcessAndValidateIdempotenceConfigs(final Map<String, Object> configs) {
+        // 获取原始配置
         final Map<String, Object> originalConfigs = this.originals();
+        // 解析acks配置
         final String acksStr = parseAcks(this.getString(ACKS_CONFIG));
         configs.put(ACKS_CONFIG, acksStr);
+        // 检查用户是否显式配置了enable.idempotence
         final boolean userConfiguredIdempotence = this.originals().containsKey(ENABLE_IDEMPOTENCE_CONFIG);
         boolean idempotenceEnabled = this.getBoolean(ENABLE_IDEMPOTENCE_CONFIG);
         boolean shouldDisableIdempotence = false;
@@ -695,27 +952,55 @@ public class ProducerConfig extends AbstractConfig {
         }
     }
 
+    /**
+     * 解析acks配置值
+     * 将字符串配置值转换为标准格式：
+     * - "all" 转换为 "-1"
+     * - 数字字符串保持不变
+     * - 非法值抛出ConfigException
+     *
+     * @param acksString acks配置的字符串值
+     * @return 标准化后的acks值
+     * @throws ConfigException 当配置值非法时抛出
+     */
     private static String parseAcks(String acksString) {
         try {
+            // 去除空白字符并统一处理"all"值
             return acksString.trim().equalsIgnoreCase("all") ? "-1" : Short.parseShort(acksString.trim()) + "";
         } catch (NumberFormatException e) {
             throw new ConfigException("Invalid configuration value for 'acks': " + acksString);
         }
     }
 
+    /**
+     * 将序列化器添加到配置中
+     * 如果提供了序列化器实例，使用其类名作为配置值
+     * 如果没有提供实例且配置中也没有指定，则抛出异常
+     *
+     * @param configs 原始配置Map
+     * @param keySerializer 键序列化器实例，可以为null
+     * @param valueSerializer 值序列化器实例，可以为null
+     * @return 添加了序列化器配置的新Map
+     * @throws ConfigException 当序列化器配置缺失时抛出
+     */
     static Map<String, Object> appendSerializerToConfig(Map<String, Object> configs,
             Serializer<?> keySerializer,
             Serializer<?> valueSerializer) {
-        // validate serializer configuration, if the passed serializer instance is null, the user must explicitly set a valid serializer configuration value
+        // 创建新的配置Map，避免修改原始配置
         Map<String, Object> newConfigs = new HashMap<>(configs);
+        
+        // 处理键序列化器配置
         if (keySerializer != null)
             newConfigs.put(KEY_SERIALIZER_CLASS_CONFIG, keySerializer.getClass());
         else if (newConfigs.get(KEY_SERIALIZER_CLASS_CONFIG) == null)
             throw new ConfigException(KEY_SERIALIZER_CLASS_CONFIG, null, "must be non-null.");
+        
+        // 处理值序列化器配置
         if (valueSerializer != null)
             newConfigs.put(VALUE_SERIALIZER_CLASS_CONFIG, valueSerializer.getClass());
         else if (newConfigs.get(VALUE_SERIALIZER_CLASS_CONFIG) == null)
             throw new ConfigException(VALUE_SERIALIZER_CLASS_CONFIG, null, "must be non-null.");
+            
         return newConfigs;
     }
 
