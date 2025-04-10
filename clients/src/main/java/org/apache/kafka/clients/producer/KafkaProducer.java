@@ -1262,96 +1262,144 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         }
     }
 
+    /**
+     * 将消息头部设置为只读状态，防止后续对消息头部进行修改
+     * 这是一个内部安全机制，用于确保消息一旦准备发送就不能再被修改
+     * 
+     * @param headers 需要设置为只读的消息头部对象
+     */
     private void setReadOnly(Headers headers) {
+        // 检查headers是否是RecordHeaders类型，因为只有RecordHeaders实现了setReadOnly功能
         if (headers instanceof RecordHeaders) {
+            // 如果是RecordHeaders类型，则调用其setReadOnly方法将其设置为只读状态
             ((RecordHeaders) headers).setReadOnly();
         }
     }
 
     /**
-     * Wait for cluster metadata including partitions for the given topic to be available.
-     * @param topic The topic we want metadata for
-     * @param partition A specific partition expected to exist in metadata, or null if there's no preference
-     * @param nowMs The current time in ms
-     * @param maxWaitMs The maximum time in ms for waiting on the metadata
-     * @return The cluster containing topic metadata and the amount of time we waited in ms
-     * @throws TimeoutException if metadata could not be refreshed within {@code max.block.ms}
-     * @throws KafkaException for all Kafka-related exceptions, including the case where this method is called after producer close
+     * 等待并获取指定主题的集群元数据信息（包括分区信息）
+     * 
+     * @param topic 需要获取元数据的主题名称
+     * @param partition 期望在元数据中存在的特定分区编号，如果没有特定要求则为null
+     * @param nowMs 当前时间（毫秒）
+     * @param maxWaitMs 等待元数据的最大时间（毫秒）
+     * @return 包含主题元数据的集群信息和等待时间的封装对象
+     * @throws TimeoutException 如果在max.block.ms时间内无法刷新元数据
+     * @throws KafkaException 所有Kafka相关异常，包括在生产者关闭后调用此方法的情况
      */
     private ClusterAndWaitTime waitOnMetadata(String topic, Integer partition, long nowMs, long maxWaitMs) throws InterruptedException {
+        // 获取当前的集群元数据
         Cluster cluster = metadata.fetch();
 
+        // 检查主题是否无效
         if (cluster.invalidTopics().contains(topic))
             throw new InvalidTopicException(topic);
 
-        // add topic to metadata topic list if it is not there already and reset expiry
+        // 将主题添加到元数据主题列表中（如果尚未添加），并重置过期时间
         metadata.add(topic, nowMs);
 
+        // 获取主题的分区数量
         Integer partitionsCount = cluster.partitionCountForTopic(topic);
-        // Return cached metadata if we have it, and if the record's partition is either undefined
-        // or within the known partition range
+        // 如果已有缓存的元数据，且分区未指定或在已知分区范围内，直接返回缓存的元数据
         if (partitionsCount != null && (partition == null || partition < partitionsCount))
             return new ClusterAndWaitTime(cluster, 0);
 
+        // 初始化剩余等待时间和已经过时间
         long remainingWaitMs = maxWaitMs;
         long elapsed = 0;
-        // Issue metadata requests until we have metadata for the topic and the requested partition,
-        // or until maxWaitTimeMs is exceeded. This is necessary in case the metadata
-        // is stale and the number of partitions for this topic has increased in the meantime.
+        // 持续发送元数据请求，直到获取到主题和请求分区的元数据，
+        // 或者超过最大等待时间。这在元数据过期且主题分区数量增加的情况下是必要的。
         long nowNanos = time.nanoseconds();
         do {
+            // 记录元数据更新请求的日志
             if (partition != null) {
-                log.trace("Requesting metadata update for partition {} of topic {}.", partition, topic);
+                log.trace("请求更新分区 {} 的主题 {} 的元数据。", partition, topic);
             } else {
-                log.trace("Requesting metadata update for topic {}.", topic);
+                log.trace("请求更新主题 {} 的元数据。", topic);
             }
+            // 更新主题的过期时间
             metadata.add(topic, nowMs + elapsed);
+            // 请求更新主题的元数据并获取版本号
             int version = metadata.requestUpdateForTopic(topic);
+            // 唤醒发送线程处理元数据请求
             sender.wakeup();
             try {
+                // 等待元数据更新完成
                 metadata.awaitUpdate(version, remainingWaitMs);
             } catch (TimeoutException ex) {
-                // Rethrow with original maxWaitMs to prevent logging exception with remainingWaitMs
+                // 使用原始maxWaitMs重新抛出异常，避免使用remainingWaitMs记录异常
                 final String errorMessage = getErrorMessage(partitionsCount, topic, partition, maxWaitMs);
                 if (metadata.getError(topic) != null) {
                     throw new TimeoutException(errorMessage, metadata.getError(topic).exception());
                 }
                 throw new TimeoutException(errorMessage);
             }
+            // 获取更新后的集群元数据
             cluster = metadata.fetch();
+            // 计算已经过时间
             elapsed = time.milliseconds() - nowMs;
+            // 检查是否超过最大等待时间
             if (elapsed >= maxWaitMs) {
                 final String errorMessage = getErrorMessage(partitionsCount, topic, partition, maxWaitMs);
+                // 如果是可重试的异常，包装异常信息重新抛出
                 if (metadata.getError(topic) != null && metadata.getError(topic).exception() instanceof RetriableException) {
                     throw new TimeoutException(errorMessage, metadata.getError(topic).exception());
                 }
                 throw new TimeoutException(errorMessage);
             }
+            // 检查并可能抛出主题相关的异常
             metadata.maybeThrowExceptionForTopic(topic);
+            // 更新剩余等待时间
             remainingWaitMs = maxWaitMs - elapsed;
+            // 重新获取主题的分区数量
             partitionsCount = cluster.partitionCountForTopic(topic);
         } while (partitionsCount == null || (partition != null && partition >= partitionsCount));
 
+        // 记录元数据等待时间的度量指标
         producerMetrics.recordMetadataWait(time.nanoseconds() - nowNanos);
 
+        // 返回更新后的集群信息和等待时间
         return new ClusterAndWaitTime(cluster, elapsed);
     }
 
+    /**
+     * 生成元数据获取失败时的错误消息
+     * 
+     * @param partitionsCount 主题的分区数量，如果为null表示主题不存在
+     * @param topic 主题名称
+     * @param partition 分区号，当partitionsCount不为null时使用
+     * @param maxWaitMs 等待元数据的最大时间（毫秒）
+     * @return 格式化的错误消息字符串，包含以下两种情况：
+     *         1. 如果partitionsCount为null，返回主题不存在的错误信息
+     *         2. 如果partitionsCount不为null，返回特定分区不存在的错误信息
+     */
     private String getErrorMessage(Integer partitionsCount, String topic, Integer partition, long maxWaitMs) {
+        // 根据partitionsCount是否为null来判断返回不同的错误消息
         return partitionsCount == null ?
+            // 主题不存在的情况：显示主题名称和等待时间
             String.format("Topic %s not present in metadata after %d ms.",
                 topic, maxWaitMs) :
+            // 分区不存在的情况：显示分区号、主题名称、分区总数和等待时间
             String.format("Partition %d of topic %s with partition count %d is not present in metadata after %d ms.",
                 partition, topic, partitionsCount, maxWaitMs);
     }
     /**
-     * Validate that the record size isn't too large
+     * 验证记录大小是否超过限制
+     * 
+     * 该方法用于确保序列化后的消息大小不超过以下两个配置的限制:
+     * 1. max.request.size - 单条消息的最大大小限制
+     * 2. buffer.memory - 生产者可用的总缓冲区大小
+     *
+     * @param size 序列化后的消息大小(字节)
+     * @throws RecordTooLargeException 当消息大小超过限制时抛出此异常
      */
     private void ensureValidRecordSize(int size) {
+        // 检查消息大小是否超过单条消息的最大限制
         if (size > maxRequestSize)
             throw new RecordTooLargeException("The message is " + size +
                     " bytes when serialized which is larger than " + maxRequestSize + ", which is the value of the " +
                     ProducerConfig.MAX_REQUEST_SIZE_CONFIG + " configuration.");
+        // 检查消息大小是否超过总缓冲区大小限制
         if (size > totalMemorySize)
             throw new RecordTooLargeException("The message is " + size +
                     " bytes when serialized which is larger than the total memory buffer you have configured with the " +
@@ -1360,20 +1408,20 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     }
 
     /**
-     * Invoking this method makes all buffered records immediately available to send (even if <code>linger.ms</code> is
-     * greater than 0) and blocks on the completion of the requests associated with these records. The post-condition
-     * of <code>flush()</code> is that any previously sent record will have completed (e.g. <code>Future.isDone() == true</code>
-     * and callbacks passed to {@link #send(ProducerRecord,Callback)} have been called).
-     * A request is considered completed when it is successfully acknowledged
-     * according to the <code>acks</code> configuration you have specified or else it results in an error.
-     * <p>
-     * Other threads can continue sending records while one thread is blocked waiting for a flush call to complete,
-     * however no guarantee is made about the completion of records sent after the flush call begins.
-     * <p>
-     * This method can be useful when consuming from some input system and producing into Kafka. The <code>flush()</code> call
-     * gives a convenient way to ensure all previously sent messages have actually completed.
-     * <p>
-     * This example shows how to consume from one Kafka topic and produce to another Kafka topic:
+     * 将所有缓冲的消息立即发送并等待完成
+     * 
+     * 调用此方法会使所有缓冲的消息立即可发送(即使linger.ms大于0)，并阻塞等待这些消息相关的请求完成。
+     * flush()方法完成后保证之前发送的所有消息都已完成(即Future.isDone() == true且send()方法的回调已被调用)。
+     * 请求完成的标准是根据acks配置成功确认或产生错误。
+     * 
+     * 特点和注意事项:
+     * 1. 在一个线程等待flush完成时，其他线程可以继续发送消息
+     * 2. 不保证flush调用开始后发送的消息的完成情况
+     * 3. 适用于从输入系统消费数据并写入Kafka的场景
+     * 4. 事务型生产者不需要调用此方法，因为commitTransaction()会自动执行flush
+     * 5. 不能在send()方法的回调中调用此方法，否则会导致死锁
+     * 
+     * 使用示例 - 从一个Kafka主题消费并生产到另一个主题:
      * <pre>
      * {@code
      * for(ConsumerRecord<String, String> record: consumer.poll(100))
@@ -1382,26 +1430,15 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
      * consumer.commitSync();
      * }
      * </pre>
+     * 
+     * 注意:如果生产请求失败，上述示例可能会丢失消息。为避免这种情况，需要在配置中设置较大的retries值。
      *
-     * Note that the above example may drop records if the produce request fails. If we want to ensure that this does not occur
-     * we need to set <code>retries=&lt;large_number&gt;</code> in our config.
-     * </p>
-     * <p>
-     * Applications don't need to call this method for transactional producers, since the {@link #commitTransaction()} will
-     * flush all buffered records before performing the commit. This ensures that all the {@link #send(ProducerRecord)}
-     * calls made since the previous {@link #beginTransaction()} are completed before the commit.
-     * </p>
-     * <p>
-     * <b>Important:</b> This method must not be called from within the callback provided to
-     * {@link #send(ProducerRecord, Callback)}. Invoking <code>flush()</code> in this context will result in a
-     * {@link KafkaException} being thrown, as it will cause a deadlock.
-     * </p>
-     *
-     * @throws InterruptException If the thread is interrupted while blocked
-     * @throws KafkaException If the method is invoked inside a {@link #send(ProducerRecord, Callback)} callback
+     * @throws InterruptException 如果线程在阻塞时被中断
+     * @throws KafkaException 如果在send()方法的回调中调用此方法
      */
     @Override
     public void flush() {
+        // 检查是否在I/O线程(即回调)中调用flush
         if (Thread.currentThread() == this.ioThread) {
             log.error("KafkaProducer.flush() invocation inside a callback is not permitted because it may lead to deadlock.");
             throw new KafkaException("KafkaProducer.flush() invocation inside a callback is not permitted because it may lead to deadlock.");
@@ -1409,30 +1446,43 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
 
         log.trace("Flushing accumulated records in producer.");
 
+        // 记录开始时间
         long start = time.nanoseconds();
+        // 开始刷新操作
         this.accumulator.beginFlush();
+        // 唤醒发送线程
         this.sender.wakeup();
         try {
+            // 等待刷新完成
             this.accumulator.awaitFlushCompletion();
         } catch (InterruptedException e) {
             throw new InterruptException("Flush interrupted.", e);
         } finally {
+            // 记录刷新操作的度量指标
             producerMetrics.recordFlush(time.nanoseconds() - start);
         }
     }
 
     /**
-     * Get the partition metadata for the given topic. This can be used for custom partitioning.
-     * @throws AuthenticationException if authentication fails. See the exception for more details
-     * @throws AuthorizationException if not authorized to the specified topic. See the exception for more details
-     * @throws InterruptException if the thread is interrupted while blocked
-     * @throws TimeoutException if metadata could not be refreshed within {@code max.block.ms}
-     * @throws KafkaException for all Kafka-related exceptions, including the case where this method is called after producer close
+     * 获取指定主题的分区元数据信息，可用于自定义分区策略
+     * 
+     * 该方法会从集群获取指定主题的所有分区信息，包括分区号、leader副本、replicas等信息。
+     * 这些信息对于实现自定义分区策略非常有用。
+     *
+     * @param topic 要查询的主题名称，不能为null
+     * @return 包含主题所有分区信息的列表
+     * @throws AuthenticationException 认证失败时抛出
+     * @throws AuthorizationException 没有指定主题的权限时抛出
+     * @throws InterruptException 线程在阻塞时被中断时抛出
+     * @throws TimeoutException 如果在max.block.ms时间内无法刷新元数据时抛出
+     * @throws KafkaException 所有Kafka相关异常，包括在生产者关闭后调用此方法的情况
      */
     @Override
     public List<PartitionInfo> partitionsFor(String topic) {
+        // 检查主题名称是否为null
         Objects.requireNonNull(topic, "topic cannot be null");
         try {
+            // 等待获取主题元数据并返回分区信息
             return waitOnMetadata(topic, null, time.milliseconds(), maxBlockTimeMs).cluster.partitionsForTopic(topic);
         } catch (InterruptedException e) {
             throw new InterruptException(e);
@@ -1440,162 +1490,198 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     }
 
     /**
-     * Get the full set of internal metrics maintained by the producer.
+     * 获取生产者维护的所有内部度量指标
+     * 
+     * 返回生产者的所有内部度量指标，包括但不限于：
+     * - 消息发送速率
+     * - 请求延迟
+     * - 缓冲区使用情况
+     * - 压缩比率等
+     *
+     * @return 不可修改的度量指标Map，key为指标名称，value为指标值
      */
     @Override
     public Map<MetricName, ? extends Metric> metrics() {
+        // 返回不可修改的度量指标Map
         return Collections.unmodifiableMap(this.metrics.metrics());
     }
 
 
     /**
-     * Add the provided application metric for subscription.
-     * This metric will be added to this client's metrics
-     * that are available for subscription and sent as
-     * telemetry data to the broker.
-     * The provided metric must map to an OTLP metric data point
-     * type in the OpenTelemetry v1 metrics protobuf message types.
-     * Specifically, the metric should be one of the following:
+     * 添加应用程序指标以进行订阅
+     * 
+     * 该指标将被添加到客户端的指标集合中，可用于订阅并作为遥测数据发送给broker。
+     * 提供的指标必须映射到OpenTelemetry v1指标protobuf消息类型中的OTLP指标数据点类型。
+     * 具体来说，指标应该是以下类型之一：
      * <ul>
      *  <li>
-     *     `Sum`: Monotonic total count meter (Counter). Suitable for metrics like total number of X, e.g., total bytes sent.
+     *     `Sum`: 单调总计数器(Counter)。适用于统计类指标，如总字节数等。
      *  </li>
      *  <li>
-     *     `Gauge`: Non-monotonic current value meter (UpDownCounter). Suitable for metrics like current value of Y, e.g., current queue count.
+     *     `Gauge`: 非单调当前值计数器(UpDownCounter)。适用于当前值类指标，如当前队列大小等。
      *  </li>
      * </ul>
-     * Metrics not matching these types are silently ignored.
-     * Executing this method for a previously registered metric is a benign operation and results in updating that metrics entry.
+     * 
+     * 注意事项：
+     * 1. 不匹配这些类型的指标将被静默忽略
+     * 2. 对已注册的指标执行此方法是良性操作，会更新该指标条目
+     * 3. 不能覆盖现有的生产者指标
      *
-     * @param metric The application metric to register
+     * @param metric 要注册的应用程序指标
      */
     @Override
     public void registerMetricForSubscription(KafkaMetric metric) {
+        // 检查指标是否已存在
         if (!metrics().containsKey(metric.metricName())) {
+            // 如果不存在，通知遥测报告器添加新指标
             clientTelemetryReporter.ifPresent(reporter -> reporter.metricChange(metric));
         }  else {
+            // 如果已存在，记录调试日志
             log.debug("Skipping registration for metric {}. Existing producer metrics cannot be overwritten.", metric.metricName());
         }
     }
 
     /**
-     * Remove the provided application metric for subscription.
-     * This metric is removed from this client's metrics
-     * and will not be available for subscription any longer.
-     * Executing this method with a metric that has not been registered is a
-     * benign operation and does not result in any action taken (no-op).
+     * 取消订阅应用程序指标
+     * 
+     * 从客户端的指标集合中移除指定的指标，移除后该指标将不再可用于订阅。
+     * 
+     * 特点：
+     * 1. 对未注册的指标执行此方法是安全的，不会产生任何影响
+     * 2. 不能移除生产者的内置指标
+     * 3. 移除后的指标将不再发送遥测数据给broker
      *
-     * @param metric The application metric to remove
+     * @param metric 要移除的应用程序指标
      */
     @Override
     public void unregisterMetricFromSubscription(KafkaMetric metric) {
+        // 检查是否是非内置指标
         if (!metrics().containsKey(metric.metricName())) {
+            // 通知遥测报告器移除指标
             clientTelemetryReporter.ifPresent(reporter -> reporter.metricRemoval(metric));
         } else {
+            // 如果是内置指标，记录调试日志
             log.debug("Skipping unregistration for metric {}. Existing producer metrics cannot be removed.", metric.metricName());
         }
     }
 
     /**
-     * Determines the client's unique client instance ID used for telemetry. This ID is unique to
-     * this specific client instance and will not change after it is initially generated.
-     * The ID is useful for correlating client operations with telemetry sent to the broker and
-     * to its eventual monitoring destinations.
-     * <p>
-     * If telemetry is enabled, this will first require a connection to the cluster to generate
-     * the unique client instance ID. This method waits up to {@code timeout} for the producer
-     * client to complete the request.
-     * <p>
-     * Client telemetry is controlled by the {@link ProducerConfig#ENABLE_METRICS_PUSH_CONFIG}
-     * configuration option.
+     * 获取用于遥测的客户端唯一实例ID
+     * 
+     * 此ID唯一标识特定的客户端实例，一旦生成就不会改变。该ID用于将客户端操作与发送给broker的遥测数据关联起来。
+     * 
+     * 工作流程：
+     * 1. 如果启用了遥测，首先需要连接到集群以生成唯一的客户端实例ID
+     * 2. 方法会等待最多timeout时间让生产者客户端完成请求
+     * 3. 遥测功能由ProducerConfig.ENABLE_METRICS_PUSH_CONFIG配置项控制
      *
-     * @param timeout The maximum time to wait for producer client to determine its client instance ID.
-     *                The value must be non-negative. Specifying a timeout of zero means do not
-     *                wait for the initial request to complete if it hasn't already.
-     * @throws InterruptException If the thread is interrupted while blocked.
-     * @throws KafkaException If an unexpected error occurs while trying to determine the client
-     *                        instance ID, though this error does not necessarily imply the
-     *                        producer client is otherwise unusable.
-     * @throws IllegalArgumentException If the {@code timeout} is negative.
-     * @throws IllegalStateException If telemetry is not enabled ie, config `{@code enable.metrics.push}`
-     *                               is set to `{@code false}`.
-     * @return The client's assigned instance id used for metrics collection.
+     * @param timeout 等待生产者客户端确定其实例ID的最大时间
+     *                - 值必须非负
+     *                - 设为0表示如果初始请求未完成则不等待
+     * 
+     * @return 分配给客户端用于指标收集的实例ID
+     * 
+     * @throws InterruptException 如果线程在阻塞时被中断
+     * @throws KafkaException 如果在确定客户端实例ID时发生意外错误
+     *                        (注意：此错误不一定表示生产者客户端不可用)
+     * @throws IllegalArgumentException 如果timeout为负数
+     * @throws IllegalStateException 如果未启用遥测功能(enable.metrics.push=false)
      */
     @Override
     public Uuid clientInstanceId(Duration timeout) {
+        // 检查是否启用了遥测功能
         if (clientTelemetryReporter.isEmpty()) {
             throw new IllegalStateException("Telemetry is not enabled. Set config `" + ProducerConfig.ENABLE_METRICS_PUSH_CONFIG + "` to `true`.");
         }
 
+        // 获取客户端实例ID
         return ClientTelemetryUtils.fetchClientInstanceId(clientTelemetryReporter.get(), timeout);
     }
 
     /**
-     * Close this producer. This method blocks until all previously sent requests complete.
-     * This method is equivalent to <code>close(Long.MAX_VALUE, TimeUnit.MILLISECONDS)</code>.
-     * <p>
-     * <strong>If close() is called from {@link Callback}, a warning message will be logged and close(0, TimeUnit.MILLISECONDS)
-     * will be called instead. We do this because the sender thread would otherwise try to join itself and
-     * block forever.</strong>
-     * <p>
-     *
-     * @throws InterruptException If the thread is interrupted while blocked.
-     * @throws KafkaException If an unexpected error occurs while trying to close the client, this error should be treated
-     *                        as fatal and indicate the client is no longer usable.
+     * 关闭生产者
+     * 
+     * 此方法会阻塞等待所有之前发送的请求完成。相当于调用close(Long.MAX_VALUE, TimeUnit.MILLISECONDS)。
+     * 
+     * 重要说明：
+     * 1. 如果在回调(Callback)中调用close()，会记录警告日志并改为调用close(0, TimeUnit.MILLISECONDS)
+     * 2. 这样处理是因为发送线程试图join自己会导致永久阻塞
+     * 
+     * @throws InterruptException 如果线程在阻塞时被中断
+     * @throws KafkaException 如果在关闭客户端时发生意外错误。
+     *                        此错误应被视为致命错误，表明客户端不再可用
      */
     @Override
     public void close() {
+        // 使用最大等待时间调用带超时参数的close方法
         close(Duration.ofMillis(Long.MAX_VALUE));
     }
 
     /**
-     * This method waits up to <code>timeout</code> for the producer to complete the sending of all incomplete requests.
-     * <p>
-     * If the producer is unable to complete all requests before the timeout expires, this method will fail
-     * any unsent and unacknowledged records immediately. It will also abort the ongoing transaction if it's not
-     * already completing.
-     * <p>
-     * If invoked from within a {@link Callback} this method will not block and will be equivalent to
-     * <code>close(Duration.ofMillis(0))</code>. This is done since no further sending will happen while
-     * blocking the I/O thread of the producer.
+     * 带超时的生产者关闭方法
+     * 
+     * 此方法会等待最多timeout时间让生产者完成所有未完成请求的发送。
+     * 
+     * 关闭行为：
+     * 1. 如果在超时前无法完成所有请求：
+     *    - 立即使所有未发送和未确认的记录失败
+     *    - 如果有正在进行的事务且未处于完成阶段，则中止该事务
+     * 2. 如果在回调(Callback)中调用：
+     *    - 不会阻塞，等同于close(Duration.ofMillis(0))
+     *    - 这是因为在阻塞生产者的I/O线程时不会有进一步的发送操作
      *
-     * @param timeout The maximum time to wait for producer to complete any pending requests. The value should be
-     *                non-negative. Specifying a timeout of zero means do not wait for pending send requests to complete.
-     * @throws InterruptException If the thread is interrupted while blocked.
-     * @throws KafkaException If an unexpected error occurs while trying to close the client, this error should be treated
-     *                        as fatal and indicate the client is no longer usable.
-     * @throws IllegalArgumentException If the <code>timeout</code> is negative.
-     *
+     * @param timeout 等待生产者完成待处理请求的最大时间
+     *                - 值必须非负
+     *                - 设为0表示不等待待处理的发送请求完成
+     * 
+     * @throws InterruptException 如果线程在阻塞时被中断
+     * @throws KafkaException 如果在关闭客户端时发生意外错误
+     *                        此错误应被视为致命错误，表明客户端不再可用
+     * @throws IllegalArgumentException 如果timeout为负数
      */
     @Override
     public void close(Duration timeout) {
+        // 调用内部close方法，第二个参数false表示不忽略异常
         close(timeout, false);
     }
 
+    /**
+     * 内部关闭方法的具体实现
+     * 
+     * @param timeout 关闭超时时间
+     * @param swallowException 是否忽略异常
+     */
     private void close(Duration timeout, boolean swallowException) {
+        // 转换超时时间为毫秒并验证
         long timeoutMs = timeout.toMillis();
         if (timeoutMs < 0)
             throw new IllegalArgumentException("The timeout cannot be negative.");
         log.info("Closing the Kafka producer with timeoutMillis = {} ms.", timeoutMs);
 
-        // this will keep track of the first encountered exception
+        // 用于跟踪第一个遇到的异常
         AtomicReference<Throwable> firstException = new AtomicReference<>();
+        // 检查是否在回调中调用
         boolean invokedFromCallback = Thread.currentThread() == this.ioThread;
+        
         if (timeoutMs > 0) {
             if (invokedFromCallback) {
+                // 在回调中调用时，将超时时间改为0以避免自我join导致的无用阻塞
                 log.warn("Overriding close timeout {} ms to 0 ms in order to prevent useless blocking due to self-join. " +
                         "This means you have incorrectly invoked close with a non-zero timeout from the producer call-back.",
                         timeoutMs);
             } else {
-                // Try to close gracefully.
+                // 尝试优雅关闭
                 final Timer closeTimer = time.timer(timeout);
+                // 关闭遥测报告器
                 clientTelemetryReporter.ifPresent(ClientTelemetryReporter::initiateClose);
                 closeTimer.update();
 
+                // 关闭发送器
                 if (this.sender != null) {
                     this.sender.initiateClose();
                     closeTimer.update();
                 }
+                // 等待I/O线程结束
                 if (this.ioThread != null) {
                     try {
                         this.ioThread.join(closeTimer.remainingMs());
@@ -1609,11 +1695,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             }
         }
 
+        // 如果I/O线程仍然活跃，强制关闭
         if (this.sender != null && this.ioThread != null && this.ioThread.isAlive()) {
             log.info("Proceeding to force close the producer since pending requests could not be completed " +
                     "within timeout {} ms.", timeoutMs);
             this.sender.forceClose();
-            // Only join the sender thread when not calling from callback.
+            // 非回调调用时才join发送线程
             if (!invokedFromCallback) {
                 try {
                     this.ioThread.join();
@@ -1623,6 +1710,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             }
         }
 
+        // 安静地关闭各个组件
         Utils.closeQuietly(interceptors, "producer interceptors", firstException);
         Utils.closeQuietly(producerMetrics, "producer metrics wrapper", firstException);
         Utils.closeQuietly(metrics, "producer metrics", firstException);
@@ -1630,7 +1718,11 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         Utils.closeQuietly(valueSerializerPlugin, "producer valueSerializer", firstException);
         Utils.closeQuietly(partitionerPlugin, "producer partitioner", firstException);
         clientTelemetryReporter.ifPresent(reporter -> Utils.closeQuietly(reporter, "producer telemetry reporter", firstException));
+        
+        // 注销JMX监控
         AppInfoParser.unregisterAppInfo(JMX_PREFIX, clientId, metrics);
+        
+        // 处理异常
         Throwable exception = firstException.get();
         if (exception != null && !swallowException) {
             if (exception instanceof InterruptException) {
@@ -1642,22 +1734,31 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     }
 
     /**
-     * computes partition for given record.
-     * if the record has partition returns the value otherwise
-     * if custom partitioner is specified, call it to compute partition
-     * otherwise try to calculate partition based on key.
-     * If there is no key or key should be ignored return
-     * RecordMetadata.UNKNOWN_PARTITION to indicate any partition
-     * can be used (the partition is then calculated by built-in
-     * partitioning logic).
+     * 计算给定消息记录应该发送到哪个分区
+     * 
+     * 分区选择的优先级顺序：
+     * 1. 如果记录中指定了分区号，直接返回该分区
+     * 2. 如果配置了自定义分区器，使用自定义分区器计算分区
+     * 3. 如果消息有key且未配置忽略key，使用内置分区器根据key计算分区
+     * 4. 以上都不满足，返回UNKNOWN_PARTITION，表示可以使用任意分区
+     *
+     * @param record 待发送的消息记录，包含topic、key、value等信息
+     * @param serializedKey 序列化后的消息key
+     * @param serializedValue 序列化后的消息value
+     * @param cluster 集群元数据信息，包含topic的分区信息
+     * @return 计算得到的目标分区号
      */
     private int partition(ProducerRecord<K, V> record, byte[] serializedKey, byte[] serializedValue, Cluster cluster) {
+        // 1. 检查消息是否指定了分区号，如果指定了则直接返回
         if (record.partition() != null)
             return record.partition();
 
+        // 2. 检查是否配置了自定义分区器
         if (partitionerPlugin.get() != null) {
+            // 使用自定义分区器计算分区号
             int customPartition = partitionerPlugin.get().partition(
                 record.topic(), record.key(), serializedKey, record.value(), serializedValue, cluster);
+            // 验证自定义分区器返回的分区号是否有效（必须非负）
             if (customPartition < 0) {
                 throw new IllegalArgumentException(String.format(
                     "The partitioner generated an invalid partition number: %d. Partition number should always be non-negative.", customPartition));
@@ -1665,10 +1766,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             return customPartition;
         }
 
+        // 3. 如果消息有key且配置为不忽略key，使用内置分区器
         if (serializedKey != null && !partitionerIgnoreKeys) {
-            // hash the keyBytes to choose a partition
+            // 使用内置分区器，通过对key进行哈希来选择分区
             return BuiltInPartitioner.partitionForKey(serializedKey, cluster.partitionsForTopic(record.topic()).size());
         } else {
+            // 4. 没有key或配置忽略key，返回UNKNOWN_PARTITION，表示可以使用任意分区
             return RecordMetadata.UNKNOWN_PARTITION;
         }
     }
@@ -1716,48 +1819,65 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         return clientId;
     }
 
-    // Visible for testing
+    // 用于测试目的的可见方法，返回事务管理器实例
     TransactionManager getTransactionManager() {
         return transactionManager;
     }
 
+    /**
+     * 内部类，用于存储集群信息和元数据等待时间
+     * 在获取集群元数据时使用，包含了集群信息和等待元数据更新的时间
+     */
     private static class ClusterAndWaitTime {
+        // 集群实例，包含了broker节点、主题分区等信息
         final Cluster cluster;
+        // 等待元数据更新的时间（毫秒）
         final long waitedOnMetadataMs;
+        
         ClusterAndWaitTime(Cluster cluster, long waitedOnMetadataMs) {
             this.cluster = cluster;
             this.waitedOnMetadataMs = waitedOnMetadataMs;
         }
     }
 
+    /**
+     * Future失败处理类，实现了Future接口
+     * 用于在发送消息失败时返回一个包含异常信息的Future对象
+     */
     private static class FutureFailure implements Future<RecordMetadata> {
 
+        // 存储执行过程中发生的异常
         private final ExecutionException exception;
 
         public FutureFailure(Exception exception) {
             this.exception = new ExecutionException(exception);
         }
 
+        // 取消操作永远返回false，因为这是一个失败的Future
         @Override
         public boolean cancel(boolean interrupt) {
             return false;
         }
 
+        // 获取结果时抛出存储的异常
         @Override
         public RecordMetadata get() throws ExecutionException {
             throw this.exception;
         }
 
+        // 带超时的获取结果方法，同样抛出存储的异常
         @Override
         public RecordMetadata get(long timeout, TimeUnit unit) throws ExecutionException {
             throw this.exception;
         }
 
+        // 由于是失败的Future，不可能被取消
         @Override
         public boolean isCancelled() {
             return false;
         }
 
+        // 永远返回true，表示这个失败的Future已经完成
         @Override
         public boolean isDone() {
             return true;
@@ -1766,63 +1886,94 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     }
 
     /**
-     * Callbacks that are called by the RecordAccumulator append functions:
-     *  - user callback
-     *  - interceptor callbacks
-     *  - partition callback
+     * 追加回调类，实现了RecordAccumulator.AppendCallbacks接口
+     * 负责处理消息追加时的回调操作，包括：
+     * - 用户自定义回调
+     * - 拦截器回调
+     * - 分区回调
      */
     private class AppendCallbacks implements RecordAccumulator.AppendCallbacks {
+        // 用户提供的回调函数
         private final Callback userCallback;
+        // 生产者拦截器
         private final ProducerInterceptors<K, V> interceptors;
+        // 消息要发送到的主题
         private final String topic;
+        // 记录的目标分区（如果指定）
         private final Integer recordPartition;
+        // 用于日志记录的消息字符串表示
         private final String recordLogString;
+        // 实际分区号，初始为未知分区
         private volatile int partition = RecordMetadata.UNKNOWN_PARTITION;
+        // 主题分区对象，延迟初始化
         private volatile TopicPartition topicPartition;
 
         private AppendCallbacks(Callback userCallback, ProducerInterceptors<K, V> interceptors, ProducerRecord<K, V> record) {
             this.userCallback = userCallback;
             this.interceptors = interceptors;
-            // Extract record info as we don't want to keep a reference to the record during
-            // whole lifetime of the batch.
-            // We don't want to have an NPE here, because the interceptors would not be notified (see .doSend).
+            // 提取记录信息，避免在批次的整个生命周期中保持对记录的引用
+            // 这里需要处理record为null的情况，以防止NPE（空指针异常）
             topic = record != null ? record.topic() : null;
             recordPartition = record != null ? record.partition() : null;
             recordLogString = log.isTraceEnabled() && record != null ? record.toString() : "";
         }
 
+        /**
+         * 完成回调方法，在消息发送完成时调用
+         * @param metadata 消息的元数据信息
+         * @param exception 发送过程中的异常（如果有）
+         */
         @Override
         public void onCompletion(RecordMetadata metadata, Exception exception) {
             if (metadata == null) {
+                // 如果元数据为null，创建一个包含错误标记的元数据对象
                 metadata = new RecordMetadata(topicPartition(), -1, -1, RecordBatch.NO_TIMESTAMP, -1, -1);
             }
+            // 调用拦截器的确认回调
             this.interceptors.onAcknowledgement(metadata, exception);
+            // 如果用户提供了回调，则执行用户的回调方法
             if (this.userCallback != null)
                 this.userCallback.onCompletion(metadata, exception);
         }
 
+        /**
+         * 设置分区号
+         * @param partition 分配的分区号
+         */
         @Override
         public void setPartition(int partition) {
             assert partition != RecordMetadata.UNKNOWN_PARTITION;
             this.partition = partition;
 
             if (log.isTraceEnabled()) {
-                // Log the message here, because we don't know the partition before that.
+                // 记录追加消息的日志，此时我们已经知道了分区号
                 log.trace("Attempting to append record {} with callback {} to topic {} partition {}", recordLogString, userCallback, topic, partition);
             }
         }
 
+        /**
+         * 获取当前分区号
+         * @return 当前分区号
+         */
         public int getPartition() {
             return partition;
         }
 
+        /**
+         * 获取或创建TopicPartition对象
+         * @return 主题分区对象
+         */
         public TopicPartition topicPartition() {
             if (topicPartition == null && topic != null) {
+                // 根据不同情况创建TopicPartition对象
                 if (partition != RecordMetadata.UNKNOWN_PARTITION)
+                    // 使用已分配的分区号
                     topicPartition = new TopicPartition(topic, partition);
                 else if (recordPartition != null)
+                    // 使用记录中指定的分区号
                     topicPartition = new TopicPartition(topic, recordPartition);
                 else
+                    // 使用未知分区标记
                     topicPartition = new TopicPartition(topic, RecordMetadata.UNKNOWN_PARTITION);
             }
             return topicPartition;
