@@ -531,78 +531,101 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     private final ConsumerDelegate<K, V> delegate;
 
     /**
-     * A consumer is instantiated by providing a set of key-value pairs as configuration. Valid configuration strings
-     * are documented <a href="http://kafka.apache.org/documentation.html#consumerconfigs" >here</a>. Values can be
-     * either strings or objects of the appropriate type (for example a numeric configuration would accept either the
-     * string "42" or the integer 42).
+     * 通过提供一组键值对配置来实例化消费者。有效的配置字符串
+     * 在<a href="http://kafka.apache.org/documentation.html#consumerconfigs">这里</a>有详细文档。配置值可以是
+     * 字符串或适当类型的对象（例如，数字配置可以接受字符串"42"或整数42）。
      * <p>
-     * Valid configuration strings are documented at {@link ConsumerConfig}.
+     * 有效的配置字符串在{@link ConsumerConfig}中有文档说明。
      * <p>
-     * Note: after creating a {@code KafkaConsumer} you must always {@link #close()} it to avoid resource leaks.
+     * 注意：创建{@code KafkaConsumer}后，必须始终调用{@link #close()}以避免资源泄漏。
      *
-     * @param configs The consumer configs
+     * @param configs 消费者配置，以Map形式提供
      */
     public KafkaConsumer(Map<String, Object> configs) {
+        // 调用带反序列化器的构造函数，但反序列化器参数设为null
         this(configs, null, null);
     }
 
     /**
-     * A consumer is instantiated by providing a {@link java.util.Properties} object as configuration.
+     * 通过提供{@link java.util.Properties}对象作为配置来实例化消费者。
      * <p>
-     * Valid configuration strings are documented at {@link ConsumerConfig}.
+     * 有效的配置字符串在{@link ConsumerConfig}中有文档说明。
      * <p>
-     * Note: after creating a {@code KafkaConsumer} you must always {@link #close()} it to avoid resource leaks.
+     * 注意：创建{@code KafkaConsumer}后，必须始终调用{@link #close()}以避免资源泄漏。
      *
-     * @param properties The consumer configuration properties
+     * @param properties 消费者配置属性
      */
     public KafkaConsumer(Properties properties) {
+        // 调用带反序列化器的构造函数，但反序列化器参数设为null
         this(properties, null, null);
     }
 
     /**
-     * A consumer is instantiated by providing a {@link java.util.Properties} object as configuration, and a
-     * key and a value {@link Deserializer}.
+     * 通过提供{@link java.util.Properties}对象作为配置，以及键和值的{@link Deserializer}来实例化消费者。
      * <p>
-     * Valid configuration strings are documented at {@link ConsumerConfig}.
+     * 有效的配置字符串在{@link ConsumerConfig}中有文档说明。
      * <p>
-     * Note: after creating a {@code KafkaConsumer} you must always {@link #close()} it to avoid resource leaks.
+     * 注意：创建{@code KafkaConsumer}后，必须始终调用{@link #close()}以避免资源泄漏。
      *
-     * @param properties The consumer configuration properties
-     * @param keyDeserializer The deserializer for key that implements {@link Deserializer}. The configure() method
-     *            won't be called in the consumer when the deserializer is passed in directly.
-     * @param valueDeserializer The deserializer for value that implements {@link Deserializer}. The configure() method
-     *            won't be called in the consumer when the deserializer is passed in directly.
+     * @param properties 消费者配置属性
+     * @param keyDeserializer 实现{@link Deserializer}的键反序列化器。当直接传入反序列化器时，
+     *                        不会在消费者中调用其configure()方法
+     * @param valueDeserializer 实现{@link Deserializer}的值反序列化器。当直接传入反序列化器时，
+     *                          不会在消费者中调用其configure()方法
      */
     public KafkaConsumer(Properties properties,
                          Deserializer<K> keyDeserializer,
                          Deserializer<V> valueDeserializer) {
+        // 将Properties转换为Map，并调用Map版本的构造函数
         this(propsToMap(properties), keyDeserializer, valueDeserializer);
     }
 
     /**
-     * A consumer is instantiated by providing a set of key-value pairs as configuration, and a key and a value {@link Deserializer}.
+     * 通过提供一组键值对配置，以及键和值的{@link Deserializer}来实例化消费者。
      * <p>
-     * Valid configuration strings are documented at {@link ConsumerConfig}.
+     * 有效的配置字符串在{@link ConsumerConfig}中有文档说明。
      * <p>
-     * Note: after creating a {@code KafkaConsumer} you must always {@link #close()} it to avoid resource leaks.
+     * 注意：创建{@code KafkaConsumer}后，必须始终调用{@link #close()}以避免资源泄漏。
      *
-     * @param configs The consumer configs
-     * @param keyDeserializer The deserializer for key that implements {@link Deserializer}. The configure() method
-     *            won't be called in the consumer when the deserializer is passed in directly.
-     * @param valueDeserializer The deserializer for value that implements {@link Deserializer}. The configure() method
-     *            won't be called in the consumer when the deserializer is passed in directly.
+     * @param configs 消费者配置
+     * @param keyDeserializer 实现{@link Deserializer}的键反序列化器。当直接传入反序列化器时，
+     *                        不会在消费者中调用其configure()方法
+     * @param valueDeserializer 实现{@link Deserializer}的值反序列化器。当直接传入反序列化器时，
+     *                          不会在消费者中调用其configure()方法
      */
     public KafkaConsumer(Map<String, Object> configs,
                          Deserializer<K> keyDeserializer,
                          Deserializer<V> valueDeserializer) {
+        // 创建ConsumerConfig对象，并将反序列化器添加到配置中
         this(new ConsumerConfig(ConsumerConfig.appendDeserializerToConfig(configs, keyDeserializer, valueDeserializer)),
                 keyDeserializer, valueDeserializer);
     }
 
+    /**
+     * 内部构造函数，使用ConsumerConfig和反序列化器创建消费者实例
+     *
+     * @param config 消费者配置对象
+     * @param keyDeserializer 键反序列化器
+     * @param valueDeserializer 值反序列化器
+     */
     KafkaConsumer(ConsumerConfig config, Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer) {
+        // 使用工厂创建者创建委托对象
         delegate = CREATOR.create(config, keyDeserializer, valueDeserializer);
     }
 
+    /**
+     * 内部构造函数，用于测试目的，允许注入所有必要的依赖项
+     *
+     * @param logContext 日志上下文
+     * @param time 时间实例
+     * @param config 消费者配置
+     * @param keyDeserializer 键反序列化器
+     * @param valueDeserializer 值反序列化器
+     * @param client Kafka客户端
+     * @param subscriptions 订阅状态
+     * @param metadata 消费者元数据
+     * @param assignors 分区分配器列表
+     */
     KafkaConsumer(LogContext logContext,
                   Time time,
                   ConsumerConfig config,
@@ -612,6 +635,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                   SubscriptionState subscriptions,
                   ConsumerMetadata metadata,
                   List<ConsumerPartitionAssignor> assignors) {
+        // 使用工厂创建者创建完整的委托对象
         delegate = CREATOR.create(
             logContext,
             time,
@@ -626,587 +650,605 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     }
 
     /**
-     * Get the set of partitions currently assigned to this consumer. If subscription happened by directly assigning
-     * partitions using {@link #assign(Collection)} then this will simply return the same partitions that
-     * were assigned. If topic subscription was used, then this will give the set of topic partitions currently assigned
-     * to the consumer (which may be none if the assignment hasn't happened yet, or the partitions are in the
-     * process of getting reassigned).
-     * @return The set of partitions currently assigned to this consumer
+     * 获取当前分配给该消费者的分区集合。
+     * 
+     * 分区分配的来源有两种情况：
+     * 1. 如果是通过{@link #assign(Collection)}方法直接分配分区，则返回完全相同的分区集合
+     * 2. 如果是通过主题订阅的方式，则返回当前分配给消费者的主题分区集合
+     *    - 如果分配尚未发生，可能返回空集合
+     *    - 如果正在进行分区重分配，也可能返回空集合
+     * 
+     * @return 当前分配给该消费者的分区集合
      */
     public Set<TopicPartition> assignment() {
+        // 通过委托对象获取当前分配的分区集合
         return delegate.assignment();
     }
 
     /**
-     * Get the current subscription. Will return the same topics used in the most recent call to
-     * {@link #subscribe(Collection, ConsumerRebalanceListener)}, or an empty set if no such call has been made.
-     * @return The set of topics currently subscribed to
+     * 获取当前订阅的主题集合。
+     * 
+     * 返回结果有两种情况：
+     * 1. 如果之前调用过{@link #subscribe(Collection, ConsumerRebalanceListener)}方法，
+     *    则返回最近一次订阅的主题集合
+     * 2. 如果从未调用过订阅方法，则返回空集合
+     * 
+     * @return 当前订阅的主题集合
      */
     public Set<String> subscription() {
+        // 通过委托对象获取当前订阅的主题集合
         return delegate.subscription();
     }
 
     /**
-     * Subscribe to the given list of topics to get dynamically
-     * assigned partitions. <b>Topic subscriptions are not incremental. This list will replace the current
-     * assignment (if there is one).</b> Note that it is not possible to combine topic subscription with group management
-     * with manual partition assignment through {@link #assign(Collection)}.
+     * 订阅指定的主题列表，以获取动态分配的分区。
+     * 
+     * 重要说明：
+     * <b>主题订阅不是增量式的。新的主题列表会完全替换当前的分配（如果存在的话）。</b>
+     * 另外，不能同时使用主题订阅（组管理）和手动分区分配（通过{@link #assign(Collection)}）。
      *
-     * If the given list of topics is empty, it is treated the same as {@link #unsubscribe()}.
+     * 特殊情况：
+     * - 如果提供的主题列表为空，效果等同于调用{@link #unsubscribe()}取消订阅
      *
-     * <p>
-     * As part of group management, the consumer will keep track of the list of consumers that belong to a particular
-     * group and will trigger a rebalance operation if any one of the following events are triggered:
+     * 组管理机制：
+     * 作为组管理的一部分，消费者会跟踪属于特定组的消费者列表。
+     * 当发生以下任一事件时，将触发重平衡操作：
      * <ul>
-     * <li>Number of partitions change for any of the subscribed topics
-     * <li>A subscribed topic is created or deleted
-     * <li>An existing member of the consumer group is shutdown or fails
-     * <li>A new member is added to the consumer group
+     * <li>任何已订阅主题的分区数量发生变化
+     * <li>订阅的主题被创建或删除
+     * <li>消费者组中的现有成员关闭或失败
+     * <li>新成员加入消费者组
      * </ul>
-     * <p>
-     * When any of these events are triggered, the provided listener will be invoked first to indicate that
-     * the consumer's assignment has been revoked, and then again when the new assignment has been received.
-     * Note that rebalances will only occur during an active call to {@link #poll(Duration)}, so callbacks will
-     * also only be invoked during that time.
      *
-     * The provided listener will immediately override any listener set in a previous call to subscribe.
-     * It is guaranteed, however, that the partitions revoked/assigned through this interface are from topics
-     * subscribed in this call. See {@link ConsumerRebalanceListener} for more details.
+     * 重平衡监听器：
+     * - 当触发上述事件时，会首先调用提供的监听器，通知消费者的分配已被撤销
+     * - 然后在收到新的分配时再次调用监听器
+     * - 注意：重平衡只会在主动调用{@link #poll(Duration)}期间发生，因此回调也只会在这期间被调用
      *
-     * @param topics The list of topics to subscribe to
-     * @param listener Non-null listener instance to get notifications on partition assignment/revocation for the
-     *                 subscribed topics
-     * @throws IllegalArgumentException If topics is null or contains null or empty elements, or if listener is null
-     * @throws IllegalStateException If {@code subscribe()} is called previously with pattern, or assign is called
-     *                               previously (without a subsequent call to {@link #unsubscribe()}), or if not
-     *                               configured at-least one partition assignment strategy
+     * 监听器行为：
+     * - 新提供的监听器会立即覆盖之前通过subscribe设置的任何监听器
+     * - 保证通过此接口撤销/分配的分区都来自本次调用订阅的主题
+     * - 更多详细信息请参见{@link ConsumerRebalanceListener}
+     *
+     * @param topics 要订阅的主题列表
+     * @param listener 非空的监听器实例，用于接收已订阅主题的分区分配/撤销通知
+     * @throws IllegalArgumentException 如果topics为null、包含null元素或空元素，或者listener为null
+     * @throws IllegalStateException 如果之前使用模式调用了{@code subscribe()}，或者之前调用了assign
+     *                              （且未随后调用{@link #unsubscribe()}），或者未配置至少一个分区分配策略
      */
     @Override
     public void subscribe(Collection<String> topics, ConsumerRebalanceListener listener) {
+        // 通过委托对象执行主题订阅操作
         delegate.subscribe(topics, listener);
     }
 
     /**
-     * Subscribe to the given list of topics to get dynamically assigned partitions.
-     * <b>Topic subscriptions are not incremental. This list will replace the current
-     * assignment (if there is one).</b> It is not possible to combine topic subscription with group management
-     * with manual partition assignment through {@link #assign(Collection)}.
-     *
-     * If the given list of topics is empty, it is treated the same as {@link #unsubscribe()}.
-     *
+     * 订阅指定的主题列表以获取动态分配的分区。
+     * <b>主题订阅不是增量的。这个列表会替换当前的分配（如果存在的话）。</b>
+     * 不能将主题订阅与组管理机制和通过{@link #assign(Collection)}进行的手动分区分配组合使用。
+     * 
+     * 如果给定的主题列表为空，则等同于调用{@link #unsubscribe()}。
+     * 
      * <p>
-     * This is a short-hand for {@link #subscribe(Collection, ConsumerRebalanceListener)}, which
-     * uses a no-op listener. If you need the ability to seek to particular offsets, you should prefer
-     * {@link #subscribe(Collection, ConsumerRebalanceListener)}, since group rebalances will cause partition offsets
-     * to be reset. You should also provide your own listener if you are doing your own offset
-     * management since the listener gives you an opportunity to commit offsets before a rebalance finishes.
+     * 这是{@link #subscribe(Collection, ConsumerRebalanceListener)}的简化版本，
+     * 使用了一个空操作监听器。如果你需要能够寻找特定的偏移量，应该优先使用
+     * {@link #subscribe(Collection, ConsumerRebalanceListener)}，因为组重平衡会导致分区偏移量被重置。
+     * 如果你正在进行自己的偏移量管理，也应该提供自己的监听器，因为监听器可以让你在重平衡完成前提交偏移量。
      *
-     * @param topics The list of topics to subscribe to
-     * @throws IllegalArgumentException If topics is null or contains null or empty elements
-     * @throws IllegalStateException If {@code subscribe()} is called previously with pattern, or assign is called
-     *                               previously (without a subsequent call to {@link #unsubscribe()}), or if not
-     *                               configured at-least one partition assignment strategy
+     * @param topics 要订阅的主题列表
+     * @throws IllegalArgumentException 如果topics为null或包含null或空元素
+     * @throws IllegalStateException 如果之前使用模式调用了{@code subscribe()}，或之前调用了assign
+     *                              （且未随后调用{@link #unsubscribe()}），或者未配置至少一个分区分配策略
      */
     @Override
     public void subscribe(Collection<String> topics) {
+        // 将订阅请求委托给内部的delegate对象处理
         delegate.subscribe(topics);
     }
 
     /**
-     * Subscribe to all topics matching specified pattern to get dynamically assigned partitions.
-     * The pattern matching will be done periodically against all topics existing at the time of check.
-     * This can be controlled through the {@code metadata.max.age.ms} configuration: by lowering
-     * the max metadata age, the consumer will refresh metadata more often and check for matching topics.
+     * 订阅所有匹配指定模式的主题以获取动态分配的分区。
+     * 模式匹配将定期针对检查时存在的所有主题进行。
+     * 这可以通过{@code metadata.max.age.ms}配置来控制：通过降低最大元数据年龄，
+     * 消费者将更频繁地刷新元数据并检查匹配的主题。
      * <p>
-     * See {@link #subscribe(Collection, ConsumerRebalanceListener)} for details on the
-     * use of the {@link ConsumerRebalanceListener}. Generally rebalances are triggered when there
-     * is a change to the topics matching the provided pattern and when consumer group membership changes.
-     * Group rebalances only take place during an active call to {@link #poll(Duration)}.
+     * 关于{@link ConsumerRebalanceListener}的使用详情，请参见{@link #subscribe(Collection, ConsumerRebalanceListener)}。
+     * 当匹配提供模式的主题发生变化以及消费者组成员关系发生变化时，通常会触发重平衡。
+     * 组重平衡仅在主动调用{@link #poll(Duration)}时进行。
      *
-     * @param pattern Pattern to subscribe to
-     * @param listener Non-null listener instance to get notifications on partition assignment/revocation for the
-     *                 subscribed topics
-     * @throws IllegalArgumentException If pattern or listener is null
-     * @throws IllegalStateException If {@code subscribe()} is called previously with topics, or assign is called
-     *                               previously (without a subsequent call to {@link #unsubscribe()}), or if not
-     *                               configured at-least one partition assignment strategy
+     * @param pattern 要订阅的模式
+     * @param listener 非空监听器实例，用于获取已订阅主题的分区分配/撤销通知
+     * @throws IllegalArgumentException 如果pattern或listener为null
+     * @throws IllegalStateException 如果之前使用主题列表调用了{@code subscribe()}，或之前调用了assign
+     *                              （且未随后调用{@link #unsubscribe()}），或者未配置至少一个分区分配策略
      */
     @Override
     public void subscribe(Pattern pattern, ConsumerRebalanceListener listener) {
+        // 将带有模式和监听器的订阅请求委托给内部的delegate对象处理
         delegate.subscribe(pattern, listener);
     }
 
     /**
-     * Subscribe to all topics matching specified pattern to get dynamically assigned partitions.
-     * The pattern matching will be done periodically against topics existing at the time of check.
+     * 订阅所有匹配指定模式的主题以获取动态分配的分区。
+     * 模式匹配将定期针对检查时存在的主题进行。
      * <p>
-     * This is a short-hand for {@link #subscribe(Pattern, ConsumerRebalanceListener)}, which
-     * uses a no-op listener. If you need the ability to seek to particular offsets, you should prefer
-     * {@link #subscribe(Pattern, ConsumerRebalanceListener)}, since group rebalances will cause partition offsets
-     * to be reset. You should also provide your own listener if you are doing your own offset
-     * management since the listener gives you an opportunity to commit offsets before a rebalance finishes.
+     * 这是{@link #subscribe(Pattern, ConsumerRebalanceListener)}的简化版本，
+     * 使用了一个空操作监听器。如果你需要能够寻找特定的偏移量，应该优先使用
+     * {@link #subscribe(Pattern, ConsumerRebalanceListener)}，因为组重平衡会导致分区偏移量被重置。
+     * 如果你正在进行自己的偏移量管理，也应该提供自己的监听器，因为监听器可以让你在重平衡完成前提交偏移量。
      *
-     * @param pattern Pattern to subscribe to
-     * @throws IllegalArgumentException If pattern is null
-     * @throws IllegalStateException If {@code subscribe()} is called previously with topics, or assign is called
-     *                               previously (without a subsequent call to {@link #unsubscribe()}), or if not
-     *                               configured at-least one partition assignment strategy
+     * @param pattern 要订阅的模式
+     * @throws IllegalArgumentException 如果pattern为null
+     * @throws IllegalStateException 如果之前使用主题列表调用了{@code subscribe()}，或之前调用了assign
+     *                              （且未随后调用{@link #unsubscribe()}），或者未配置至少一个分区分配策略
      */
     @Override
     public void subscribe(Pattern pattern) {
+        // 将仅带有模式的订阅请求委托给内部的delegate对象处理
         delegate.subscribe(pattern);
     }
 
     /**
-     * Subscribe to all topics matching the specified pattern, to get dynamically assigned partitions.
-     * The pattern matching will be done periodically against all topics. This is only supported under the
-     * CONSUMER group protocol (see {@link ConsumerConfig#GROUP_PROTOCOL_CONFIG}).
+     * 订阅所有匹配指定模式的主题，以获取动态分配的分区。
+     * 系统会定期对所有主题进行模式匹配。此功能仅在CONSUMER组协议下支持
+     * （参见 {@link ConsumerConfig#GROUP_PROTOCOL_CONFIG}）。
      * <p>
-     * If the provided pattern is not compatible with Google RE2/J, an {@link InvalidRegularExpression} will be
-     * eventually thrown on a call to {@link #poll(Duration)} following this call to subscribe.
+     * 如果提供的模式与Google RE2/J不兼容，在调用此subscribe方法后的
+     * {@link #poll(Duration)}调用中将抛出{@link InvalidRegularExpression}异常。
      * <p>
-     * See {@link #subscribe(Collection, ConsumerRebalanceListener)} for details on the
-     * use of the {@link ConsumerRebalanceListener}. Generally, rebalances are triggered when there
-     * is a change to the topics matching the provided pattern and when consumer group membership changes.
-     * Group rebalances only take place during an active call to {@link #poll(Duration)}.
+     * 关于{@link ConsumerRebalanceListener}的使用详情，请参见
+     * {@link #subscribe(Collection, ConsumerRebalanceListener)}。
+     * 当匹配提供模式的主题发生变化或消费者组成员变化时，会触发重平衡。
+     * 组重平衡仅在主动调用{@link #poll(Duration)}时进行。
      *
-     * @param pattern  Pattern to subscribe to, that must be compatible with Google RE2/J.
-     * @param listener Non-null listener instance to get notifications on partition assignment/revocation for the
-     *                 subscribed topics.
-     * @throws IllegalArgumentException If pattern is null or empty, or if the listener is null.
-     * @throws IllegalStateException    If {@code subscribe()} is called previously with topics, or assign is called
-     *                                  previously (without a subsequent call to {@link #unsubscribe()}).
+     * @param pattern  要订阅的模式，必须与Google RE2/J兼容
+     * @param listener 非空的监听器实例，用于接收已订阅主题的分区分配/撤销通知
+     * @throws IllegalArgumentException 如果pattern为null或空，或listener为null
+     * @throws IllegalStateException    如果之前已调用{@code subscribe()}订阅了主题，
+     *                                  或之前已调用assign（且未随后调用{@link #unsubscribe()}）
      */
     @Override
     public void subscribe(SubscriptionPattern pattern, ConsumerRebalanceListener listener) {
+        // 将订阅请求委托给内部实现类处理
         delegate.subscribe(pattern, listener);
     }
 
     /**
-     * Subscribe to all topics matching the specified pattern, to get dynamically assigned partitions.
-     * The pattern matching will be done periodically against topics. This is only supported under the
-     * CONSUMER group protocol (see {@link ConsumerConfig#GROUP_PROTOCOL_CONFIG})
+     * 订阅所有匹配指定模式的主题，以获取动态分配的分区。
+     * 系统会定期对主题进行模式匹配。此功能仅在CONSUMER组协议下支持
+     * （参见 {@link ConsumerConfig#GROUP_PROTOCOL_CONFIG}）
      * <p>
-     * If the provided pattern is not compatible with Google RE2/J, an {@link InvalidRegularExpression} will be
-     * eventually thrown on a call to {@link #poll(Duration)} following this call to subscribe.
+     * 如果提供的模式与Google RE2/J不兼容，在调用此subscribe方法后的
+     * {@link #poll(Duration)}调用中将抛出{@link InvalidRegularExpression}异常。
      * <p>
-     * This is a short-hand for {@link #subscribe(Pattern, ConsumerRebalanceListener)}, which
-     * uses a no-op listener. If you need the ability to seek to particular offsets, you should prefer
-     * {@link #subscribe(Pattern, ConsumerRebalanceListener)}, since group rebalances will cause partition offsets
-     * to be reset. You should also provide your own listener if you are doing your own offset
-     * management since the listener gives you an opportunity to commit offsets before a rebalance finishes.
+     * 这是{@link #subscribe(Pattern, ConsumerRebalanceListener)}的简化版本，
+     * 使用一个空操作监听器。如果你需要能够寻找特定偏移量，应该优先使用
+     * {@link #subscribe(Pattern, ConsumerRebalanceListener)}，因为组重平衡会导致分区偏移量重置。
+     * 如果你正在进行自己的偏移量管理，也应该提供自己的监听器，因为监听器可以让你在重平衡完成前提交偏移量。
      *
-     * @param pattern Pattern to subscribe to, that must be compatible with Google RE2/J.
-     * @throws IllegalArgumentException If pattern is null or empty.
-     * @throws IllegalStateException    If {@code subscribe()} is called previously with topics, or assign is called
-     *                                  previously (without a subsequent call to {@link #unsubscribe()}).
+     * @param pattern 要订阅的模式，必须与Google RE2/J兼容
+     * @throws IllegalArgumentException 如果pattern为null或空
+     * @throws IllegalStateException    如果之前已调用{@code subscribe()}订阅了主题，
+     *                                  或之前已调用assign（且未随后调用{@link #unsubscribe()}）
      */
     @Override
     public void subscribe(SubscriptionPattern pattern) {
+        // 使用默认的空操作监听器调用订阅方法
         delegate.subscribe(pattern);
     }
 
     /**
-     * Unsubscribe from topics currently subscribed with {@link #subscribe(Collection)} or {@link #subscribe(Pattern)}.
-     * This also clears any partitions directly assigned through {@link #assign(Collection)}.
+     * 取消订阅当前通过{@link #subscribe(Collection)}或{@link #subscribe(Pattern)}订阅的主题。
+     * 这也会清除通过{@link #assign(Collection)}直接分配的所有分区。
      *
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors (e.g. rebalance callback errors)
+     * @throws org.apache.kafka.common.KafkaException 对于任何其他不可恢复的错误（例如重平衡回调错误）
      */
     public void unsubscribe() {
+        // 委托给内部实现类处理取消订阅操作
         delegate.unsubscribe();
     }
 
     /**
-     * Manually assign a list of partitions to this consumer. This interface does not allow for incremental assignment
-     * and will replace the previous assignment (if there is one).
+     * 手动为此消费者分配分区列表。此接口不允许增量分配，
+     * 会替换之前的分配（如果存在）。
      * <p>
-     * If the given list of topic partitions is empty, it is treated the same as {@link #unsubscribe()}.
+     * 如果给定的主题分区列表为空，其效果与调用{@link #unsubscribe()}相同。
      * <p>
-     * Manual topic assignment through this method does not use the consumer's group management
-     * functionality. As such, there will be no rebalance operation triggered when group membership or cluster and topic
-     * metadata change. Note that it is not possible to use both manual partition assignment with {@link #assign(Collection)}
-     * and group assignment with {@link #subscribe(Collection, ConsumerRebalanceListener)}.
+     * 通过此方法进行的手动主题分配不使用消费者的组管理功能。
+     * 因此，当组成员身份或集群和主题元数据发生变化时，不会触发重平衡操作。
+     * 注意，不能同时使用手动分区分配（{@link #assign(Collection)}）
+     * 和组分配（{@link #subscribe(Collection, ConsumerRebalanceListener)}）。
      * <p>
-     * If auto-commit is enabled, an async commit (based on the old assignment) will be triggered before the new
-     * assignment replaces the old one.
+     * 如果启用了自动提交，在新分配替换旧分配之前，
+     * 将触发一次异步提交（基于旧分配）。
      *
-     * @param partitions The list of partitions to assign this consumer
-     * @throws IllegalArgumentException If partitions is null or contains null or empty topics
-     * @throws IllegalStateException If {@code subscribe()} is called previously with topics or pattern
-     *                               (without a subsequent call to {@link #unsubscribe()})
+     * @param partitions 要分配给此消费者的分区列表
+     * @throws IllegalArgumentException 如果partitions为null或包含null或空主题
+     * @throws IllegalStateException 如果之前已通过topics或pattern调用了{@code subscribe()}
+     *                               （且未随后调用{@link #unsubscribe()}）
      */
     @Override
     public void assign(Collection<TopicPartition> partitions) {
+        // 将分区分配请求委托给内部实现类处理
         delegate.assign(partitions);
     }
 
     /**
-     * Fetch data for the topics or partitions specified using one of the subscribe/assign APIs. It is an error to not have
-     * subscribed to any topics or partitions before polling for data.
+     * 从已订阅的主题或分区获取数据。在调用此方法之前必须先订阅主题或分配分区，否则会报错。
      * <p>
-     * On each poll, consumer will try to use the last consumed offset as the starting offset and fetch sequentially. The last
-     * consumed offset can be manually set through {@link #seek(TopicPartition, long)} or automatically set as the last committed
-     * offset for the subscribed list of partitions
+     * 每次poll操作时，消费者会：
+     * 1. 使用上次消费的位移作为起始位置
+     * 2. 按顺序获取数据
+     * 3. 起始位移可以通过以下方式设置：
+     *    - 手动设置：使用{@link #seek(TopicPartition, long)}方法
+     *    - 自动设置：使用已订阅分区的最后提交位移
      *
      * <p>
-     * This method returns immediately if there are records available or if the position advances past control records
-     * or aborted transactions when isolation.level=read_committed.
-     * Otherwise, it will await the passed timeout. If the timeout expires, an empty record set will be returned.
-     * Note that this method may block beyond the timeout in order to execute custom
-     * {@link ConsumerRebalanceListener} callbacks.
+     * 此方法的返回行为：
+     * 1. 如果有可用记录，立即返回
+     * 2. 如果在read_committed隔离级别下，位置越过了控制记录或已中止的事务，也会立即返回
+     * 3. 否则，等待指定的超时时间
+     * 4. 如果超时，返回空记录集
+     * 注意：执行自定义的{@link ConsumerRebalanceListener}回调时，可能会超出指定的超时时间
      *
+     * @param timeout 最大阻塞时间（不能大于{@link Long#MAX_VALUE}毫秒）
      *
-     * @param timeout The maximum time to block (must not be greater than {@link Long#MAX_VALUE} milliseconds)
+     * @return 返回一个映射，包含从上次获取后订阅的主题和分区的记录
      *
-     * @return map of topic to records since the last fetch for the subscribed list of topics and partitions
-     *
-     * @throws org.apache.kafka.clients.consumer.InvalidOffsetException if the offset for a partition or set of
-     *             partitions is undefined or out of range and no offset reset policy has been configured
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if caller lacks Read access to any of the subscribed
-     *             topics or to the configured groupId. See the exception for more details
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors (e.g. invalid groupId or
-     *             session timeout, errors deserializing key/value pairs, your rebalance callback thrown exceptions,
-     *             or any new error cases in future versions)
-     * @throws java.lang.IllegalArgumentException if the timeout value is negative
-     * @throws java.lang.IllegalStateException if the consumer is not subscribed to any topics or manually assigned any
-     *             partitions to consume from
-     * @throws java.lang.ArithmeticException if the timeout is greater than {@link Long#MAX_VALUE} milliseconds.
-     * @throws org.apache.kafka.common.errors.InvalidTopicException if the current subscription contains any invalid
-     *             topic (per {@link org.apache.kafka.common.internals.Topic#validate(String)})
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException if the consumer attempts to fetch stable offsets
-     *             when the broker doesn't support this feature. Also, if the consumer attempts to subscribe to a
-     *             SubscriptionPattern via {@link #subscribe(SubscriptionPattern)} or
-     *             {@link #subscribe(SubscriptionPattern, ConsumerRebalanceListener)} and the broker doesn't
-     *             support this feature.
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer instance gets fenced by broker.
+     * @throws org.apache.kafka.clients.consumer.InvalidOffsetException 
+     *             当分区的位移未定义或超出范围，且未配置位移重置策略时抛出
+     * @throws org.apache.kafka.common.errors.WakeupException 
+     *             当在调用此方法之前或期间调用了{@link #wakeup()}时抛出
+     * @throws org.apache.kafka.common.errors.InterruptException 
+     *             当调用线程在调用此方法之前或期间被中断时抛出
+     * @throws org.apache.kafka.common.errors.AuthenticationException 
+     *             当认证失败时抛出。详见异常信息
+     * @throws org.apache.kafka.common.errors.AuthorizationException 
+     *             当调用者缺少对订阅主题或配置的groupId的读取权限时抛出。详见异常信息
+     * @throws org.apache.kafka.common.KafkaException 
+     *             当发生其他不可恢复的错误时抛出（如：无效的groupId、会话超时、反序列化错误、重平衡回调异常等）
+     * @throws java.lang.IllegalArgumentException 
+     *             当超时值为负数时抛出
+     * @throws java.lang.IllegalStateException 
+     *             当消费者未订阅任何主题或未手动分配任何分区时抛出
+     * @throws java.lang.ArithmeticException 
+     *             当超时时间大于{@link Long#MAX_VALUE}毫秒时抛出
+     * @throws org.apache.kafka.common.errors.InvalidTopicException 
+     *             当当前订阅包含任何无效主题时抛出（根据{@link org.apache.kafka.common.internals.Topic#validate(String)}验证）
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 
+     *             当消费者尝试获取稳定位移但broker不支持此功能时抛出；
+     *             或当消费者尝试通过{@link #subscribe(SubscriptionPattern)}或
+     *             {@link #subscribe(SubscriptionPattern, ConsumerRebalanceListener)}订阅模式但broker不支持时抛出
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 
+     *             当此消费者实例被broker隔离时抛出
      */
     @Override
     public ConsumerRecords<K, V> poll(final Duration timeout) {
+        // 将poll请求委托给实际的消费者实现类处理
         return delegate.poll(timeout);
     }
 
     /**
-     * Commit offsets returned on the last {@link #poll(Duration) poll()} for all the subscribed list of topics and
-     * partitions.
+     * 为所有已订阅的主题和分区提交上次{@link #poll(Duration) poll()}返回的位移。
      * <p>
-     * This commits offsets only to Kafka. The offsets committed using this API will be used on the first fetch after
-     * every rebalance and also on startup. As such, if you need to store offsets in anything other than Kafka, this API
-     * should not be used.
+     * 位移提交说明：
+     * 1. 此方法仅将位移提交到Kafka
+     * 2. 提交的位移将用于：
+     *    - 每次重平衡后的第一次获取
+     *    - 消费者启动时的初始位置
+     * 3. 如果需要将位移存储在Kafka之外的系统中，不应使用此API
      * <p>
-     * This is a synchronous commit and will block until either the commit succeeds, an unrecoverable error is
-     * encountered (in which case it is thrown to the caller), or the timeout specified by {@code default.api.timeout.ms} expires
-     * (in which case a {@link org.apache.kafka.common.errors.TimeoutException} is thrown to the caller).
+     * 同步提交特性：
+     * 1. 这是一个同步提交操作，会阻塞直到：
+     *    - 提交成功
+     *    - 遇到不可恢复的错误（此时抛出异常）
+     *    - 超过{@code default.api.timeout.ms}指定的超时时间（此时抛出{@link org.apache.kafka.common.errors.TimeoutException}）
      * <p>
-     * Note that asynchronous offset commits sent previously with the {@link #commitAsync(OffsetCommitCallback)}
-     * (or similar) are guaranteed to have their callbacks invoked prior to completion of this method.
+     * 注意：之前通过{@link #commitAsync(OffsetCommitCallback)}（或类似方法）发送的异步位移提交的回调
+     * 保证会在此方法完成之前被调用。
      *
-     * @throws org.apache.kafka.clients.consumer.CommitFailedException if the commit failed and cannot be retried.
-     *             This fatal error can only occur if you are using automatic group management with {@link #subscribe(Collection)},
-     *             or if there is an active group with the same <code>group.id</code> which is using group management. In such cases,
-     *             when you are trying to commit to partitions that are no longer assigned to this consumer because the
-     *             consumer is for example no longer part of the group this exception would be thrown.
-     * @throws org.apache.kafka.common.errors.RebalanceInProgressException if the consumer instance is in the middle of a rebalance
-     *            so it is not yet determined which partitions would be assigned to the consumer. In such cases you can first
-     *            complete the rebalance by calling {@link #poll(Duration)} and commit can be reconsidered afterwards.
-     *            NOTE when you reconsider committing after the rebalance, the assigned partitions may have changed,
-     *            and also for those partitions that are still assigned their fetch positions may have changed too
-     *            if more records are returned from the {@link #poll(Duration)} call.
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors (e.g. if offset metadata
-     *             is too large or if the topic does not exist).
-     * @throws org.apache.kafka.common.errors.TimeoutException if the timeout specified by {@code default.api.timeout.ms} expires
-     *            before successful completion of the offset commit
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer is using the classic group protocol
-     *            and this instance gets fenced by broker.
+     * @throws org.apache.kafka.clients.consumer.CommitFailedException 
+     *             当提交失败且无法重试时抛出。
+     *             此致命错误仅在以下情况发生：
+     *             1. 使用{@link #subscribe(Collection)}进行自动组管理
+     *             2. 存在使用相同<code>group.id</code>的活跃组正在使用组管理
+     *             当尝试提交不再分配给此消费者的分区时（例如消费者已不再是组的成员），将抛出此异常
+     * @throws org.apache.kafka.common.errors.RebalanceInProgressException 
+     *             当消费者实例正在进行重平衡，尚未确定分配给消费者的分区时抛出。
+     *             处理方法：
+     *             1. 先通过调用{@link #poll(Duration)}完成重平衡
+     *             2. 之后再考虑提交
+     *             注意：重平衡后重新提交时：
+     *             - 分配的分区可能已经改变
+     *             - 对于仍然分配的分区，如果{@link #poll(Duration)}返回了更多记录，它们的获取位置也可能改变
+     * @throws org.apache.kafka.common.errors.WakeupException 
+     *             当在调用此方法之前或期间调用了{@link #wakeup()}时抛出
+     * @throws org.apache.kafka.common.errors.InterruptException 
+     *             当调用线程在调用此方法之前或期间被中断时抛出
+     * @throws org.apache.kafka.common.errors.AuthenticationException 
+     *             当认证失败时抛出。详见异常信息
+     * @throws org.apache.kafka.common.errors.AuthorizationException 
+     *             当未被授权访问主题或配置的groupId时抛出。详见异常信息
+     * @throws org.apache.kafka.common.KafkaException 
+     *             当发生其他不可恢复的错误时抛出（如：位移元数据过大或主题不存在）
+     * @throws org.apache.kafka.common.errors.TimeoutException 
+     *             当在{@code default.api.timeout.ms}指定的超时时间内未能成功完成位移提交时抛出
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 
+     *             当此消费者使用经典组协议且实例被broker隔离时抛出
      */
     @Override
     public void commitSync() {
+        // 将同步提交请求委托给实际的消费者实现类处理
         delegate.commitSync();
     }
 
     /**
-     * Commit offsets returned on the last {@link #poll(Duration) poll()} for all the subscribed list of topics and
-     * partitions.
+     * 为上一次 {@link #poll(Duration) poll()} 返回的所有已订阅主题和分区提交偏移量。
      * <p>
-     * This commits offsets only to Kafka. The offsets committed using this API will be used on the first fetch after
-     * every rebalance and also on startup. As such, if you need to store offsets in anything other than Kafka, this API
-     * should not be used.
+     * 此方法仅将偏移量提交到Kafka。提交的偏移量将在每次重平衡后的第一次获取时以及启动时使用。
+     * 因此，如果你需要将偏移量存储在Kafka以外的其他地方，不应使用此API。
      * <p>
-     * This is a synchronous commit and will block until either the commit succeeds, an unrecoverable error is
-     * encountered (in which case it is thrown to the caller), or the passed timeout expires.
+     * 这是一个同步提交操作，会阻塞直到以下情况之一发生：
+     * - 提交成功
+     * - 遇到不可恢复的错误（此时会将错误抛出给调用者）
+     * - 超过指定的超时时间
      * <p>
-     * Note that asynchronous offset commits sent previously with the {@link #commitAsync(OffsetCommitCallback)}
-     * (or similar) are guaranteed to have their callbacks invoked prior to completion of this method.
+     * 注意：之前通过 {@link #commitAsync(OffsetCommitCallback)} （或类似方法）发送的异步偏移量提交，
+     * 其回调函数保证会在此方法完成之前被调用。
      *
-     * @throws org.apache.kafka.clients.consumer.CommitFailedException if the commit failed and cannot be retried.
-     *             This can only occur if you are using automatic group management with {@link #subscribe(Collection)},
-     *             or if there is an active group with the same <code>group.id</code> which is using group management. In such cases,
-     *             when you are trying to commit to partitions that are no longer assigned to this consumer because the
-     *             consumer is for example no longer part of the group this exception would be thrown.
-     * @throws org.apache.kafka.common.errors.RebalanceInProgressException if the consumer instance is in the middle of a rebalance
-     *            so it is not yet determined which partitions would be assigned to the consumer. In such cases you can first
-     *            complete the rebalance by calling {@link #poll(Duration)} and commit can be reconsidered afterwards.
-     *            NOTE when you reconsider committing after the rebalance, the assigned partitions may have changed,
-     *            and also for those partitions that are still assigned their fetch positions may have changed too
-     *            if more records are returned from the {@link #poll(Duration)} call.
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors (e.g. if offset metadata
-     *             is too large or if the topic does not exist).
-     * @throws org.apache.kafka.common.errors.TimeoutException if the timeout expires before successful completion
-     *            of the offset commit
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer is using the classic group protocol
-     *            and this instance gets fenced by broker.
+     * @throws org.apache.kafka.clients.consumer.CommitFailedException 如果提交失败且无法重试。
+     *             这种情况只会在以下场景发生：
+     *             - 使用 {@link #subscribe(Collection)} 进行自动组管理
+     *             - 存在使用相同 <code>group.id</code> 的活跃组正在使用组管理
+     *             在这些情况下，如果你尝试提交不再分配给此消费者的分区（例如消费者已不再是组的一部分），
+     *             就会抛出此异常。
+     * @throws org.apache.kafka.common.errors.RebalanceInProgressException 如果消费者实例正在进行重平衡，
+     *            此时尚未确定哪些分区会被分配给消费者。在这种情况下，你可以先通过调用 {@link #poll(Duration)} 
+     *            完成重平衡，然后再考虑提交。
+     *            注意：重平衡后重新提交时，分配的分区可能已经改变，而且对于仍然分配的分区，
+     *            如果从 {@link #poll(Duration)} 调用返回了更多记录，它们的获取位置也可能已经改变。
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在调用此函数之前或期间调用了 {@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果在调用此函数之前或期间调用线程被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败。详见异常信息
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果未被授权访问主题或配置的groupId。详见异常信息
+     * @throws org.apache.kafka.common.KafkaException 对于任何其他不可恢复的错误（例如偏移量元数据太大或主题不存在）
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在偏移量提交成功完成之前超时
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 如果此消费者使用经典组协议且此实例被broker隔离
      */
     @Override
     public void commitSync(Duration timeout) {
+        // 调用委托对象执行同步提交操作，传入超时时间参数
         delegate.commitSync(timeout);
     }
 
     /**
-     * Commit the specified offsets for the specified list of topics and partitions.
+     * 为指定的主题和分区列表提交指定的偏移量。
      * <p>
-     * This commits offsets to Kafka. The offsets committed using this API will be used on the first fetch after every
-     * rebalance and also on startup. As such, if you need to store offsets in anything other than Kafka, this API
-     * should not be used. The committed offset should be the next message your application will consume,
-     * i.e. {@code nextRecordToBeProcessed.offset()} (or {@link ConsumerRecords#nextOffsets()}).
-     * You should also add the leader epoch as commit metadata, which can be obtained from
-     * {@link ConsumerRecord#leaderEpoch()} or {@link ConsumerRecords#nextOffsets()}.
-     * If automatic group management with {@link #subscribe(Collection)} is used,
-     * then the committed offsets must belong to the currently auto-assigned partitions.
+     * 此方法将偏移量提交到Kafka。提交的偏移量将在每次重平衡后的第一次获取时以及启动时使用。
+     * 因此，如果你需要将偏移量存储在Kafka以外的其他地方，不应使用此API。
+     * 提交的偏移量应该是你的应用程序将要消费的下一条消息的偏移量，
+     * 即 {@code nextRecordToBeProcessed.offset()} （或 {@link ConsumerRecords#nextOffsets()}）。
+     * 你还应该添加leader epoch作为提交元数据，可以从 {@link ConsumerRecord#leaderEpoch()} 
+     * 或 {@link ConsumerRecords#nextOffsets()} 获取。
+     * 如果使用 {@link #subscribe(Collection)} 进行自动组管理，
+     * 则提交的偏移量必须属于当前自动分配的分区。
      * <p>
-     * This is a synchronous commit and will block until either the commit succeeds or an unrecoverable error is
-     * encountered (in which case it is thrown to the caller), or the timeout specified by {@code default.api.timeout.ms} expires
-     * (in which case a {@link org.apache.kafka.common.errors.TimeoutException} is thrown to the caller).
+     * 这是一个同步提交操作，会阻塞直到以下情况之一发生：
+     * - 提交成功
+     * - 遇到不可恢复的错误（此时会将错误抛出给调用者）
+     * - 超过 {@code default.api.timeout.ms} 指定的超时时间
+     *   （此时会向调用者抛出 {@link org.apache.kafka.common.errors.TimeoutException}）
      * <p>
-     * Note that asynchronous offset commits sent previously with the {@link #commitAsync(OffsetCommitCallback)}
-     * (or similar) are guaranteed to have their callbacks invoked prior to completion of this method.
+     * 注意：之前通过 {@link #commitAsync(OffsetCommitCallback)} （或类似方法）发送的异步偏移量提交，
+     * 其回调函数保证会在此方法完成之前被调用。
      *
-     * @param offsets A map of offsets by partition with associated metadata
-     * @throws org.apache.kafka.clients.consumer.CommitFailedException if the commit failed and cannot be retried.
-     *             This can only occur if you are using automatic group management with {@link #subscribe(Collection)},
-     *             or if there is an active group with the same <code>group.id</code> which is using group management. In such cases,
-     *             when you are trying to commit to partitions that are no longer assigned to this consumer because the
-     *             consumer is for example no longer part of the group this exception would be thrown.
-     * @throws org.apache.kafka.common.errors.RebalanceInProgressException if the consumer instance is in the middle of a rebalance
-     *            so it is not yet determined which partitions would be assigned to the consumer. In such cases you can first
-     *            complete the rebalance by calling {@link #poll(Duration)} and commit can be reconsidered afterwards.
-     *            NOTE when you reconsider committing after the rebalance, the assigned partitions may have changed,
-     *            and also for those partitions that are still assigned their fetch positions may have changed too
-     *            if more records are returned from the {@link #poll(Duration)} call, so when you retry committing
-     *            you should consider updating the passed in {@code offset} parameter.
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws java.lang.IllegalArgumentException if the committed offset is negative
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors (e.g. if offset metadata
-     *             is too large or if the topic does not exist).
-     * @throws org.apache.kafka.common.errors.TimeoutException if the timeout expires before successful completion
-     *            of the offset commit
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer is using the classic group protocol
-     *            and this instance gets fenced by broker.
+     * @param offsets 包含分区偏移量及其相关元数据的映射
+     * @throws org.apache.kafka.clients.consumer.CommitFailedException 如果提交失败且无法重试。
+     *             这种情况只会在以下场景发生：
+     *             - 使用 {@link #subscribe(Collection)} 进行自动组管理
+     *             - 存在使用相同 <code>group.id</code> 的活跃组正在使用组管理
+     *             在这些情况下，如果你尝试提交不再分配给此消费者的分区（例如消费者已不再是组的一部分），
+     *             就会抛出此异常。
+     * @throws org.apache.kafka.common.errors.RebalanceInProgressException 如果消费者实例正在进行重平衡，
+     *            此时尚未确定哪些分区会被分配给消费者。在这种情况下，你可以先通过调用 {@link #poll(Duration)} 
+     *            完成重平衡，然后再考虑提交。
+     *            注意：重平衡后重新提交时，分配的分区可能已经改变，而且对于仍然分配的分区，
+     *            如果从 {@link #poll(Duration)} 调用返回了更多记录，它们的获取位置也可能已经改变，
+     *            所以重试提交时应考虑更新传入的 {@code offset} 参数。
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在调用此函数之前或期间调用了 {@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果在调用此函数之前或期间调用线程被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败。详见异常信息
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果未被授权访问主题或配置的groupId。详见异常信息
+     * @throws java.lang.IllegalArgumentException 如果提交的偏移量为负数
+     * @throws org.apache.kafka.common.KafkaException 对于任何其他不可恢复的错误（例如偏移量元数据太大或主题不存在）
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在偏移量提交成功完成之前超时
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 如果此消费者使用经典组协议且此实例被broker隔离
      */
     @Override
     public void commitSync(final Map<TopicPartition, OffsetAndMetadata> offsets) {
+        // 调用委托对象执行同步提交操作，传入偏移量映射参数
         delegate.commitSync(offsets);
     }
 
     /**
-     * Commit the specified offsets for the specified list of topics and partitions.
+     * 为指定的主题和分区列表提交指定的偏移量，并指定超时时间。
      * <p>
-     * This commits offsets to Kafka. The offsets committed using this API will be used on the first fetch after every
-     * rebalance and also on startup. As such, if you need to store offsets in anything other than Kafka, this API
-     * should not be used. The committed offset should be the next message your application will consume,
-     * i.e. {@code nextRecordToBeProcessed.offset()} (or {@link ConsumerRecords#nextOffsets()}).
-     * You should also add the leader epoch as commit metadata, which can be obtained from
-     * {@link ConsumerRecord#leaderEpoch()} or {@link ConsumerRecords#nextOffsets()}.
-     * If automatic group management with {@link #subscribe(Collection)} is used,
-     * then the committed offsets must belong to the currently auto-assigned partitions.
+     * 此方法将偏移量提交到Kafka。提交的偏移量将在每次重平衡后的第一次获取时以及启动时使用。
+     * 因此，如果你需要将偏移量存储在Kafka以外的其他地方，不应使用此API。
+     * 提交的偏移量应该是你的应用程序将要消费的下一条消息的偏移量，
+     * 即 {@code nextRecordToBeProcessed.offset()} （或 {@link ConsumerRecords#nextOffsets()}）。
+     * 你还应该添加leader epoch作为提交元数据，可以从 {@link ConsumerRecord#leaderEpoch()} 
+     * 或 {@link ConsumerRecords#nextOffsets()} 获取。
+     * 如果使用 {@link #subscribe(Collection)} 进行自动组管理，
+     * 则提交的偏移量必须属于当前自动分配的分区。
      * <p>
-     * This is a synchronous commit and will block until either the commit succeeds, an unrecoverable error is
-     * encountered (in which case it is thrown to the caller), or the timeout expires.
+     * 这是一个同步提交操作，会阻塞直到以下情况之一发生：
+     * - 提交成功
+     * - 遇到不可恢复的错误（此时会将错误抛出给调用者）
+     * - 超过指定的超时时间
      * <p>
-     * Note that asynchronous offset commits sent previously with the {@link #commitAsync(OffsetCommitCallback)}
-     * (or similar) are guaranteed to have their callbacks invoked prior to completion of this method.
+     * 注意：之前通过 {@link #commitAsync(OffsetCommitCallback)} （或类似方法）发送的异步偏移量提交，
+     * 其回调函数保证会在此方法完成之前被调用。
      *
-     * @param offsets A map of offsets by partition with associated metadata
-     * @param timeout The maximum amount of time to await completion of the offset commit
-     * @throws org.apache.kafka.clients.consumer.CommitFailedException if the commit failed and cannot be retried.
-     *             This can only occur if you are using automatic group management with {@link #subscribe(Collection)},
-     *             or if there is an active group with the same <code>group.id</code> which is using group management. In such cases,
-     *             when you are trying to commit to partitions that are no longer assigned to this consumer because the
-     *             consumer is for example no longer part of the group this exception would be thrown.
-     * @throws org.apache.kafka.common.errors.RebalanceInProgressException if the consumer instance is in the middle of a rebalance
-     *            so it is not yet determined which partitions would be assigned to the consumer. In such cases you can first
-     *            complete the rebalance by calling {@link #poll(Duration)} and commit can be reconsidered afterwards.
-     *            NOTE when you reconsider committing after the rebalance, the assigned partitions may have changed,
-     *            and also for those partitions that are still assigned their fetch positions may have changed too
-     *            if more records are returned from the {@link #poll(Duration)} call, so when you retry committing
-     *            you should consider updating the passed in {@code offset} parameter.
-     * @throws org.apache.kafka.common.errors.WakeupException if {@link #wakeup()} is called before or while this
-     *             function is called
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted before or while
-     *             this function is called
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic or to the
-     *             configured groupId. See the exception for more details
-     * @throws java.lang.IllegalArgumentException if the committed offset is negative
-     * @throws org.apache.kafka.common.KafkaException for any other unrecoverable errors (e.g. if offset metadata
-     *             is too large or if the topic does not exist).
-     * @throws org.apache.kafka.common.errors.TimeoutException if the timeout expires before successful completion
-     *            of the offset commit
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer is using the classic group protocol
-     *            and this instance gets fenced by broker.
+     * @param offsets 包含分区偏移量及其相关元数据的映射
+     * @param timeout 等待偏移量提交完成的最长时间
+     * @throws org.apache.kafka.clients.consumer.CommitFailedException 如果提交失败且无法重试。
+     *             这种情况只会在以下场景发生：
+     *             - 使用 {@link #subscribe(Collection)} 进行自动组管理
+     *             - 存在使用相同 <code>group.id</code> 的活跃组正在使用组管理
+     *             在这些情况下，如果你尝试提交不再分配给此消费者的分区（例如消费者已不再是组的一部分），
+     *             就会抛出此异常。
+     * @throws org.apache.kafka.common.errors.RebalanceInProgressException 如果消费者实例正在进行重平衡，
+     *            此时尚未确定哪些分区会被分配给消费者。在这种情况下，你可以先通过调用 {@link #poll(Duration)} 
+     *            完成重平衡，然后再考虑提交。
+     *            注意：重平衡后重新提交时，分配的分区可能已经改变，而且对于仍然分配的分区，
+     *            如果从 {@link #poll(Duration)} 调用返回了更多记录，它们的获取位置也可能已经改变，
+     *            所以重试提交时应考虑更新传入的 {@code offset} 参数。
+     * @throws org.apache.kafka.common.errors.WakeupException 如果在调用此函数之前或期间调用了 {@link #wakeup()}
+     * @throws org.apache.kafka.common.errors.InterruptException 如果在调用此函数之前或期间调用线程被中断
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败。详见异常信息
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果未被授权访问主题或配置的groupId。详见异常信息
+     * @throws java.lang.IllegalArgumentException 如果提交的偏移量为负数
+     * @throws org.apache.kafka.common.KafkaException 对于任何其他不可恢复的错误（例如偏移量元数据太大或主题不存在）
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在偏移量提交成功完成之前超时
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 如果此消费者使用经典组协议且此实例被broker隔离
      */
     @Override
     public void commitSync(final Map<TopicPartition, OffsetAndMetadata> offsets, final Duration timeout) {
+        // 调用委托对象执行同步提交操作，传入偏移量映射和超时时间参数
         delegate.commitSync(offsets, timeout);
     }
 
     /**
-     * Commit offsets returned on the last {@link #poll(Duration)} for all the subscribed list of topics and partition.
-     * Same as {@link #commitAsync(OffsetCommitCallback) commitAsync(null)}
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer is using the classic group protocol
-     *            and this instance gets fenced by broker.
+     * 为所有已订阅的主题和分区提交最后一次 {@link #poll(Duration)} 返回的位移。
+     * 等同于调用 {@link #commitAsync(OffsetCommitCallback) commitAsync(null)}。
+     * 这是一个异步操作，不会阻塞消费者线程。
+     * 
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 如果消费者使用经典组协议且被broker隔离时抛出此异常
      */
     @Override
     public void commitAsync() {
+        // 调用委托对象的异步提交方法，不带回调函数
         delegate.commitAsync();
     }
 
     /**
-     * Commit offsets returned on the last {@link #poll(Duration) poll()} for the subscribed list of topics and partitions.
+     * 为所有已订阅的主题和分区提交最后一次 {@link #poll(Duration) poll()} 返回的位移。
      * <p>
-     * This commits offsets only to Kafka. The offsets committed using this API will be used on the first fetch after
-     * every rebalance and also on startup. As such, if you need to store offsets in anything other than Kafka, this API
-     * should not be used.
+     * 此方法仅将位移提交到Kafka。提交的位移将在每次重平衡后的第一次获取和启动时使用。
+     * 因此，如果需要将位移存储在Kafka之外的其他系统中，不应使用此API。
      * <p>
-     * This is an asynchronous call and will not block. Any errors encountered are either passed to the callback
-     * (if provided) or discarded.
+     * 这是一个异步调用，不会阻塞。遇到的任何错误要么传递给回调函数（如果提供），要么被丢弃。
      * <p>
-     * Offsets committed through multiple calls to this API are guaranteed to be sent in the same order as
-     * the invocations. Corresponding commit callbacks are also invoked in the same order. Additionally note that
-     * offsets committed through this API are guaranteed to complete before a subsequent call to {@link #commitSync()}
-     * (and variants) returns.
+     * 通过多次调用此API提交的位移保证按调用顺序发送。相应的提交回调也按相同顺序调用。
+     * 另外请注意，通过此API提交的位移保证在后续调用 {@link #commitSync()} （及其变体）返回之前完成。
      *
-     * @param callback Callback to invoke when the commit completes
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer is using the classic group protocol
-     *             and this instance gets fenced by broker.
+     * @param callback 提交完成时要调用的回调函数
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 如果消费者使用经典组协议且被broker隔离时抛出此异常
      */
     @Override
     public void commitAsync(OffsetCommitCallback callback) {
+        // 调用委托对象的异步提交方法，带回调函数
         delegate.commitAsync(callback);
     }
 
     /**
-     * Commit the specified offsets for the specified list of topics and partitions to Kafka.
+     * 为指定的主题和分区列表提交指定的位移到Kafka。
      * <p>
-     * This commits offsets to Kafka. The offsets committed using this API will be used on the first fetch after every
-     * rebalance and also on startup. As such, if you need to store offsets in anything other than Kafka, this API
-     * should not be used. The committed offset should be the next message your application will consume,
-     * i.e. {@code nextRecordToBeProcessed.offset()} (or {@link ConsumerRecords#nextOffsets()}).
-     * You should also add the leader epoch as commit metadata, which can be obtained from
-     * {@link ConsumerRecord#leaderEpoch()} or {@link ConsumerRecords#nextOffsets()}.
-     * If automatic group management with {@link #subscribe(Collection)} is used,
-     * then the committed offsets must belong to the currently auto-assigned partitions.
+     * 此方法将位移提交到Kafka。提交的位移将在每次重平衡后的第一次获取和启动时使用。
+     * 因此，如果需要将位移存储在Kafka之外的其他系统中，不应使用此API。
+     * 提交的位移应该是应用程序将要消费的下一条消息的位移，
+     * 即 {@code nextRecordToBeProcessed.offset()} （或 {@link ConsumerRecords#nextOffsets()}）。
+     * 你还应该添加leader epoch作为提交元数据，可以从 {@link ConsumerRecord#leaderEpoch()} 或
+     * {@link ConsumerRecords#nextOffsets()} 获取。
+     * 如果使用 {@link #subscribe(Collection)} 进行自动组管理，
+     * 则提交的位移必须属于当前自动分配的分区。
      * <p>
-     * This is an asynchronous call and will not block. Any errors encountered are either passed to the callback
-     * (if provided) or discarded.
+     * 这是一个异步调用，不会阻塞。遇到的任何错误要么传递给回调函数（如果提供），要么被丢弃。
      * <p>
-     * Offsets committed through multiple calls to this API are guaranteed to be sent in the same order as
-     * the invocations. Corresponding commit callbacks are also invoked in the same order. Additionally note that
-     * offsets committed through this API are guaranteed to complete before a subsequent call to {@link #commitSync()}
-     * (and variants) returns.
+     * 通过多次调用此API提交的位移保证按调用顺序发送。相应的提交回调也按相同顺序调用。
+     * 另外请注意，通过此API提交的位移保证在后续调用 {@link #commitSync()} （及其变体）返回之前完成。
      *
-     * @param offsets A map of offsets by partition with associate metadata. This map will be copied internally, so it
-     *                is safe to mutate the map after returning.
-     * @param callback Callback to invoke when the commit completes
-     * @throws org.apache.kafka.common.errors.FencedInstanceIdException if this consumer is using the classic group protocol
-     *             and this instance gets fenced by broker.
+     * @param offsets 按分区划分的位移映射及其关联元数据。此映射将在内部复制，因此在返回后修改映射是安全的。
+     * @param callback 提交完成时要调用的回调函数
+     * @throws org.apache.kafka.common.errors.FencedInstanceIdException 如果消费者使用经典组协议且被broker隔离时抛出此异常
      */
     @Override
     public void commitAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, OffsetCommitCallback callback) {
+        // 调用委托对象的异步提交方法，提交指定的位移映射，带回调函数
         delegate.commitAsync(offsets, callback);
     }
 
     /**
-     * Overrides the fetch offsets that the consumer will use on the next {@link #poll(Duration) poll(timeout)}. If this API
-     * is invoked for the same partition more than once, the latest offset will be used on the next poll(). Note that
-     * you may lose data if this API is arbitrarily used in the middle of consumption, to reset the fetch offsets
+     * 覆盖消费者在下一次 {@link #poll(Duration) poll(timeout)} 中将使用的获取位移。
+     * 如果对同一分区多次调用此API，则在下一次poll()时将使用最新的位移。
+     * 注意，如果在消费过程中任意使用此API重置获取位移，可能会丢失数据。
      * <p>
-     * The next Consumer Record which will be retrieved when poll() is invoked will have the offset specified, given that
-     * a record with that offset exists (i.e. it is a valid offset).
+     * 当调用poll()时，将获取指定位移的下一条消费者记录，前提是该位移存在对应的记录（即它是一个有效的位移）。
      * <p>
-     * {@link #seekToBeginning(Collection)} will go to the first offset in the topic.
-     * seek(0) is equivalent to seekToBeginning for a TopicPartition with beginning offset 0,
-     * assuming that there is a record at offset 0 still available.
-     * {@link #seekToEnd(Collection)} is equivalent to seeking to the last offset of the partition, but behavior depends on
-     * {@code isolation.level}, so see {@link #seekToEnd(Collection)} documentation for more details.
+     * {@link #seekToBeginning(Collection)} 将转到主题中的第一个位移。
+     * seek(0)等同于对起始位移为0的TopicPartition调用seekToBeginning，
+     * 前提是位移0处的记录仍然可用。
+     * {@link #seekToEnd(Collection)} 等同于寻找分区的最后一个位移，但行为取决于
+     * {@code isolation.level}，详见 {@link #seekToEnd(Collection)} 文档。
      * <p>
-     * Seeking to the offset smaller than the log start offset or larger than the log end offset
-     * means an invalid offset is reached.
-     * Invalid offset behaviour is controlled by the {@code auto.offset.reset} property.
-     * If this is set to "earliest", the next poll will return records from the starting offset.
-     * If it is set to "latest", it will seek to the last offset (similar to seekToEnd()).
-     * If it is set to "none", an {@code OffsetOutOfRangeException} will be thrown.
+     * 寻找小于日志起始位移或大于日志结束位移的位移意味着达到了无效位移。
+     * 无效位移行为由 {@code auto.offset.reset} 属性控制。
+     * 如果设置为"earliest"，下一次poll将从起始位移返回记录。
+     * 如果设置为"latest"，将寻找最后一个位移（类似于seekToEnd()）。
+     * 如果设置为"none"，将抛出 {@code OffsetOutOfRangeException}。
      * <p>
-     * Note that, the seek offset won't change to the in-flight fetch request, it will take effect in next fetch request.
-     * So, the consumer might wait for {@code fetch.max.wait.ms} before starting to fetch the records from desired offset.
+     * 注意，seek位移不会改变正在进行的获取请求，它将在下一个获取请求中生效。
+     * 因此，消费者可能需要等待 {@code fetch.max.wait.ms} 才能开始从所需位移获取记录。
      *
-     * @param partition the TopicPartition on which the seek will be performed.
-     * @param offset the next offset returned by poll().
-     * @throws IllegalArgumentException if the provided offset is negative
-     * @throws IllegalStateException if the provided TopicPartition is not assigned to this consumer
+     * @param partition 将执行seek操作的TopicPartition
+     * @param offset poll()将返回的下一个位移
+     * @throws IllegalArgumentException 如果提供的位移为负数
+     * @throws IllegalStateException 如果提供的TopicPartition未分配给此消费者
      */
     @Override
     public void seek(TopicPartition partition, long offset) {
+        // 调用委托对象的seek方法，设置指定分区的下一个消费位移
         delegate.seek(partition, offset);
     }
 
     /**
-     * Overrides the fetch offsets that the consumer will use on the next {@link #poll(Duration) poll(timeout)}. If this API
-     * is invoked for the same partition more than once, the latest offset will be used on the next poll(). Note that
-     * you may lose data if this API is arbitrarily used in the middle of consumption, to reset the fetch offsets. This
-     * method allows for setting the leaderEpoch along with the desired offset.
+     * 覆盖消费者在下一次 {@link #poll(Duration) poll(timeout)} 中将使用的获取位移。
+     * 如果对同一分区多次调用此API，则在下一次poll()时将使用最新的位移。
+     * 注意，如果在消费过程中任意使用此API重置获取位移，可能会丢失数据。
+     * 此方法允许同时设置leaderEpoch和所需的位移。
      *
-     * @throws IllegalArgumentException if the provided offset is negative
-     * @throws IllegalStateException if the provided TopicPartition is not assigned to this consumer
+     * @throws IllegalArgumentException 如果提供的位移为负数
+     * @throws IllegalStateException 如果提供的TopicPartition未分配给此消费者
      */
     @Override
     public void seek(TopicPartition partition, OffsetAndMetadata offsetAndMetadata) {
+        // 调用委托对象的seek方法，设置指定分区的下一个消费位移和元数据
         delegate.seek(partition, offsetAndMetadata);
     }
 
     /**
-     * Seek to the first offset for each of the given partitions. This function evaluates lazily, seeking to the
-     * first offset in all partitions only when {@link #poll(Duration)} or {@link #position(TopicPartition)} are called.
-     * If no partitions are provided, seek to the first offset for all of the currently assigned partitions.
+     * 将指定分区的消费位置重置到最早的位移（即第一个可用的位移）。
+     * 这个方法是延迟执行的，只有在调用{@link #poll(Duration)}或{@link #position(TopicPartition)}时才会实际执行重置操作。
+     * 如果没有提供分区列表，则会重置当前消费者已分配的所有分区的位移。
+     * <p>
+     * 使用场景：
+     * 1. 需要重新消费某些分区的所有历史数据时
+     * 2. 在消费者重启后希望从头开始处理数据时
+     * 3. 进行数据迁移或备份时需要获取完整数据
+     * <p>
+     * 注意事项：
+     * 1. 此操作会丢弃之前的消费位置，请谨慎使用
+     * 2. 如果启用了自动提交，在执行seek操作后应该禁用自动提交或手动提交新位置
+     * 3. 此操作不会立即触发数据获取，而是在下次poll时生效
      *
-     * @throws IllegalArgumentException if {@code partitions} is {@code null}
-     * @throws IllegalStateException if any of the provided partitions are not currently assigned to this consumer
+     * @param partitions 要重置位移的分区集合，如果为null则抛出IllegalArgumentException
+     * @throws IllegalArgumentException 如果partitions参数为null
+     * @throws IllegalStateException 如果指定的分区未被分配给当前消费者
      */
     @Override
     public void seekToBeginning(Collection<TopicPartition> partitions) {
+        // 调用委托对象执行实际的重置操作
         delegate.seekToBeginning(partitions);
     }
 
