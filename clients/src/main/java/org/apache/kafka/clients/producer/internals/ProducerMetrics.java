@@ -25,18 +25,48 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Kafka生产者的指标监控类
+ * 
+ * 该类负责管理和收集Kafka生产者的各项性能指标，主要包括：
+ * 1. 消息发送相关的指标（如发送速率、延迟等）
+ * 2. 批次处理相关的指标（如批次大小、压缩比等）
+ * 3. 缓冲区使用情况的指标
+ * 4. 请求和响应相关的指标
+ * 
+ * 通过这些指标，用户可以监控和分析生产者的性能表现，及时发现潜在问题
+ */
 public class ProducerMetrics {
 
+    /**
+     * 发送者指标注册表，用于注册和管理所有与消息发送相关的指标
+     * 包含了如消息发送速率、延迟、重试次数等关键指标
+     */
     public final SenderMetricsRegistry senderMetrics;
 
+    /**
+     * 构造函数，初始化生产者指标监控系统
+     * 
+     * @param metrics Kafka指标系统的核心组件，用于创建和管理各类指标
+     */
     public ProducerMetrics(Metrics metrics) {
         this.senderMetrics = new SenderMetricsRegistry(metrics);
     }
 
+    /**
+     * 获取所有已注册的指标模板
+     * 
+     * @return 返回所有指标模板的列表，这些模板定义了指标的名称、标签和描述等信息
+     */
     private List<MetricNameTemplate> getAllTemplates() {
         return new ArrayList<>(this.senderMetrics.allTemplates());
     }
 
+    /**
+     * 主方法，用于演示如何初始化生产者指标系统并生成HTML格式的指标报告
+     * 
+     * @param args 命令行参数（未使用）
+     */
     public static void main(String[] args) {
         Map<String, String> metricTags = Collections.singletonMap("client-id", "client-id");
         MetricConfig metricConfig = new MetricConfig().tags(metricTags);
