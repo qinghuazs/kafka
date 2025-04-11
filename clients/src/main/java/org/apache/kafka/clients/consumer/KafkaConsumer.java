@@ -1690,279 +1690,400 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     }
 
     /**
-     * Look up the offsets for the given partitions by timestamp. The returned offset for each partition is the
-     * earliest offset whose timestamp is greater than or equal to the given timestamp in the corresponding partition.
+     * 根据时间戳查找分区对应的偏移量。对于每个分区，返回的是第一个时间戳大于等于给定时间戳的消息的偏移量。
+     * 
+     * 这是一个阻塞调用。消费者不需要被分配这些分区。
+     * 如果分区的消息格式版本低于0.10.0（即消息没有时间戳），则对该分区返回null。
      *
-     * This is a blocking call. The consumer does not have to be assigned the partitions.
-     * If the message format version in a partition is before 0.10.0, i.e. the messages do not have timestamps, null
-     * will be returned for that partition.
+     * @param timestampsToSearch 分区到要查找的时间戳的映射
+     *                          - key: TopicPartition 表示要查询的分区
+     *                          - value: Long 表示要查找的时间戳（毫秒）
      *
-     * @param timestampsToSearch the mapping from partition to the timestamp to look up.
+     * @return 返回一个映射，包含每个分区对应的第一个时间戳大于等于目标时间戳的消息的时间戳和偏移量。
+     *         如果没有这样的消息，则对该分区返回null。
+     *         返回的OffsetAndTimestamp对象包含:
+     *         - offset: 消息的偏移量
+     *         - timestamp: 消息的时间戳
      *
-     * @return a mapping from partition to the timestamp and offset of the first message with timestamp greater
-     *         than or equal to the target timestamp. {@code null} will be returned for the partition if there is no
-     *         such message.
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic(s). See the exception for more details
-     * @throws IllegalArgumentException if the target timestamp is negative
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offset metadata could not be fetched before
-     *         the amount of time allocated by {@code default.api.timeout.ms} expires.
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException if the broker does not support looking up
-     *         the offsets by timestamp
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有主题的访问权限
+     * @throws IllegalArgumentException 如果目标时间戳为负数
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在default.api.timeout.ms配置的时间内无法获取偏移量元数据
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 如果broker不支持按时间戳查找偏移量
+     *
+     * 使用场景:
+     * 1. 需要从特定时间点开始消费消息
+     * 2. 需要查找某个时间点附近的消息
+     * 3. 故障恢复时定位消费位置
      */
     @Override
     public Map<TopicPartition, OffsetAndTimestamp> offsetsForTimes(Map<TopicPartition, Long> timestampsToSearch) {
+        // 调用delegate的offsetsForTimes方法实现功能
+        // delegate会根据配置决定使用同步或异步实现
         return delegate.offsetsForTimes(timestampsToSearch);
     }
 
     /**
-     * Look up the offsets for the given partitions by timestamp. The returned offset for each partition is the
-     * earliest offset whose timestamp is greater than or equal to the given timestamp in the corresponding partition.
+     * 根据时间戳查找分区对应的偏移量（带超时参数）。对于每个分区，返回的是第一个时间戳大于等于给定时间戳的消息的偏移量。
+     * 
+     * 这是一个阻塞调用。消费者不需要被分配这些分区。
+     * 如果分区的消息格式版本低于0.10.0（即消息没有时间戳），则对该分区返回null。
      *
-     * This is a blocking call. The consumer does not have to be assigned the partitions.
-     * If the message format version in a partition is before 0.10.0, i.e. the messages do not have timestamps, null
-     * will be returned for that partition.
+     * @param timestampsToSearch 分区到要查找的时间戳的映射
+     *                          - key: TopicPartition 表示要查询的分区
+     *                          - value: Long 表示要查找的时间戳（毫秒）
+     * @param timeout 等待获取偏移量的最大时间
+     *               - 如果操作在超时时间内未完成，将抛出TimeoutException
      *
-     * @param timestampsToSearch the mapping from partition to the timestamp to look up.
-     * @param timeout The maximum amount of time to await retrieval of the offsets
+     * @return 返回一个映射，包含每个分区对应的第一个时间戳大于等于目标时间戳的消息的时间戳和偏移量。
+     *         如果没有这样的消息，则对该分区返回null。
      *
-     * @return a mapping from partition to the timestamp and offset of the first message with timestamp greater
-     *         than or equal to the target timestamp. {@code null} will be returned for the partition if there is no
-     *         such message.
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic(s). See the exception for more details
-     * @throws IllegalArgumentException if the target timestamp is negative
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offset metadata could not be fetched before
-     *         expiration of the passed timeout
-     * @throws org.apache.kafka.common.errors.UnsupportedVersionException if the broker does not support looking up
-     *         the offsets by timestamp
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有主题的访问权限
+     * @throws IllegalArgumentException 如果目标时间戳为负数
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在指定的超时时间内无法获取偏移量元数据
+     * @throws org.apache.kafka.common.errors.UnsupportedVersionException 如果broker不支持按时间戳查找偏移量
+     *
+     * 与无超时参数版本的区别:
+     * 1. 可以自定义超时时间，而不是使用default.api.timeout.ms配置
+     * 2. 适用于需要更精细控制超时时间的场景
      */
     @Override
     public Map<TopicPartition, OffsetAndTimestamp> offsetsForTimes(Map<TopicPartition, Long> timestampsToSearch, Duration timeout) {
+        // 调用delegate的offsetsForTimes方法实现功能，传入自定义超时时间
         return delegate.offsetsForTimes(timestampsToSearch, timeout);
     }
 
     /**
-     * Get the first offset for the given partitions.
+     * 获取给定分区的起始偏移量（最早可用偏移量）。
      * <p>
-     * This method does not change the current consumer position of the partitions.
+     * 此方法不会改变消费者当前的分区位置。
      *
      * @see #seekToBeginning(Collection)
      *
-     * @param partitions the partitions to get the earliest offsets.
-     * @return The earliest available offsets for the given partitions
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic(s). See the exception for more details
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offset metadata could not be fetched before
-     *         expiration of the configured {@code default.api.timeout.ms}
+     * @param partitions 要获取起始偏移量的分区集合
+     * @return 返回每个分区对应的最早可用偏移量
+     *         - 返回的偏移量是分区日志中仍然存在的最早消息的偏移量
+     *         - 如果主题使用日志压缩，则可能是已压缩消息的偏移量
+     *
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有主题的访问权限
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在default.api.timeout.ms配置的时间内无法获取偏移量元数据
+     *
+     * 使用场景:
+     * 1. 需要从分区的最开始重新消费消息
+     * 2. 需要了解分区的偏移量范围
+     * 3. 与endOffsets()结合使用可以计算分区的总消息量
      */
     @Override
     public Map<TopicPartition, Long> beginningOffsets(Collection<TopicPartition> partitions) {
+        // 调用delegate的beginningOffsets方法获取分区起始偏移量
         return delegate.beginningOffsets(partitions);
     }
 
     /**
-     * Get the first offset for the given partitions.
+     * 获取给定分区的起始偏移量（带超时参数）。
      * <p>
-     * This method does not change the current consumer position of the partitions.
+     * 此方法不会改变消费者当前的分区位置。
      *
      * @see #seekToBeginning(Collection)
      *
-     * @param partitions the partitions to get the earliest offsets
-     * @param timeout The maximum amount of time to await retrieval of the beginning offsets
+     * @param partitions 要获取起始偏移量的分区集合
+     * @param timeout 等待获取起始偏移量的最大时间
+     *               - 如果操作在超时时间内未完成，将抛出TimeoutException
      *
-     * @return The earliest available offsets for the given partitions
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic(s). See the exception for more details
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offset metadata could not be fetched before
-     *         expiration of the passed timeout
+     * @return 返回每个分区对应的最早可用偏移量
+     *
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有主题的访问权限
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在指定的超时时间内无法获取偏移量元数据
+     *
+     * 与无超时参数版本的区别:
+     * 1. 可以自定义超时时间，而不是使用default.api.timeout.ms配置
+     * 2. 适用于需要更精细控制超时时间的场景
      */
     @Override
     public Map<TopicPartition, Long> beginningOffsets(Collection<TopicPartition> partitions, Duration timeout) {
+        // 调用delegate的beginningOffsets方法获取分区起始偏移量，传入自定义超时时间
         return delegate.beginningOffsets(partitions, timeout);
     }
 
     /**
-     * Get the end offsets for the given partitions. In the default {@code read_uncommitted} isolation level, the end
-     * offset is the high watermark (that is, the offset of the last successfully replicated message plus one). For
-     * {@code read_committed} consumers, the end offset is the last stable offset (LSO), which is the minimum of
-     * the high watermark and the smallest offset of any open transaction. Finally, if the partition has never been
-     * written to, the end offset is 0.
+     * 获取指定分区的末尾偏移量。根据不同的隔离级别，末尾偏移量的定义有所不同：
+     * 
+     * 1. 在默认的 {@code read_uncommitted} 隔离级别下：
+     *    - 末尾偏移量是高水位（high watermark）
+     *    - 即最后一条成功复制的消息的偏移量加1
+     * 
+     * 2. 在 {@code read_committed} 隔离级别下：
+     *    - 末尾偏移量是最后稳定偏移量（LSO, Last Stable Offset）
+     *    - LSO是高水位和任何未完成事务中最小偏移量的较小值
+     * 
+     * 3. 如果分区从未写入过数据：
+     *    - 末尾偏移量为0
      *
      * <p>
-     * This method does not change the current consumer position of the partitions.
+     * 注意：此方法不会改变消费者在分区上的当前消费位置
      *
-     * @see #seekToEnd(Collection)
+     * @see #seekToEnd(Collection) 另请参阅seekToEnd方法
      *
-     * @param partitions the partitions to get the end offsets.
-     * @return The end offsets for the given partitions.
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic(s). See the exception for more details
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offset metadata could not be fetched before
-     *         the amount of time allocated by {@code default.api.timeout.ms} expires
+     * @param partitions 需要获取末尾偏移量的分区集合
+     * @return 返回一个Map，key为分区，value为对应的末尾偏移量
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有主题的访问权限
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在default.api.timeout.ms配置的时间内无法获取偏移量元数据
      */
     @Override
     public Map<TopicPartition, Long> endOffsets(Collection<TopicPartition> partitions) {
+        // 调用委托对象的endOffsets方法获取末尾偏移量
         return delegate.endOffsets(partitions);
     }
 
     /**
-     * Get the end offsets for the given partitions. In the default {@code read_uncommitted} isolation level, the end
-     * offset is the high watermark (that is, the offset of the last successfully replicated message plus one). For
-     * {@code read_committed} consumers, the end offset is the last stable offset (LSO), which is the minimum of
-     * the high watermark and the smallest offset of any open transaction. Finally, if the partition has never been
-     * written to, the end offset is 0.
+     * 获取指定分区的末尾偏移量，支持自定义超时时间。根据不同的隔离级别，末尾偏移量的定义有所不同：
+     * 
+     * 1. 在默认的 {@code read_uncommitted} 隔离级别下：
+     *    - 末尾偏移量是高水位（high watermark）
+     *    - 即最后一条成功复制的消息的偏移量加1
+     * 
+     * 2. 在 {@code read_committed} 隔离级别下：
+     *    - 末尾偏移量是最后稳定偏移量（LSO, Last Stable Offset）
+     *    - LSO是高水位和任何未完成事务中最小偏移量的较小值
+     * 
+     * 3. 如果分区从未写入过数据：
+     *    - 末尾偏移量为0
      *
      * <p>
-     * This method does not change the current consumer position of the partitions.
+     * 注意：此方法不会改变消费者在分区上的当前消费位置
      *
-     * @see #seekToEnd(Collection)
+     * @see #seekToEnd(Collection) 另请参阅seekToEnd方法
      *
-     * @param partitions the partitions to get the end offsets.
-     * @param timeout The maximum amount of time to await retrieval of the end offsets
+     * @param partitions 需要获取末尾偏移量的分区集合
+     * @param timeout 获取末尾偏移量的最大等待时间
      *
-     * @return The end offsets for the given partitions.
-     * @throws org.apache.kafka.common.errors.AuthenticationException if authentication fails. See the exception for more details
-     * @throws org.apache.kafka.common.errors.AuthorizationException if not authorized to the topic(s). See the exception for more details
-     * @throws org.apache.kafka.common.errors.TimeoutException if the offsets could not be fetched before
-     *         expiration of the passed timeout
+     * @return 返回一个Map，key为分区，value为对应的末尾偏移量
+     * @throws org.apache.kafka.common.errors.AuthenticationException 如果认证失败
+     * @throws org.apache.kafka.common.errors.AuthorizationException 如果没有主题的访问权限
+     * @throws org.apache.kafka.common.errors.TimeoutException 如果在指定的超时时间内无法获取偏移量
      */
     @Override
     public Map<TopicPartition, Long> endOffsets(Collection<TopicPartition> partitions, Duration timeout) {
+        // 调用委托对象的endOffsets方法，传入分区集合和超时时间参数
         return delegate.endOffsets(partitions, timeout);
     }
 
     /**
-     * Get the consumer's current lag on the partition. Returns an "empty" {@link OptionalLong} if the lag is not known,
-     * for example if there is no position yet, or if the end offset is not known yet.
+     * 获取消费者在指定分区上的当前消费滞后量。
+     * 滞后量定义：分区末尾偏移量与消费者当前消费位置之间的差值。
+     * 
+     * 在以下情况下会返回一个空的 {@link OptionalLong}：
+     * 1. 消费者还没有消费位置（例如刚刚分配到分区）
+     * 2. 分区的末尾偏移量尚未知（例如首次访问分区）
      *
      * <p>
-     * This method uses locally cached metadata. If the log end offset is not known yet, it triggers a request to fetch
-     * the log end offset, but returns immediately.
+     * 实现说明：
+     * - 该方法使用本地缓存的元数据来计算滞后量
+     * - 如果末尾偏移量未知，会触发一个异步请求来获取，但方法会立即返回
+     * - 这样设计是为了避免同步等待网络请求，提高性能
      *
-     * @param topicPartition The partition to get the lag for.
+     * @param topicPartition 需要获取滞后量的分区
      *
-     * @return This {@code Consumer} instance's current lag for the given partition.
+     * @return 返回当前消费者实例在指定分区上的滞后量
+     *         - 如果能够计算出滞后量，返回包含具体值的OptionalLong
+     *         - 如果无法计算滞后量，返回空的OptionalLong
      *
-     * @throws IllegalStateException if the {@code topicPartition} is not assigned
+     * @throws IllegalStateException 如果指定的分区未被分配给该消费者
      */
     @Override
     public OptionalLong currentLag(TopicPartition topicPartition) {
+        // 调用委托对象的currentLag方法获取滞后量
         return delegate.currentLag(topicPartition);
     }
 
     /**
-     * Return the current group metadata associated with this consumer.
+     * 获取当前消费者实例关联的消费者组元数据信息。
+     * <p>
+     * 该方法用于获取消费者的组信息，包括：
+     * - 消费者组ID
+     * - 消费者组代（Generation）
+     * - 消费者成员ID
+     * - 组协调器信息等
      *
-     * @return consumer group metadata
-     * @throws org.apache.kafka.common.errors.InvalidGroupIdException if consumer does not have a group
+     * @return 消费者组元数据对象，包含了消费者组的详细信息
+     * @throws org.apache.kafka.common.errors.InvalidGroupIdException 如果消费者没有设置group.id或不属于任何消费者组
      */
     @Override
     public ConsumerGroupMetadata groupMetadata() {
+        // 委托给内部实现类获取消费者组元数据
         return delegate.groupMetadata();
     }
 
     /**
-     * Alert the consumer to trigger a new rebalance by rejoining the group. This is a nonblocking call that forces
-     * the consumer to trigger a new rebalance on the next {@link #poll(Duration)} call. Note that this API does not
-     * itself initiate the rebalance, so you must still call {@link #poll(Duration)}. If a rebalance is already in
-     * progress this call will be a no-op. If you wish to force an additional rebalance you must complete the current
-     * one by calling poll before retrying this API.
+     * 通知消费者通过重新加入组来触发一次新的重平衡。
      * <p>
-     * You do not need to call this during normal processing, as the consumer group will manage itself
-     * automatically and rebalance when necessary. However there may be situations where the application wishes to
-     * trigger a rebalance that would otherwise not occur. For example, if some condition external and invisible to
-     * the Consumer and its group changes in a way that would affect the userdata encoded in the
-     * {@link org.apache.kafka.clients.consumer.ConsumerPartitionAssignor.Subscription Subscription}, the Consumer
-     * will not be notified and no rebalance will occur. This API can be used to force the group to rebalance so that
-     * the assignor can perform a partition reassignment based on the latest userdata. If your assignor does not use
-     * this userdata, or you do not use a custom
-     * {@link org.apache.kafka.clients.consumer.ConsumerPartitionAssignor ConsumerPartitionAssignor}, you should not
-     * use this API.
+     * 这是一个非阻塞调用，它会强制消费者在下一次调用{@link #poll(Duration)}时触发重平衡。需要注意以下几点：
+     * <ul>
+     * <li>该API本身不会立即启动重平衡，你仍然需要调用{@link #poll(Duration)}来实际触发重平衡
+     * <li>如果重平衡已经在进行中，这个调用将不会产生任何效果
+     * <li>如果你想强制进行额外的重平衡，必须先通过poll完成当前的重平衡，然后再重试此API
+     * </ul>
+     * <p>
+     * 在正常处理过程中不需要调用此方法，因为消费者组会自动管理并在必要时进行重平衡。
+     * 但在某些情况下，应用程序可能希望触发一个原本不会发生的重平衡。例如：
+     * <ul>
+     * <li>当某些对消费者及其组不可见的外部条件发生变化时
+     * <li>这些变化会影响编码在{@link org.apache.kafka.clients.consumer.ConsumerPartitionAssignor.Subscription Subscription}中的用户数据
+     * <li>消费者不会收到通知，也不会发生重平衡
+     * </ul>
+     * <p>
+     * 此API可用于强制组进行重平衡，使分配器能够基于最新的用户数据重新分配分区。
+     * 如果你的分配器不使用这些用户数据，或者你没有使用自定义的
+     * {@link org.apache.kafka.clients.consumer.ConsumerPartitionAssignor ConsumerPartitionAssignor}，
+     * 则不应使用此API。
      *
-     * @param reason The reason why the new rebalance is needed.
-     *
-     * @throws java.lang.IllegalStateException if the consumer does not use group subscription
+     * @param reason 需要进行新重平衡的原因，用于日志记录和调试
+     * @throws java.lang.IllegalStateException 如果消费者没有使用组订阅（即使用了手动分区分配）
      */
     @Override
     public void enforceRebalance(final String reason) {
+        // 委托给内部实现类执行重平衡
         delegate.enforceRebalance(reason);
     }
 
     /**
+     * 触发一次新的重平衡，不指定具体原因。
+     * 
      * @see #enforceRebalance(String)
      */
     @Override
     public void enforceRebalance() {
+        // 调用带reason参数的方法，reason为null
         delegate.enforceRebalance();
     }
 
     /**
-     * Close the consumer, waiting for up to the default timeout of 30 seconds for any needed cleanup.
-     * If auto-commit is enabled, this will commit the current offsets if possible within the default
-     * timeout. See {@link #close(Duration)} for details. Note that {@link #wakeup()}
-     * cannot be used to interrupt close.
+     * 关闭消费者，等待最多30秒（默认超时时间）来完成必要的清理工作。
+     * <p>
+     * 如果启用了自动提交功能：
+     * <ul>
+     * <li>会在默认超时时间内尝试提交当前的偏移量
+     * <li>详细信息请参见{@link #close(Duration)}
+     * </ul>
+     * <p>
+     * 注意：{@link #wakeup()}方法不能用于中断关闭过程。
      *
-     * @throws org.apache.kafka.common.errors.InterruptException if the calling thread is interrupted
-     *             before or while this function is called
-     * @throws org.apache.kafka.common.KafkaException for any other error during close
+     * @throws org.apache.kafka.common.errors.InterruptException 如果在调用此函数之前或期间调用线程被中断
+     * @throws org.apache.kafka.common.KafkaException 关闭过程中发生的任何其他错误
      */
     @Override
     public void close() {
+        // 委托给内部实现类执行关闭操作
         delegate.close();
     }
 
     /**
-     * Tries to close the consumer cleanly within the specified timeout. This method waits up to
-     * {@code timeout} for the consumer to complete pending commits and leave the group.
-     * If auto-commit is enabled, this will commit the current offsets if possible within the
-     * timeout. If the consumer is unable to complete offset commits and gracefully leave the group
-     * before the timeout expires, the consumer is force closed. Note that {@link #wakeup()} cannot be
-     * used to interrupt close.
+     * 尝试在指定的超时时间内干净地关闭消费者。
      * <p>
-     * The actual maximum wait time is bounded by the {@link ConsumerConfig#REQUEST_TIMEOUT_MS_CONFIG} setting, which
-     * only applies to operations performed with the broker (coordinator-related requests and
-     * fetch sessions). Even if a larger timeout is specified, the consumer will not wait longer than
-     * {@link ConsumerConfig#REQUEST_TIMEOUT_MS_CONFIG} for these requests to complete during the close operation.
-     * Note that the execution time of callbacks (such as {@link OffsetCommitCallback} and
-     * {@link ConsumerRebalanceListener}) does not consume time from the close timeout.
+     * 此方法会等待最多{@code timeout}时间，让消费者：
+     * <ul>
+     * <li>完成待处理的提交操作
+     * <li>退出消费者组
+     * </ul>
+     * <p>
+     * 如果启用了自动提交：
+     * <ul>
+     * <li>会在超时时间内尝试提交当前的偏移量
+     * <li>如果消费者无法在超时前完成偏移量提交并优雅地离开组，将被强制关闭
+     * </ul>
+     * <p>
+     * 注意事项：
+     * <ul>
+     * <li>{@link #wakeup()}不能用于中断关闭过程
+     * <li>实际最大等待时间受{@link ConsumerConfig#REQUEST_TIMEOUT_MS_CONFIG}设置的限制
+     * <li>该限制仅适用于与broker的操作（协调器相关请求和获取会话）
+     * <li>即使指定了更大的超时时间，消费者在关闭操作期间也不会等待超过REQUEST_TIMEOUT_MS_CONFIG的时间
+     * <li>回调执行时间（如{@link OffsetCommitCallback}和{@link ConsumerRebalanceListener}）不计入关闭超时时间
+     * </ul>
      *
-     * @param timeout The maximum time to wait for consumer to close gracefully. The value must be
-     *                non-negative. Specifying a timeout of zero means do not wait for pending requests to complete.
+     * @param timeout 等待消费者优雅关闭的最大时间。该值必须非负。
+     *                指定为零表示不等待待处理请求完成。
      *
-     * @throws IllegalArgumentException If the {@code timeout} is negative.
-     * @throws InterruptException If the thread is interrupted before or while this function is called
-     * @throws org.apache.kafka.common.KafkaException for any other error during close
+     * @throws IllegalArgumentException 如果{@code timeout}为负数
+     * @throws InterruptException 如果在调用此函数之前或期间线程被中断
+     * @throws org.apache.kafka.common.KafkaException 关闭过程中发生的任何其他错误
      */
     @Override
     public void close(Duration timeout) {
+        // 委托给内部实现类执行带超时的关闭操作
         delegate.close(timeout);
     }
 
     /**
-     * Wakeup the consumer. This method is thread-safe and is useful in particular to abort a long poll.
-     * The thread which is blocking in an operation will throw {@link org.apache.kafka.common.errors.WakeupException}.
-     * If no thread is blocking in a method which can throw {@link org.apache.kafka.common.errors.WakeupException}, the next call to such a method will raise it instead.
+     * 唤醒消费者。这是一个线程安全的方法，特别适用于中断长时间的poll操作。
+     * 
+     * 该方法的主要作用：
+     * 1. 可以安全地从其他线程调用，用于中断消费者的阻塞操作
+     * 2. 主要用于中断长时间运行的poll()调用
+     * 3. 可用于优雅关闭消费者或实现超时控制
+     * 
+     * 工作机制：
+     * - 当一个线程在执行可中断操作（如poll）时被阻塞，调用此方法会导致该线程抛出{@link org.apache.kafka.common.errors.WakeupException}
+     * - 如果当前没有线程被阻塞在可中断操作上，则下一次调用这样的方法时会抛出异常
+     * 
+     * 使用场景：
+     * 1. 在关闭消费者时中断正在进行的poll操作
+     * 2. 实现消费超时控制
+     * 3. 在多线程环境下安全地中断消费者操作
      */
     @Override
     public void wakeup() {
+        // 调用委托对象的wakeup方法，实际的唤醒逻辑由ConsumerDelegate实现
         delegate.wakeup();
     }
 
-    // Functions below are for testing only
+    // 以下方法仅用于测试目的
+    /**
+     * 获取消费者的客户端ID。
+     * 仅用于测试目的，不应在生产环境中使用。
+     *
+     * @return 返回当前消费者实例的客户端ID
+     */
     String clientId() {
+        // 通过委托对象获取客户端ID
         return delegate.clientId();
     }
 
+    /**
+     * 获取消费者的度量注册表。
+     * 仅用于测试目的，包含了消费者的各种监控指标。
+     *
+     * @return 返回包含消费者度量指标的Metrics对象
+     */
     Metrics metricsRegistry() {
+        // 通过委托对象获取度量注册表
         return delegate.metricsRegistry();
     }
 
+    /**
+     * 获取Kafka消费者的度量指标。
+     * 仅用于测试目的，提供对消费者特定度量指标的访问。
+     *
+     * @return 返回KafkaConsumerMetrics对象，包含消费者的专有度量指标
+     */
     KafkaConsumerMetrics kafkaConsumerMetrics() {
+        // 通过委托对象获取Kafka消费者度量指标
         return delegate.kafkaConsumerMetrics();
     }
 
+    /**
+     * 在需要时更新分配的元数据。
+     * 仅用于测试目的，用于手动触发分区分配的元数据更新。
+     *
+     * @param timer 用于控制更新操作超时的计时器
+     * @return 如果元数据被更新返回true，否则返回false
+     */
     boolean updateAssignmentMetadataIfNeeded(final Timer timer) {
+        // 通过委托对象更新分配的元数据，并返回更新结果
         return delegate.updateAssignmentMetadataIfNeeded(timer);
     }
 }
