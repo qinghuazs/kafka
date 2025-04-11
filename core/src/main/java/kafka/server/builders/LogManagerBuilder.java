@@ -36,7 +36,13 @@ import java.util.List;
 
 import scala.jdk.javaapi.CollectionConverters;
 
-
+/**
+ * LogManagerBuilder是Kafka中用于构建LogManager实例的建造者类。
+ * 它采用建造者模式，提供了一系列setter方法来配置LogManager的各项参数，包括
+ * 日志目录、配置仓库、默认配置、清理配置、调度器等。
+ * 通过这种方式，它简化了LogManager对象的创建过程，使配置更加灵活和清晰。
+ * 在build()方法中会对必要参数进行检查，然后创建并返回一个新的LogManager实例。
+ */
 public class LogManagerBuilder {
     private static final int PRODUCER_ID_EXPIRATION_CHECK_INTERVAL_MS = 600000;
     private List<File> logDirs = null;

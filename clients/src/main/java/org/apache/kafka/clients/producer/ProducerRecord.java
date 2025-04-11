@@ -23,168 +23,195 @@ import org.apache.kafka.common.header.internals.RecordHeaders;
 import java.util.Objects;
 
 /**
- * A key/value pair to be sent to Kafka. This consists of a topic name to which the record is being sent, an optional
- * partition number, and an optional key and value.
+ * 要发送到Kafka的键值对记录。包含以下组成部分：
+ * 1. topic名称：记录将被发送到的主题（必需）
+ * 2. partition编号：可选的分区号
+ * 3. key和value：可选的键值对
  * <p>
- * If a valid partition number is specified that partition will be used when sending the record. If no partition is
- * specified but a key is present a partition will be chosen using a hash of the key. If neither key nor partition is
- * present a partition will be assigned in a round-robin fashion. Note that partition numbers are 0-indexed.
+ * 分区选择机制：
+ * 1. 如果指定了有效的分区号，消息会被发送到指定分区
+ * 2. 如果没有指定分区，但提供了key，会使用key的哈希值选择分区
+ * 3. 如果既没有分区号也没有key，将以轮询方式分配分区
+ * 注意：分区编号从0开始
  * <p>
- * The record also has an associated timestamp. If the user did not provide a timestamp, the producer will stamp the
- * record with its current time. The timestamp eventually used by Kafka depends on the timestamp type configured for
- * the topic.
+ * 时间戳处理机制：
+ * 1. 如果用户没有提供时间戳，生产者会使用当前时间作为记录的时间戳
+ * 2. Kafka最终使用的时间戳取决于主题的时间戳类型配置：
  * <li>
- * If the topic is configured to use {@link org.apache.kafka.common.record.TimestampType#CREATE_TIME CreateTime},
- * the timestamp in the producer record will be used by the broker.
+ * 如果主题配置为使用 {@link org.apache.kafka.common.record.TimestampType#CREATE_TIME CreateTime}，
+ * broker将使用生产者记录中的时间戳
  * </li>
  * <li>
- * If the topic is configured to use {@link org.apache.kafka.common.record.TimestampType#LOG_APPEND_TIME LogAppendTime},
- * the timestamp in the producer record will be overwritten by the broker with the broker local time when it appends the
- * message to its log.
+ * 如果主题配置为使用 {@link org.apache.kafka.common.record.TimestampType#LOG_APPEND_TIME LogAppendTime}，
+ * broker会用消息追加到日志时的本地时间覆盖生产者记录中的时间戳
  * </li>
  * <p>
- * In either of the cases above, the timestamp that has actually been used will be returned to user in
- * {@link RecordMetadata}
+ * 在上述两种情况下，实际使用的时间戳都会通过{@link RecordMetadata}返回给用户
  */
 public class ProducerRecord<K, V> {
 
+    // 记录要发送到的主题名称，不能为null
     private final String topic;
+    // 记录要发送到的分区号，可以为null（由Kafka自动分配）
     private final Integer partition;
+    // 消息头部信息，包含用户自定义的键值对元数据
     private final Headers headers;
+    // 消息的键，可以为null
     private final K key;
+    // 消息的实际内容
     private final V value;
+    // 消息的时间戳（毫秒），可以为null（由生产者自动设置为当前时间）
     private final Long timestamp;
 
     /**
-     * Creates a record with a specified timestamp to be sent to a specified topic and partition
+     * 创建一个带有指定时间戳的消息记录，将被发送到指定的主题和分区
      * 
-     * @param topic The topic the record will be appended to
-     * @param partition The partition to which the record should be sent
-     * @param timestamp The timestamp of the record, in milliseconds since epoch. If null, the producer will assign
-     *                  the timestamp using System.currentTimeMillis().
-     * @param key The key that will be included in the record
-     * @param value The record contents
-     * @param headers the headers that will be included in the record
+     * @param topic 消息记录将被追加到的主题名称
+     * @param partition 消息记录应该被发送到的分区号
+     * @param timestamp 消息记录的时间戳（从epoch开始的毫秒数）。如果为null，生产者将使用System.currentTimeMillis()设置时间戳
+     * @param key 消息记录中包含的键
+     * @param value 消息记录的实际内容
+     * @param headers 消息记录中包含的头部信息
      */
     public ProducerRecord(String topic, Integer partition, Long timestamp, K key, V value, Iterable<Header> headers) {
+        // 校验topic不能为null
         if (topic == null)
             throw new IllegalArgumentException("Topic cannot be null.");
+        // 校验timestamp必须为null或非负数
         if (timestamp != null && timestamp < 0)
             throw new IllegalArgumentException(
                     String.format("Invalid timestamp: %d. Timestamp should always be non-negative or null.", timestamp));
+        // 校验partition必须为null或非负数
         if (partition != null && partition < 0)
             throw new IllegalArgumentException(
                     String.format("Invalid partition: %d. Partition number should always be non-negative or null.", partition));
+        // 初始化所有字段
         this.topic = topic;
         this.partition = partition;
         this.key = key;
         this.value = value;
         this.timestamp = timestamp;
+        // 创建新的RecordHeaders对象来存储消息头
         this.headers = new RecordHeaders(headers);
     }
 
     /**
-     * Creates a record with a specified timestamp to be sent to a specified topic and partition
+     * 创建一个带有指定时间戳的消息记录，将被发送到指定的主题和分区
+     * 这个构造函数不包含消息头信息
      *
-     * @param topic The topic the record will be appended to
-     * @param partition The partition to which the record should be sent
-     * @param timestamp The timestamp of the record, in milliseconds since epoch. If null, the producer will assign the
-     *                  timestamp using System.currentTimeMillis().
-     * @param key The key that will be included in the record
-     * @param value The record contents
+     * @param topic 消息记录将被追加到的主题名称
+     * @param partition 消息记录应该被发送到的分区号
+     * @param timestamp 消息记录的时间戳（从epoch开始的毫秒数）。如果为null，生产者将使用System.currentTimeMillis()设置时间戳
+     * @param key 消息记录中包含的键
+     * @param value 消息记录的实际内容
      */
     public ProducerRecord(String topic, Integer partition, Long timestamp, K key, V value) {
         this(topic, partition, timestamp, key, value, null);
     }
 
     /**
-     * Creates a record to be sent to a specified topic and partition
+     * 创建一个消息记录，将被发送到指定的主题和分区
+     * 这个构造函数包含消息头信息，但不指定时间戳（将使用生产者的当前时间）
      *
-     * @param topic The topic the record will be appended to
-     * @param partition The partition to which the record should be sent
-     * @param key The key that will be included in the record
-     * @param value The record contents
-     * @param headers The headers that will be included in the record
+     * @param topic 消息记录将被追加到的主题名称
+     * @param partition 消息记录应该被发送到的分区号
+     * @param key 消息记录中包含的键
+     * @param value 消息记录的实际内容
+     * @param headers 消息记录中包含的头部信息
      */
     public ProducerRecord(String topic, Integer partition, K key, V value, Iterable<Header> headers) {
         this(topic, partition, null, key, value, headers);
     }
     
     /**
-     * Creates a record to be sent to a specified topic and partition
+     * 创建一个消息记录，将被发送到指定的主题和分区
+     * 这个构造函数不包含时间戳和消息头信息
      *
-     * @param topic The topic the record will be appended to
-     * @param partition The partition to which the record should be sent
-     * @param key The key that will be included in the record
-     * @param value The record contents
+     * @param topic 消息记录将被追加到的主题名称
+     * @param partition 消息记录应该被发送到的分区号
+     * @param key 消息记录中包含的键
+     * @param value 消息记录的实际内容
      */
     public ProducerRecord(String topic, Integer partition, K key, V value) {
         this(topic, partition, null, key, value, null);
     }
     
     /**
-     * Create a record to be sent to Kafka
+     * 创建一个消息记录，将被发送到指定的主题
+     * 这个构造函数只指定主题、键和值，分区将由Kafka自动选择
      * 
-     * @param topic The topic the record will be appended to
-     * @param key The key that will be included in the record
-     * @param value The record contents
+     * @param topic 消息记录将被追加到的主题名称
+     * @param key 消息记录中包含的键
+     * @param value 消息记录的实际内容
      */
     public ProducerRecord(String topic, K key, V value) {
         this(topic, null, null, key, value, null);
     }
     
     /**
-     * Create a record with no key
+     * 创建一个没有键的消息记录
+     * 这是最简单的构造函数，只需要指定主题和值
      * 
-     * @param topic The topic this record should be sent to
-     * @param value The record contents
+     * @param topic 消息记录将被发送到的主题名称
+     * @param value 消息记录的实际内容
      */
     public ProducerRecord(String topic, V value) {
         this(topic, null, null, null, value, null);
     }
 
     /**
-     * @return The topic this record is being sent to
+     * 获取消息记录将被发送到的主题名称
+     * @return 主题名称
      */
     public String topic() {
         return topic;
     }
 
     /**
-     * @return The headers
+     * 获取消息记录的头部信息
+     * @return 消息头对象，包含用户自定义的键值对元数据
      */
     public Headers headers() {
         return headers;
     }
 
     /**
-     * @return The key (or null if no key is specified)
+     * 获取消息记录的键
+     * @return 消息的键（如果没有指定键则返回null）
      */
     public K key() {
         return key;
     }
 
     /**
-     * @return The value
+     * 获取消息记录的值
+     * @return 消息的实际内容
      */
     public V value() {
         return value;
     }
 
     /**
-     * @return The timestamp, which is in milliseconds since epoch.
+     * 获取消息记录的时间戳
+     * @return 时间戳，以毫秒为单位（从epoch开始）
      */
     public Long timestamp() {
         return timestamp;
     }
 
     /**
-     * @return The partition to which the record will be sent (or null if no partition was specified)
+     * 获取消息记录将被发送到的分区号
+     * @return 分区号（如果没有指定分区则返回null）
      */
     public Integer partition() {
         return partition;
     }
 
+    /**
+     * 将消息记录转换为字符串表示形式
+     * 包含所有字段的值，null值会被显示为"null"
+     * @return 消息记录的字符串表示
+     */
     @Override
     public String toString() {
         String headers = this.headers == null ? "null" : this.headers.toString();
@@ -195,6 +222,12 @@ public class ProducerRecord<K, V> {
             ", timestamp=" + timestamp + ")";
     }
 
+    /**
+     * 判断两个消息记录是否相等
+     * 所有字段都相等时返回true
+     * @param o 要比较的对象
+     * @return 如果两个消息记录相等则返回true，否则返回false
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -212,6 +245,11 @@ public class ProducerRecord<K, V> {
             Objects.equals(timestamp, that.timestamp);
     }
 
+    /**
+     * 计算消息记录的哈希码
+     * 使用所有字段的值计算哈希值
+     * @return 消息记录的哈希码
+     */
     @Override
     public int hashCode() {
         int result = topic != null ? topic.hashCode() : 0;

@@ -31,6 +31,8 @@ TAGS
 Vagrantfile.local
 /logs
 .DS_Store
+.metals/*
+metals.log
 
 config/server-*
 config/zookeeper-*
@@ -61,6 +63,10 @@ storage/kafka-tiered-storage/
 docker/test/report_*.html
 kafka.Kafka
 __pycache__
+<<<<<<< HEAD
 .metals/metals.lock.db
 .metals/metals.log
 .metals/metals.mv.db
+=======
+.metals/metals.log
+>>>>>>> 406a45cac3a2ef661def9d6135c9e25bef90da87
