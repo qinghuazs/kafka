@@ -33,14 +33,34 @@ import java.io.Closeable;
 import java.util.List;
 
 /**
- * A container that holds the list {@link org.apache.kafka.clients.producer.ProducerInterceptor}
- * and wraps calls to the chain of custom interceptors.
+ * 生产者拦截器容器类，用于管理和调用自定义拦截器链。
+ * 该类持有一个{@link org.apache.kafka.clients.producer.ProducerInterceptor}列表，
+ * 并封装了对这些拦截器的链式调用。
+ * 
+ * 拦截器链的主要功能：
+ * 1. 在消息发送前对消息进行拦截和处理（onSend）
+ * 2. 在消息发送完成或失败时进行回调处理（onAcknowledgement）
+ * 3. 在发送出错时进行错误处理（onSendError）
+ * 
+ * 拦截器链的执行特点：
+ * 1. 链式调用：前一个拦截器的输出作为下一个拦截器的输入
+ * 2. 异常隔离：单个拦截器的异常不会影响其他拦截器的执行
+ * 3. 有序执行：按照配置顺序依次调用各个拦截器
  */
 public class ProducerInterceptors<K, V> implements Closeable {
+    // 日志记录器
     private static final Logger log = LoggerFactory.getLogger(ProducerInterceptors.class);
+    // 拦截器插件列表，使用Plugin包装以支持度量指标收集
     private final List<Plugin<ProducerInterceptor<K, V>>> interceptorPlugins;
 
+    /**
+     * 构造函数，初始化拦截器容器
+     * 
+     * @param interceptors 拦截器列表
+     * @param metrics 度量指标收集器，用于监控拦截器的性能和行为
+     */
     public ProducerInterceptors(List<ProducerInterceptor<K, V>> interceptors, Metrics metrics) {
+        // 使用Plugin.wrapInstances包装拦截器实例，支持度量指标收集
         this.interceptorPlugins = Plugin.wrapInstances(interceptors, metrics, ProducerConfig.INTERCEPTOR_CLASSES_CONFIG);
     }
 
@@ -59,19 +79,26 @@ public class ProducerInterceptors<K, V> implements Closeable {
      * @return producer record to send to topic/partition
      */
     public ProducerRecord<K, V> onSend(ProducerRecord<K, V> record) {
+        // 初始化拦截记录，初始值为原始记录
         ProducerRecord<K, V> interceptRecord = record;
+        // 遍历所有拦截器插件
         for (Plugin<ProducerInterceptor<K, V>> interceptorPlugin : this.interceptorPlugins) {
             try {
+                // 调用当前拦截器的onSend方法，处理记录
+                // 处理后的记录作为下一个拦截器的输入
                 interceptRecord = interceptorPlugin.get().onSend(interceptRecord);
             } catch (Exception e) {
-                // do not propagate interceptor exception, log and continue calling other interceptors
-                // be careful not to throw exception from here
+                // 捕获并记录异常，但不向上传播
+                // 继续调用链中的其他拦截器
                 if (record != null)
+                    // 如果原始记录不为空，记录主题和分区信息
                     log.warn("Error executing interceptor onSend callback for topic: {}, partition: {}", record.topic(), record.partition(), e);
                 else
+                    // 原始记录为空时的异常日志
                     log.warn("Error executing interceptor onSend callback", e);
             }
         }
+        // 返回经过所有拦截器处理后的记录
         return interceptRecord;
     }
 
@@ -87,11 +114,14 @@ public class ProducerInterceptors<K, V> implements Closeable {
      * @param exception The exception thrown during processing of this record. Null if no error occurred.
      */
     public void onAcknowledgement(RecordMetadata metadata, Exception exception) {
+        // 遍历所有拦截器插件
         for (Plugin<ProducerInterceptor<K, V>> interceptorPlugin : this.interceptorPlugins) {
             try {
+                // 调用拦截器的onAcknowledgement方法进行确认回调
+                // 传入消息元数据和可能的异常信息
                 interceptorPlugin.get().onAcknowledgement(metadata, exception);
             } catch (Exception e) {
-                // do not propagate interceptor exceptions, just log
+                // 捕获并记录拦截器执行过程中的异常，但不向上传播
                 log.warn("Error executing interceptor onAcknowledgement callback", e);
             }
         }
@@ -108,37 +138,56 @@ public class ProducerInterceptors<K, V> implements Closeable {
      * @param exception The exception thrown during processing of this record.
      */
     public void onSendError(ProducerRecord<K, V> record, TopicPartition interceptTopicPartition, Exception exception) {
+        // 遍历所有拦截器插件
         for (Plugin<ProducerInterceptor<K, V>> interceptorPlugin : this.interceptorPlugins) {
             try {
                 if (record == null && interceptTopicPartition == null) {
+                    // 如果记录和主题分区都为空，直接调用onAcknowledgement，传入null元数据
                     interceptorPlugin.get().onAcknowledgement(null, exception);
                 } else {
                     if (interceptTopicPartition == null) {
+                        // 如果主题分区为空但记录不为空，从记录中提取主题分区信息
                         interceptTopicPartition = extractTopicPartition(record);
                     }
+                    // 创建一个带有错误标记的元数据对象（使用-1表示无效值）
+                    // 并调用拦截器的onAcknowledgement方法
                     interceptorPlugin.get().onAcknowledgement(new RecordMetadata(interceptTopicPartition, -1, -1,
                                     RecordBatch.NO_TIMESTAMP, -1, -1), exception);
                 }
             } catch (Exception e) {
-                // do not propagate interceptor exceptions, just log
+                // 捕获并记录拦截器执行过程中的异常，但不向上传播
                 log.warn("Error executing interceptor onAcknowledgement callback", e);
             }
         }
     }
 
+    /**
+     * 从生产者记录中提取主题分区信息
+     * 
+     * @param record 生产者记录
+     * @return 主题分区对象
+     */
     public static <K, V> TopicPartition extractTopicPartition(ProducerRecord<K, V> record) {
+        // 创建TopicPartition对象，如果分区为null则使用未知分区标记
         return new TopicPartition(record.topic(), record.partition() == null ? RecordMetadata.UNKNOWN_PARTITION : record.partition());
     }
 
     /**
      * Closes every interceptor in a container.
      */
+    /**
+     * 关闭所有拦截器
+     * 实现Closeable接口，在容器关闭时调用
+     */
     @Override
     public void close() {
+        // 遍历并关闭所有拦截器插件
         for (Plugin<ProducerInterceptor<K, V>> interceptorPlugin : this.interceptorPlugins) {
             try {
+                // 调用插件的close方法进行资源清理
                 interceptorPlugin.close();
             } catch (Exception e) {
+                // 记录关闭过程中的错误，但不中断其他拦截器的关闭
                 log.error("Failed to close producer interceptor ", e);
             }
         }
