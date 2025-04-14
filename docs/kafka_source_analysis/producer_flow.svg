@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+    <!-- 样式定义 -->
+    <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+        </marker>
+    </defs>
+    <style>
+        .process-box { fill: #fff; stroke: #333; stroke-width: 2; }
+        .async-box { fill: #e1f5fe; stroke: #0288d1; stroke-width: 2; }
+        .flow-text { font-family: Arial; font-size: 14px; fill: #333; }
+        .note-text { font-family: Arial; font-size: 12px; fill: #666; }
+        .arrow { stroke: #333; stroke-width: 2; marker-end: url(#arrowhead); }
+    </style>
+
+    <!-- 标题 -->
+    <text x="400" y="40" text-anchor="middle" font-family="Arial" font-size="20" font-weight="bold">Kafka生产者消息发送流程</text>
+
+    <!-- 应用程序调用 -->
+    <rect x="50" y="80" width="120" height="60" class="process-box" rx="5"/>
+    <text x="110" y="115" class="flow-text" text-anchor="middle">应用程序</text>
+
+    <!-- 拦截器 -->
+    <rect x="50" y="180" width="120" height="60" class="process-box" rx="5"/>
+    <text x="110" y="215" class="flow-text" text-anchor="middle">拦截器</text>
+
+    <!-- 序列化器 -->
+    <rect x="50" y="280" width="120" height="60" class="process-box" rx="5"/>
+    <text x="110" y="315" class="flow-text" text-anchor="middle">序列化器</text>
+
+    <!-- 分区器 -->
+    <rect x="250" y="280" width="120" height="60" class="process-box" rx="5"/>
+    <text x="310" y="315" class="flow-text" text-anchor="middle">分区器</text>
+
+    <!-- 消息累加器 -->
+    <rect x="450" y="280" width="120" height="60" class="async-box" rx="5"/>
+    <text x="510" y="315" class="flow-text" text-anchor="middle">消息累加器</text>
+    <text x="510" y="335" class="note-text" text-anchor="middle">(RecordAccumulator)</text>
+
+    <!-- Sender线程 -->
+    <rect x="450" y="380" width="120" height="60" class="async-box" rx="5"/>
+    <text x="510" y="415" class="flow-text" text-anchor="middle">Sender线程</text>
+
+    <!-- Kafka集群 -->
+    <rect x="450" y="480" width="120" height="60" class="process-box" rx="5"/>
+    <text x="510" y="515" class="flow-text" text-anchor="middle">Kafka集群</text>
+
+    <!-- 连接线 -->
+    <line x1="110" y1="140" x2="110" y2="180" class="arrow"/>
+    <line x1="110" y1="240" x2="110" y2="280" class="arrow"/>
+    <line x1="170" y1="310" x2="250" y2="310" class="arrow"/>
+    <line x1="370" y1="310" x2="450" y2="310" class="arrow"/>
+    <line x1="510" y1="340" x2="510" y2="380" class="arrow"/>
+    <line x1="510" y1="440" x2="510" y2="480" class="arrow"/>
+
+    <!-- 说明文本 -->
+    <text x="650" y="100" class="note-text">同步操作</text>
+    <rect x="620" y="85" width="20" height="20" class="process-box"/>
+    
+    <text x="650" y="140" class="note-text">异步操作</text>
+    <rect x="620" y="125" width="20" height="20" class="async-box"/>
+
+    <!-- 流程说明 -->
+    <text x="50" y="560" class="note-text">1. 消息经过拦截器处理</text>
+    <text x="50" y="580" class="note-text">2. 消息被序列化为字节数组</text>
+    <text x="300" y="560" class="note-text">3. 消息被分配到特定分区</text>
+    <text x="300" y="580" class="note-text">4. 消息被累加到批次中</text>
+    <text x="550" y="560" class="note-text">5. Sender线程异步发送消息批次</text>
+    <text x="550" y="580" class="note-text">6. 消息批次写入Kafka集群</text>
+</svg>

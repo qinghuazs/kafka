@@ -40,20 +40,35 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * An internal immutable snapshot of nodes, topics, and partitions in the Kafka cluster. This keeps an up-to-date Cluster
- * instance which is optimized for read access.
- * Prefer to extend MetadataSnapshot's API for internal client usage Vs the public {@link Cluster}
+ * Kafka集群元数据的内部不可变快照，包含了节点、主题和分区的信息。该类维护了一个优化用于读取访问的最新集群实例。
+ * 相比使用公共的{@link Cluster}类，更推荐扩展MetadataSnapshot的API用于内部客户端使用。
+ * 
+ * 该类的主要功能：
+ * 1. 维护集群节点、主题、分区的最新状态
+ * 2. 提供不可变的数据视图，保证线程安全
+ * 3. 支持元数据的增量更新和合并
+ * 4. 优化读取性能的缓存设计
  */
 public class MetadataSnapshot {
+    // 集群唯一标识符
     private final String clusterId;
+    // 集群中的所有节点，key为节点ID
     private final Map<Integer, Node> nodes;
+    // 当前客户端未被授权访问的主题集合
     private final Set<String> unauthorizedTopics;
+    // 无效或不存在的主题集合
     private final Set<String> invalidTopics;
+    // Kafka内部使用的主题集合
     private final Set<String> internalTopics;
+    // 集群控制器节点
     private final Node controller;
+    // 主题分区的元数据信息，key为主题分区
     private final Map<TopicPartition, PartitionMetadata> metadataByPartition;
+    // 主题名称到主题ID的映射
     private final Map<String, Uuid> topicIds;
+    // 主题ID到主题名称的映射
     private final Map<Uuid, String> topicNames;
+    // 缓存的集群实例，用于优化读取性能
     private Cluster clusterInstance;
 
     public MetadataSnapshot(String clusterId,
@@ -126,10 +141,15 @@ public class MetadataSnapshot {
     }
 
     /**
-     * Get leader-epoch for partition.
+     * 获取指定分区的leader epoch值
+     * leader epoch用于标识分区leader的版本号，每次leader变更都会递增
+     * 主要用于：
+     * 1. 防止脑裂情况下出现多个leader
+     * 2. 帮助follower判断自己的日志是否需要截断
+     * 3. 确保消费者能够获取到正确的数据
      *
-     * @param tp partition
-     * @return leader-epoch if known, else return OptionalInt.empty()
+     * @param tp 目标分区
+     * @return 如果知道leader epoch则返回其值，否则返回OptionalInt.empty()
      */
     public OptionalInt leaderEpochFor(TopicPartition tp) {
         PartitionMetadata partitionMetadata = metadataByPartition.get(tp);
@@ -145,19 +165,25 @@ public class MetadataSnapshot {
     }
 
     /**
-     * Merges the metadata snapshot's contents with the provided metadata, returning a new metadata snapshot. The provided
-     * metadata is presumed to be more recent than the snapshot's metadata, and therefore all overlapping metadata will
-     * be overridden.
+     * 将当前元数据快照与新提供的元数据进行合并，返回一个新的元数据快照
+     * 新提供的元数据被认为比当前快照更新，因此所有重叠的元数据都会被覆盖
+     * 
+     * 合并策略：
+     * 1. 保留指定需要保留的旧主题元数据
+     * 2. 使用新的节点信息替换旧节点
+     * 3. 添加新的分区信息
+     * 4. 更新主题ID映射
+     * 5. 合并特殊主题集合（未授权、无效、内部主题）
      *
-     * @param newClusterId the new cluster Id
-     * @param newNodes the new set of nodes
-     * @param addPartitions partitions to add
-     * @param addUnauthorizedTopics unauthorized topics to add
-     * @param addInternalTopics internal topics to add
-     * @param newController the new controller node
-     * @param addTopicIds the mapping from topic name to topic ID, for topics in addPartitions
-     * @param retainTopic returns whether a pre-existing topic's metadata should be retained
-     * @return the merged metadata snapshot
+     * @param newClusterId 新的集群ID
+     * @param newNodes 新的节点集合
+     * @param addPartitions 要添加的分区
+     * @param addUnauthorizedTopics 要添加的未授权主题
+     * @param addInternalTopics 要添加的内部主题
+     * @param newController 新的控制器节点
+     * @param addTopicIds 新分区对应的主题名称到主题ID的映射
+     * @param retainTopic 判断是否需要保留已存在主题元数据的函数
+     * @return 合并后的新元数据快照
      */
     MetadataSnapshot mergeWith(String newClusterId,
                             Map<Integer, Node> newNodes,
