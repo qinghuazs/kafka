@@ -301,8 +301,7 @@ public class RecordAccumulator {
         if (allBatchesFull(deque)) {
             topicInfo.builtInPartitioner.updatePartitionInfo(partitionInfo, 0, cluster, true);
             if (topicInfo.builtInPartitioner.isPartitionChanged(partitionInfo)) {
-                log.trace("完成了主题 {} 分区 {} 之前被禁用的切换,正在重试",
-                        topic, partitionInfo.partition());
+                log.trace("完成了主题 {} 分区 {} 之前被禁用的切换,正在重试", topic, partitionInfo.partition());
                 return true;
             }
         }
