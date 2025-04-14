@@ -1149,76 +1149,105 @@ public class RecordAccumulator {
         return ready;
     }
 
+    /**
+     * 获取指定节点的排空索引
+     * 如果节点不存在排空索引,则初始化为0
+     * 
+     * @param idString 节点ID字符串
+     * @return 节点的排空索引值
+     */
     private int getDrainIndex(String idString) {
+        // 如果节点不存在排空索引,则初始化为0并返回
         return nodesDrainIndex.computeIfAbsent(idString, s -> 0);
     }
 
+    /**
+     * 更新指定节点的排空索引
+     * 
+     * @param idString 节点ID字符串
+     * @param drainIndex 新的排空索引值
+     */
     private void updateDrainIndex(String idString, int drainIndex) {
+        // 更新节点的排空索引值
         nodesDrainIndex.put(idString, drainIndex);
     }
 
     /**
-     * Drain all the data for the given nodes and collate them into a list of batches that will fit
-     * within the specified size on a per-node basis. This method attempts to avoid choosing the same
-     * topic-node over and over.
+     * 排空指定节点的所有数据,并将其整理成一个批次列表
+     * 每个节点的批次总大小不超过指定的最大值
+     * 该方法会尝试避免重复选择相同的主题-节点组合
      *
-     * @param metadataSnapshot  The current cluster metadata
-     * @param nodes             The list of node to drain
-     * @param maxSize           The maximum number of bytes to drain
-     * @param now               The current unix time in milliseconds
-     * @return A list of {@link ProducerBatch} for each node specified with total size less than the
-     * requested maxSize.
+     * @param metadataSnapshot 当前集群元数据快照
+     * @param nodes 需要排空的节点列表
+     * @param maxSize 每个节点最大允许排空的字节数
+     * @param now 当前UNIX时间戳(毫秒)
+     * @return 每个节点的ProducerBatch列表,总大小不超过请求的maxSize
      */
     public Map<Integer, List<ProducerBatch>> drain(MetadataSnapshot metadataSnapshot, Set<Node> nodes, int maxSize, long now) {
+        // 如果节点列表为空,返回空Map
         if (nodes.isEmpty())
             return Collections.emptyMap();
 
+        // 创建结果Map,用于存储每个节点的批次列表
         Map<Integer, List<ProducerBatch>> batches = new HashMap<>();
+        // 遍历每个节点,排空其数据
         for (Node node : nodes) {
+            // 获取节点准备好发送的批次列表
             List<ProducerBatch> ready = drainBatchesForOneNode(metadataSnapshot, node, maxSize, now);
+            // 将批次列表添加到结果Map中
             batches.put(node.id(), ready);
         }
         return batches;
     }
 
+    /**
+     * 更新节点的延迟统计信息
+     * 
+     * @param nodeId 节点ID
+     * @param nowMs 当前时间戳(毫秒)
+     * @param canDrain 是否可以排空数据
+     */
     public void updateNodeLatencyStats(Integer nodeId, long nowMs, boolean canDrain) {
-        // Don't bother with updating stats if the feature is turned off.
+        // 如果分区可用性超时功能已关闭,则不更新统计信息
         if (partitionAvailabilityTimeoutMs <= 0)
             return;
 
-        // When the sender gets a node (returned by the ready() function) that has data to send
-        // but the node is not ready (and so we cannot drain the data), we only update the
-        // ready time, then the difference would reflect for how long a node wasn't ready
-        // to send the data.  Then we can temporarily remove partitions that are handled by the
-        // node from the list of available partitions so that the partitioner wouldn't pick
-        // this partition.
-        // NOTE: there is no synchronization for metric updates, so drainTimeMs is updated
-        // first to avoid accidentally marking a partition unavailable if the reader gets
-        // values between updates.
+        // 当sender获取到一个有数据要发送但节点未就绪的节点时(通过ready()函数返回)
+        // 我们只更新readyTime,这样时间差就能反映节点未就绪的持续时间
+        // 然后我们可以暂时从可用分区列表中移除该节点处理的分区
+        // 这样分区器就不会选择这些分区
+        // 注意:指标更新没有同步机制,所以先更新drainTimeMs
+        // 以避免在更新之间读取值时意外将分区标记为不可用
         NodeLatencyStats nodeLatencyStats = nodeStats.computeIfAbsent(nodeId, id -> new NodeLatencyStats(nowMs));
         if (canDrain)
-            nodeLatencyStats.drainTimeMs = nowMs;
-        nodeLatencyStats.readyTimeMs = nowMs;
+            nodeLatencyStats.drainTimeMs = nowMs;  // 更新最后一次成功排空的时间
+        nodeLatencyStats.readyTimeMs = nowMs;  // 更新节点就绪时间
     }
 
-    /* Visible for testing */
+    /**
+     * 获取节点的延迟统计信息(用于测试)
+     */
     public NodeLatencyStats getNodeLatencyStats(Integer nodeId) {
         return nodeStats.get(nodeId);
     }
 
-    /* Visible for testing */
+    /**
+     * 获取主题的内置分区器(用于测试)
+     */
     public BuiltInPartitioner getBuiltInPartitioner(String topic) {
         return topicInfoMap.get(topic).builtInPartitioner;
     }
 
     /**
-     * The earliest absolute time a batch will expire (in milliseconds)
+     * 获取下一个批次将要过期的最早绝对时间(毫秒)
      */
     public long nextExpiryTimeMs() {
         return this.nextBatchExpiryTimeMs;
     }
 
-      /* Visible for testing */
+    /**
+     * 获取指定主题分区的消息队列(用于测试)
+     */
     public Deque<ProducerBatch> getDeque(TopicPartition tp) {
         TopicInfo topicInfo = topicInfoMap.get(tp.topic());
         if (topicInfo == null)
@@ -1227,255 +1256,369 @@ public class RecordAccumulator {
     }
 
     /**
-     * Get the deque for the given topic-partition, creating it if necessary.
+     * 获取指定主题分区的消息队列,如果不存在则创建
+     * 
+     * @param tp 主题分区
+     * @return 该主题分区的消息队列
      */
     private Deque<ProducerBatch> getOrCreateDeque(TopicPartition tp) {
+        // 获取或创建主题信息
         TopicInfo topicInfo = topicInfoMap.computeIfAbsent(tp.topic(),
                 k -> new TopicInfo(createBuiltInPartitioner(logContext, k, batchSize)));
+        // 获取或创建分区的消息队列
         return topicInfo.batches.computeIfAbsent(tp.partition(), k -> new ArrayDeque<>());
     }
 
+    /**
+     * 创建内置分区器
+     */
     BuiltInPartitioner createBuiltInPartitioner(LogContext logContext, String topic, int stickyBatchSize) {
         return new BuiltInPartitioner(logContext, topic, stickyBatchSize);
     }
 
     /**
-     * Deallocate the record batch
+     * 释放记录批次占用的资源
+     * 
+     * @param batch 要释放的批次
      */
     public void deallocate(ProducerBatch batch) {
+        // 从未完成批次集合中移除
         incomplete.remove(batch);
-        // Only deallocate the batch if it is not a split batch because split batch are allocated outside the
-        // buffer pool.
+        // 只有非拆分批次才需要释放缓冲池资源
+        // 因为拆分批次是在缓冲池外分配的
         if (!batch.isSplitBatch())
             free.deallocate(batch.buffer(), batch.initialCapacity());
     }
 
     /**
-     * Package private for unit test. Get the buffer pool remaining size in bytes.
+     * 获取缓冲池的剩余可用内存大小(字节)
+     * 包访问权限,用于单元测试
      */
     long bufferPoolAvailableMemory() {
         return free.availableMemory();
     }
 
     /**
-     * Are there any threads currently waiting on a flush?
-     *
-     * package private for test
+     * 检查是否有线程正在等待刷新操作完成
+     * 包访问权限,用于测试
+     * 
+     * @return 如果有刷新操作正在进行则返回true
      */
     boolean flushInProgress() {
         return flushesInProgress.get() > 0;
     }
 
     /**
-     * Initiate the flushing of data from the accumulator...this makes all requests immediately ready
+     * 启动累加器中数据的刷新操作,使所有请求立即准备就绪
+     * <p>
+     * 该方法通过增加正在进行的刷新操作计数来标记刷新操作的开始。
+     * 这允许多个线程同时发起刷新操作,并通过计数器追踪所有正在进行的刷新。
      */
     public void beginFlush() {
-        this.flushesInProgress.getAndIncrement();
+        this.flushesInProgress.getAndIncrement();  // 原子递增刷新操作计数
     }
 
     /**
-     * Are there any threads currently appending messages?
+     * 检查当前是否有线程正在追加消息
+     * <p>
+     * 该方法用于确认是否存在正在进行的追加操作,这对于安全地关闭生产者和中止批次很重要。
+     * 
+     * @return 如果有正在进行的追加操作则返回true,否则返回false
      */
     private boolean appendsInProgress() {
-        return appendsInProgress.get() > 0;
+        return appendsInProgress.get() > 0;  // 检查追加操作计数是否大于0
     }
 
     /**
-     * Mark all partitions as ready to send and block until the send is complete
+     * 将所有分区标记为可发送状态,并阻塞等待发送完成
+     * <p>
+     * 该方法会等待所有未完成的生产请求完成。它通过以下步骤实现:
+     * 1. 获取刷新时刻所有未完成的ProduceRequestResult副本
+     * 2. 等待每个请求完成
+     * 3. 确保在完成后减少刷新计数
+     * 
+     * @throws InterruptedException 如果等待过程中线程被中断
      */
     public void awaitFlushCompletion() throws InterruptedException {
         try {
-            // Obtain a copy of all of the incomplete ProduceRequestResult(s) at the time of the flush.
-            // We must be careful not to hold a reference to the ProduceBatch(s) so that garbage
-            // collection can occur on the contents.
-            // The sender will remove ProducerBatch(s) from the original incomplete collection.
+            // 获取所有未完成的ProduceRequestResult副本
+            // 注意不要持有ProducerBatch的引用以允许垃圾回收
+            // sender线程会从原始incomplete集合中移除ProducerBatch
             for (ProduceRequestResult result : this.incomplete.requestResults())
-                result.await();
+                result.await();  // 等待每个请求完成
         } finally {
-            this.flushesInProgress.decrementAndGet();
+            this.flushesInProgress.decrementAndGet();  // 减少刷新操作计数
         }
     }
 
     /**
-     * Check whether there are any pending batches (whether sent or unsent).
+     * 检查是否存在任何待处理的批次(无论是否已发送)
+     * <p>
+     * 该方法用于判断累加器中是否还有未完成的批次,这对于确保所有消息都已处理完成很重要。
+     * 
+     * @return 如果存在未完成的批次则返回true,否则返回false
      */
     public boolean hasIncomplete() {
-        return !this.incomplete.isEmpty();
+        return !this.incomplete.isEmpty();  // 检查未完成批次集合是否为空
     }
 
     /**
-     * This function is only called when sender is closed forcefully. It will fail all the
-     * incomplete batches and return.
+     * 该函数仅在sender被强制关闭时调用,它会使所有未完成的批次失败并返回
+     * <p>
+     * 实现说明:
+     * 1. 持续中止未完成的批次,直到没有线程在尝试追加
+     * 2. 这样做是为了:
+     *    - 避免丢失批次
+     *    - 在追加线程因缓冲区已满而阻塞时释放内存
+     * 3. 最后再执行一次中止操作,以处理最后一个追加线程可能添加的新批次
      */
     public void abortIncompleteBatches() {
-        // We need to keep aborting the incomplete batch until no thread is trying to append to
-        // 1. Avoid losing batches.
-        // 2. Free up memory in case appending threads are blocked on buffer full.
-        // This is a tight loop but should be able to get through very quickly.
+        // 持续中止批次直到没有正在进行的追加操作
         do {
-            abortBatches();
-        } while (appendsInProgress());
-        // After this point, no thread will append any messages because they will see the close
-        // flag set. We need to do the last abort after no thread was appending in case there was a new
-        // batch appended by the last appending thread.
+            abortBatches();  // 中止所有未完成的批次
+        } while (appendsInProgress());  // 检查是否还有追加操作在进行
+        
+        // 此时没有线程会追加任何消息,因为它们会看到关闭标志
+        // 执行最后一次中止操作,处理最后一个追加线程可能添加的新批次
         abortBatches();
-        this.topicInfoMap.clear();
+        this.topicInfoMap.clear();  // 清空主题信息映射
     }
 
     /**
-     * Go through incomplete batches and abort them.
+     * 遍历未完成的批次并中止它们
+     * <p>
+     * 使用默认的强制关闭异常来中止所有未完成的批次
      */
     private void abortBatches() {
-        abortBatches(new KafkaException("Producer is closed forcefully."));
+        abortBatches(new KafkaException("Producer is closed forcefully."));  // 使用强制关闭异常
     }
 
     /**
-     * Abort all incomplete batches (whether they have been sent or not)
+     * 中止所有未完成的批次(无论它们是否已经发送)
+     * <p>
+     * 实现步骤:
+     * 1. 复制所有未完成批次以避免并发修改
+     * 2. 对每个批次:
+     *    - 获取其分区队列并同步访问
+     *    - 中止记录追加
+     *    - 从队列中移除批次
+     *    - 中止批次并释放资源
+     *
+     * @param reason 中止批次的原因,将传递给回调函数
      */
     void abortBatches(final RuntimeException reason) {
-        for (ProducerBatch batch : incomplete.copyAll()) {
-            Deque<ProducerBatch> dq = getDeque(batch.topicPartition);
-            synchronized (dq) {
-                batch.abortRecordAppends();
-                dq.remove(batch);
+        for (ProducerBatch batch : incomplete.copyAll()) {  // 复制所有未完成批次
+            Deque<ProducerBatch> dq = getDeque(batch.topicPartition);  // 获取分区队列
+            synchronized (dq) {  // 同步访问队列
+                batch.abortRecordAppends();  // 中止记录追加
+                dq.remove(batch);  // 从队列中移除批次
             }
-            batch.abort(reason);
-            deallocate(batch);
+            batch.abort(reason);  // 中止批次
+            deallocate(batch);  // 释放批次占用的资源
         }
     }
 
     /**
-     * Abort any batches which have not been drained
+     * 中止所有尚未被排空(发送)的批次
+     * 
+     * @param reason 中止的原因,将传递给每个被中止的批次
      */
     void abortUndrainedBatches(RuntimeException reason) {
+        // 遍历所有未完成的批次
         for (ProducerBatch batch : incomplete.copyAll()) {
+            // 获取该批次所属主题分区的队列
             Deque<ProducerBatch> dq = getDeque(batch.topicPartition);
             boolean aborted = false;
-            synchronized (dq) {
+            synchronized (dq) {  // 同步访问队列
+                // 判断批次是否需要中止:
+                // 1. 如果存在事务管理器且批次没有序列号,或
+                // 2. 如果不存在事务管理器且批次未关闭
                 if ((transactionManager != null && !batch.hasSequence()) || (transactionManager == null && !batch.isClosed())) {
                     aborted = true;
-                    batch.abortRecordAppends();
-                    dq.remove(batch);
+                    batch.abortRecordAppends();  // 中止批次中的记录追加
+                    dq.remove(batch);  // 从队列中移除该批次
                 }
             }
             if (aborted) {
-                batch.abort(reason);
-                deallocate(batch);
+                batch.abort(reason);  // 中止批次,传入中止原因
+                deallocate(batch);  // 释放批次占用的资源
             }
         }
     }
 
+    /**
+     * 将指定的主题分区设置为静音状态
+     * 处于静音状态的分区将暂时不会发送数据
+     * 
+     * @param tp 要静音的主题分区
+     */
     public void mutePartition(TopicPartition tp) {
-        muted.add(tp);
-    }
-
-    public void unmutePartition(TopicPartition tp) {
-        muted.remove(tp);
+        muted.add(tp);  // 将分区添加到静音集合中
     }
 
     /**
-     * Close this accumulator and force all the record buffers to be drained
+     * 解除指定主题分区的静音状态
+     * 解除静音后,分区可以恢复发送数据
+     * 
+     * @param tp 要解除静音的主题分区
+     */
+    public void unmutePartition(TopicPartition tp) {
+        muted.remove(tp);  // 从静音集合中移除分区
+    }
+
+    /**
+     * 关闭累加器并强制排空所有记录缓冲区
+     * 关闭操作会:
+     * 1. 将累加器标记为已关闭状态
+     * 2. 关闭并释放内存缓冲池
      */
     public void close() {
-        this.closed = true;
-        this.free.close();
+        this.closed = true;  // 标记累加器为已关闭状态
+        this.free.close();  // 关闭内存缓冲池
     }
 
     /**
-     * Partitioner config for built-in partitioner
+     * 内置分区器的配置类
+     * 用于控制分区选择的行为和可用性检测
      */
     public static final class PartitionerConfig {
-        private final boolean enableAdaptivePartitioning;
-        private final long partitionAvailabilityTimeoutMs;
+        private final boolean enableAdaptivePartitioning;  // 是否启用自适应分区
+        private final long partitionAvailabilityTimeoutMs;  // 分区可用性超时时间
 
         /**
-         * Partitioner config
+         * 创建分区器配置
          *
-         * @param enableAdaptivePartitioning If it's true, partition switching adapts to broker load, otherwise partition
-         *        switching is random.
-         * @param partitionAvailabilityTimeoutMs If a broker cannot process produce requests from a partition
-         *        for the specified time, the partition is treated by the partitioner as not available.
-         *        If the timeout is 0, this logic is disabled.
+         * @param enableAdaptivePartitioning 如果为true,分区切换会根据broker负载自适应调整;
+         *                                   如果为false,分区切换采用随机方式
+         * @param partitionAvailabilityTimeoutMs 如果broker在指定时间内无法处理某个分区的生产请求,
+         *                                       该分区将被分区器标记为不可用。
+         *                                       如果设置为0,则禁用此逻辑
          */
         public PartitionerConfig(boolean enableAdaptivePartitioning, long partitionAvailabilityTimeoutMs) {
-            this.enableAdaptivePartitioning = enableAdaptivePartitioning;
-            this.partitionAvailabilityTimeoutMs = partitionAvailabilityTimeoutMs;
+            this.enableAdaptivePartitioning = enableAdaptivePartitioning;  // 设置是否启用自适应分区
+            this.partitionAvailabilityTimeoutMs = partitionAvailabilityTimeoutMs;  // 设置分区可用性超时时间
         }
 
+        /**
+         * 创建默认的分区器配置
+         * 默认不启用自适应分区,且不启用分区可用性检测
+         */
         public PartitionerConfig() {
-            this(false, 0);
+            this(false, 0);  // 使用默认值初始化配置
         }
     }
 
-    /*
-     * Metadata about a record just appended to the record accumulator
+    /**
+     * 记录追加到累加器后的元数据信息
+     * 包含追加操作的结果状态和相关指标
      */
     public static final class RecordAppendResult {
-        public final FutureRecordMetadata future;
-        public final boolean batchIsFull;
-        public final boolean newBatchCreated;
-        public final int appendedBytes;
+        public final FutureRecordMetadata future;      // 用于获取追加记录的元数据的Future对象
+        public final boolean batchIsFull;              // 批次是否已满
+        public final boolean newBatchCreated;          // 是否创建了新的批次
+        public final int appendedBytes;                // 追加的字节数
 
+        /**
+         * 创建记录追加结果
+         *
+         * @param future 包含追加记录元数据的Future对象
+         * @param batchIsFull 批次是否已满标志
+         * @param newBatchCreated 是否创建新批次标志
+         * @param appendedBytes 本次追加的字节数
+         */
         public RecordAppendResult(FutureRecordMetadata future,
                                   boolean batchIsFull,
                                   boolean newBatchCreated,
                                   int appendedBytes) {
-            this.future = future;
-            this.batchIsFull = batchIsFull;
-            this.newBatchCreated = newBatchCreated;
-            this.appendedBytes = appendedBytes;
+            this.future = future;              // 设置元数据Future
+            this.batchIsFull = batchIsFull;    // 设置批次是否已满
+            this.newBatchCreated = newBatchCreated;  // 设置是否创建新批次
+            this.appendedBytes = appendedBytes;  // 设置追加的字节数
         }
     }
 
-    /*
-     * The callbacks passed into append
+    /**
+     * 传递给append方法的回调接口
+     * 扩展了基础Callback接口,增加了设置分区的功能
      */
     public interface AppendCallbacks extends Callback {
         /**
-         * Called to set partition (when append is called, partition may not be calculated yet).
-         * @param partition The partition
+         * 设置分区号
+         * 在调用append时,分区可能尚未计算出来,
+         * 待分区确定后会通过此方法设置实际的分区号
+         * 
+         * @param partition 确定的分区号
          */
         void setPartition(int partition);
     }
 
-    /*
-     * The set of nodes that have at least one complete record batch in the accumulator
+    /**
+     * 记录累加器中至少有一个完整记录批次的节点集合
+     * 用于跟踪哪些节点有数据可以发送
      */
     public static final class ReadyCheckResult {
-        public final Set<Node> readyNodes;
-        public final long nextReadyCheckDelayMs;
-        public final Set<String> unknownLeaderTopics;
+        public final Set<Node> readyNodes;              // 有完整批次待发送的节点集合
+        public final long nextReadyCheckDelayMs;        // 下次检查准备状态的延迟时间(毫秒)
+        public final Set<String> unknownLeaderTopics;   // 未知leader的主题集合
 
+        /**
+         * 创建就绪检查结果
+         *
+         * @param readyNodes 有数据待发送的节点集合
+         * @param nextReadyCheckDelayMs 下次检查的延迟时间
+         * @param unknownLeaderTopics 未知leader的主题集合
+         */
         public ReadyCheckResult(Set<Node> readyNodes, long nextReadyCheckDelayMs, Set<String> unknownLeaderTopics) {
-            this.readyNodes = readyNodes;
-            this.nextReadyCheckDelayMs = nextReadyCheckDelayMs;
-            this.unknownLeaderTopics = unknownLeaderTopics;
+            this.readyNodes = readyNodes;  // 设置就绪节点集合
+            this.nextReadyCheckDelayMs = nextReadyCheckDelayMs;  // 设置下次检查延迟
+            this.unknownLeaderTopics = unknownLeaderTopics;  // 设置未知leader主题
         }
     }
 
     /**
-     * Per topic info.
+     * 每个主题的相关信息
+     * 包含该主题的分区批次队列和分区器
      */
     private static class TopicInfo {
+        // 主题的分区批次映射表
+        // 键为分区号,值为该分区的批次队列
         public final ConcurrentMap<Integer /*partition*/, Deque<ProducerBatch>> batches = new CopyOnWriteMap<>();
+        
+        // 该主题使用的内置分区器
         public final BuiltInPartitioner builtInPartitioner;
 
+        /**
+         * 创建主题信息对象
+         *
+         * @param builtInPartitioner 用于该主题的内置分区器
+         */
         public TopicInfo(BuiltInPartitioner builtInPartitioner) {
-            this.builtInPartitioner = builtInPartitioner;
+            this.builtInPartitioner = builtInPartitioner;  // 设置分区器
         }
     }
 
     /**
-     * Node latency stats for each node that are used for adaptive partition distribution
-     * Visible for testing
+     * 节点延迟统计信息
+     * 用于自适应分区分配,记录每个节点的性能指标
+     * 该类可见性为public是为了便于测试
      */
     public static final class NodeLatencyStats {
-        public volatile long readyTimeMs;  // last time the node had batches ready to send
-        public volatile long drainTimeMs;  // last time the node was able to drain batches
+        // 节点上次有批次准备好发送的时间(毫秒)
+        // volatile保证多线程可见性
+        public volatile long readyTimeMs;
+        
+        // 节点上次成功排空(发送完)批次的时间(毫秒)
+        // volatile保证多线程可见性
+        public volatile long drainTimeMs;
 
+        /**
+         * 创建节点延迟统计对象
+         *
+         * @param nowMs 当前时间戳(毫秒)
+         */
         NodeLatencyStats(long nowMs) {
-            readyTimeMs = nowMs;
-            drainTimeMs = nowMs;
+            readyTimeMs = nowMs;   // 初始化准备时间
+            drainTimeMs = nowMs;   // 初始化排空时间
         }
     }
 }
