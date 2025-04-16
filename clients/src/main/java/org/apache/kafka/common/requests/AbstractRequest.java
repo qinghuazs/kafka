@@ -27,15 +27,28 @@ import org.apache.kafka.common.protocol.SendBuilder;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
+/**
+ * Kafka请求的抽象基类，为所有具体的请求类型提供通用功能
+ * 包括请求的版本控制、序列化、错误处理等核心功能
+ */
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
+    /**
+     * 请求构建器的抽象基类，使用Builder模式创建具体的请求对象
+     * 提供版本兼容性检查和请求参数配置的通用实现
+     */
     public abstract static class Builder<T extends AbstractRequest> {
-        private final ApiKeys apiKey;
-        private final short oldestAllowedVersion;
-        private final short latestAllowedVersion;
+        private final ApiKeys apiKey;                     // 请求的API类型
+        private final short oldestAllowedVersion;           // 支持的最老版本号
+        private final short latestAllowedVersion;          // 支持的最新版本号
 
         /**
          * Construct a new builder which allows any supported version
+         */
+        /**
+         * 构造一个支持所有版本的构建器
+         * @param apiKey 请求的API类型
+         * @param enableUnstableLastVersion 是否启用不稳定的最新版本
          */
         public Builder(ApiKeys apiKey, boolean enableUnstableLastVersion) {
             this(apiKey, apiKey.oldestVersion(), apiKey.latestVersion(enableUnstableLastVersion));
@@ -44,6 +57,10 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
         /**
          * Construct a new builder which allows any supported and released version
          */
+        /**
+         * 构造一个支持所有已发布版本的构建器
+         * @param apiKey 请求的API类型
+         */
         public Builder(ApiKeys apiKey) {
             this(apiKey, false);
         }
@@ -51,12 +68,20 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
         /**
          * Construct a new builder which allows only a specific version
          */
+        /**
+         * 构造一个仅支持特定版本的构建器
+         * @param apiKey 请求的API类型
+         * @param allowedVersion 允许的版本号
+         */
         public Builder(ApiKeys apiKey, short allowedVersion) {
             this(apiKey, allowedVersion, allowedVersion);
         }
 
         /**
-         * Construct a new builder which allows an inclusive range of versions
+         * 构造一个支持指定版本范围的构建器
+         * @param apiKey 请求的API类型
+         * @param oldestAllowedVersion 支持的最老版本号
+         * @param latestAllowedVersion 支持的最新版本号
          */
         public Builder(ApiKeys apiKey, short oldestAllowedVersion, short latestAllowedVersion) {
             this.apiKey = apiKey;
@@ -83,9 +108,15 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
         public abstract T build(short version);
     }
 
-    private final short version;
-    private final ApiKeys apiKey;
+    private final short version;    // 请求的版本号
+    private final ApiKeys apiKey;    // 请求的API类型
 
+    /**
+     * 构造请求对象
+     * @param apiKey 请求的API类型
+     * @param version 请求的版本号
+     * @throws UnsupportedVersionException 如果版本号不被支持
+     */
     public AbstractRequest(ApiKeys apiKey, short version) {
         if (!apiKey.isVersionSupported(version))
             throw new UnsupportedVersionException("The " + apiKey + " protocol does not support version " + version);
@@ -104,12 +135,23 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
         return apiKey;
     }
 
+    /**
+     * 将请求转换为可发送的格式
+     * @param header 请求头
+     * @return 可发送的请求对象
+     */
     public final Send toSend(RequestHeader header) {
         return SendBuilder.buildRequestSend(header, data());
     }
 
     /**
      * Serializes header and body without prefixing with size (unlike `toSend`, which does include a size prefix).
+     */
+    /**
+     * 序列化请求头和请求体，不包含大小前缀
+     * @param header 请求头
+     * @return 序列化后的ByteBuffer
+     * @throws IllegalArgumentException 如果请求头与请求体的API类型或版本不匹配
      */
     public final ByteBuffer serializeWithHeader(RequestHeader header) {
         if (header.apiKey() != apiKey) {
@@ -122,11 +164,19 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
     }
 
     // Visible for testing
+    /**
+     * 仅序列化请求体，用于测试
+     * @return 序列化后的ByteBuffer
+     */
     public final ByteBuffer serialize() {
         return MessageUtil.toByteBuffer(data(), version);
     }
 
     // Visible for testing
+    /**
+     * 计算序列化后的字节大小
+     * @return 字节大小
+     */
     final int sizeInBytes() {
         return data().size(new ObjectSerializationCache(), version);
     }
@@ -156,6 +206,12 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
      * Get the error counts corresponding to an error response. This is overridden for requests
      * where response may be null (e.g produce with acks=0).
      */
+    /**
+     * 获取错误响应中的错误计数
+     * @param e 异常对象
+     * @return 错误类型及其出现次数的映射
+     * @throws IllegalStateException 如果无法获取错误计数
+     */
     public Map<Errors, Integer> errorCounts(Throwable e) {
         AbstractResponse response = getErrorResponse(0, e);
         if (response == null)
@@ -166,6 +222,13 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
 
     /**
      * Factory method for getting a request object based on ApiKey ID and a version
+     */
+    /**
+     * 根据API类型和版本解析请求
+     * @param apiKey 请求的API类型
+     * @param apiVersion 请求的版本号
+     * @param buffer 包含请求数据的缓冲区
+     * @return 解析后的请求对象及其大小
      */
     public static RequestAndSize parseRequest(ApiKeys apiKey, short apiVersion, ByteBuffer buffer) {
         int bufferSize = buffer.remaining();

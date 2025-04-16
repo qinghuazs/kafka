@@ -598,14 +598,26 @@ public class NetworkClient implements KafkaClient {
         }
     }
 
+    /**
+     * 执行请求发送的核心方法
+     * @param clientRequest 客户端请求对象，包含目标节点、超时时间等信息
+     * @param isInternalRequest 是否为内部请求（如元数据请求）
+     * @param now 当前时间戳
+     * @param request 具体的请求内容
+     */
     private void doSend(ClientRequest clientRequest, boolean isInternalRequest, long now, AbstractRequest request) {
+        // 获取目标节点的标识符
         String destination = clientRequest.destination();
+        // 根据请求版本创建请求头，包含协议版本、客户端ID、相关ID等信息
         RequestHeader header = clientRequest.makeHeader(request.version());
+        // 如果启用了调试日志，记录详细的请求信息
         if (log.isDebugEnabled()) {
             log.debug("Sending {} request with header {} and timeout {} to node {}: {}",
                 clientRequest.apiKey(), header, clientRequest.requestTimeoutMs(), destination, request);
         }
+        // 将请求和请求头序列化为可发送的格式
         Send send = request.toSend(header);
+        // 创建一个在途请求对象，用于跟踪请求的状态和响应
         InFlightRequest inFlightRequest = new InFlightRequest(
                 clientRequest,
                 header,
@@ -613,7 +625,9 @@ public class NetworkClient implements KafkaClient {
                 request,
                 send,
                 now);
+        // 将在途请求添加到跟踪集合中
         this.inFlightRequests.add(inFlightRequest);
+        // 通过网络选择器发送请求到目标节点
         selector.send(new NetworkSend(clientRequest.destination(), send));
     }
 

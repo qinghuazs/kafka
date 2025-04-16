@@ -27,55 +27,101 @@ import java.nio.ByteBuffer;
 import java.util.Objects;
 
 /**
- * The header for a request in the Kafka protocol
+ * Kafka协议中请求的头部信息
+ * 该类负责管理和处理Kafka请求的元数据，包括API版本、客户端标识、请求版本等关键信息
  */
 public class RequestHeader implements AbstractRequestResponse {
+    // 表示请求头大小未初始化的常量值
     private static final int SIZE_NOT_INITIALIZED = -1;
+    // 存储请求头的具体数据
     private final RequestHeaderData data;
+    // 请求头的版本号
     private final short headerVersion;
+    // 请求头的字节大小，初始为未初始化状态
     private int size = SIZE_NOT_INITIALIZED;
 
+    /**
+     * 创建一个新的请求头
+     * @param requestApiKey 请求的API类型
+     * @param requestVersion 请求的API版本
+     * @param clientId 客户端标识符
+     * @param correlationId 请求的关联ID，用于匹配请求和响应
+     */
     public RequestHeader(ApiKeys requestApiKey, short requestVersion, String clientId, int correlationId) {
-        this(new RequestHeaderData().
-                setRequestApiKey(requestApiKey.id).
-                setRequestApiVersion(requestVersion).
-                setClientId(clientId).
-                setCorrelationId(correlationId),
-            requestApiKey.requestHeaderVersion(requestVersion));
+        this(new RequestHeaderData(). // 创建新的请求头数据对象
+                setRequestApiKey(requestApiKey.id). // 设置API类型ID
+                setRequestApiVersion(requestVersion). // 设置API版本
+                setClientId(clientId). // 设置客户端ID
+                setCorrelationId(correlationId), // 设置关联ID
+            requestApiKey.requestHeaderVersion(requestVersion)); // 根据请求版本获取对应的头部版本
     }
 
+    /**
+     * 使用已有的请求头数据创建请求头
+     * @param data 请求头数据
+     * @param headerVersion 头部版本号
+     */
     public RequestHeader(RequestHeaderData data, short headerVersion) {
-        this.data = data;
-        this.headerVersion = headerVersion;
+        this.data = data; // 存储请求头数据
+        this.headerVersion = headerVersion; // 设置头部版本
     }
 
+    /**
+     * 获取请求的API类型
+     * @return 返回对应的ApiKeys枚举值
+     */
     public ApiKeys apiKey() {
-        return ApiKeys.forId(data.requestApiKey());
+        return ApiKeys.forId(data.requestApiKey()); // 根据API ID获取对应的ApiKeys枚举
     }
 
+    /**
+     * 获取API版本号
+     * @return 返回API的版本号
+     */
     public short apiVersion() {
-        return data.requestApiVersion();
+        return data.requestApiVersion(); // 返回请求的API版本
     }
 
+    /**
+     * 获取请求头的版本号
+     * @return 返回请求头的版本号
+     */
     public short headerVersion() {
-        return headerVersion;
+        return headerVersion; // 返回头部版本号
     }
 
+    /**
+     * 获取客户端标识符
+     * @return 返回客户端的ID
+     */
     public String clientId() {
-        return data.clientId();
+        return data.clientId(); // 返回客户端ID
     }
 
+    /**
+     * 获取请求的关联ID
+     * @return 返回用于关联请求和响应的ID
+     */
     public int correlationId() {
-        return data.correlationId();
+        return data.correlationId(); // 返回关联ID
     }
 
+    /**
+     * 获取原始的请求头数据
+     * @return 返回RequestHeaderData对象
+     */
     public RequestHeaderData data() {
-        return data;
+        return data; // 返回请求头数据对象
     }
 
     // Visible for testing.
+    /**
+     * 将请求头写入ByteBuffer
+     * @param buffer 目标缓冲区
+     * @param serializationCache 序列化缓存对象
+     */
     void write(ByteBuffer buffer, ObjectSerializationCache serializationCache) {
-        data.write(new ByteBufferAccessor(buffer), serializationCache, headerVersion);
+        data.write(new ByteBufferAccessor(buffer), serializationCache, headerVersion); // 将数据写入缓冲区
     }
 
     /**
@@ -90,9 +136,14 @@ public class RequestHeader implements AbstractRequestResponse {
      *
      * Visible for testing.
      */
+    /**
+     * 计算请求头的字节大小
+     * @param serializationCache 序列化缓存对象
+     * @return 返回请求头的字节大小
+     */
     int size(ObjectSerializationCache serializationCache) {
-        this.size = data.size(serializationCache, headerVersion);
-        return size;
+        this.size = data.size(serializationCache, headerVersion); // 计算并缓存大小
+        return size; // 返回计算的大小
     }
 
     /**
@@ -101,23 +152,40 @@ public class RequestHeader implements AbstractRequestResponse {
      * Calls to this method are idempotent and inexpensive since it returns the cached value of size after the first
      * invocation.
      */
+    /**
+     * 获取请求头的字节大小，如果未计算则进行计算
+     * @return 返回请求头的字节大小
+     */
     public int size() {
-        if (this.size == SIZE_NOT_INITIALIZED) {
-            this.size = size(new ObjectSerializationCache());
+        if (this.size == SIZE_NOT_INITIALIZED) { // 如果大小未初始化
+            this.size = size(new ObjectSerializationCache()); // 计算大小
         }
-        return size;
+        return size; // 返回大小
     }
 
+    /**
+     * 检查当前API版本是否受支持
+     * @return 如果API版本受支持返回true，否则返回false
+     */
     public boolean isApiVersionSupported() {
-        return apiKey().isVersionSupported(apiVersion());
+        return apiKey().isVersionSupported(apiVersion()); // 检查API版本是否支持
     }
 
+    /**
+     * 检查当前API版本是否已废弃
+     * @return 如果API版本已废弃返回true，否则返回false
+     */
     public boolean isApiVersionDeprecated() {
-        return apiKey().isVersionDeprecated(apiVersion());
+        return apiKey().isVersionDeprecated(apiVersion()); // 检查API版本是否已废弃
     }
 
+    /**
+     * 创建对应的响应头
+     * @return 返回与当前请求对应的ResponseHeader对象
+     */
     public ResponseHeader toResponseHeader() {
-        return new ResponseHeader(data.correlationId(), apiKey().responseHeaderVersion(apiVersion()));
+        return new ResponseHeader(data.correlationId(), // 使用相同的关联ID
+                apiKey().responseHeaderVersion(apiVersion())); // 获取对应的响应头版本
     }
 
     public static RequestHeader parse(ByteBuffer buffer) {

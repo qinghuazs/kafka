@@ -36,23 +36,44 @@ import static java.util.Arrays.asList;
 import static java.util.Collections.unmodifiableList;
 
 /**
- * A sensor applies a continuous sequence of numerical values to a set of associated metrics. For example a sensor on
- * message size would record a sequence of message sizes using the {@link #record(double)} api and would maintain a set
- * of metrics about request sizes such as the average or max.
+ * Sensor(传感器)类用于将一系列连续的数值应用到一组相关的度量指标上。
+ * 例如，一个消息大小的传感器会使用{@link #record(double)}方法记录一系列的消息大小，
+ * 并维护一组关于请求大小的度量指标，如平均值或最大值。
+ * 
+ * 该类是Kafka指标系统的核心组件，负责：
+ * 1. 收集和处理数值型指标数据
+ * 2. 管理多个相关的度量指标(metrics)
+ * 3. 支持分层的传感器结构(父子关系)
+ * 4. 提供不同级别的记录控制(INFO/DEBUG/TRACE)
+ * 5. 实现指标配额管理和检查
  */
 public final class Sensor {
 
+    // 指标注册表，用于管理所有的度量指标
     private final Metrics registry;
+    // 传感器的唯一名称
     private final String name;
+    // 父传感器数组，支持传感器的层级结构
     private final Sensor[] parents;
+    // 统计配置列表，包含每个统计指标及其配置
     private final List<StatAndConfig> stats;
+    // 度量指标映射表，key为指标名称，value为具体的Kafka指标对象
     private final Map<MetricName, KafkaMetric> metrics;
+    // 指标配置对象，包含记录级别、配额等设置
     private final MetricConfig config;
+    // 时间对象，用于获取当前时间
     private final Time time;
+    // 最后一次记录数据的时间戳
     private volatile long lastRecordTime;
+    // 传感器不活动过期时间(毫秒)
     private final long inactiveSensorExpirationTimeMs;
+    // 度量指标的同步锁对象
     private final Object metricLock;
 
+    /**
+     * StatAndConfig内部类用于将统计对象(Stat)和其配置(MetricConfig)绑定在一起
+     * 通过Supplier模式支持动态配置更新
+     */
     private static class StatAndConfig {
         private final Stat stat;
         private final Supplier<MetricConfig> configSupplier;
@@ -76,6 +97,12 @@ public final class Sensor {
         }
     }
 
+    /**
+     * RecordingLevel枚举定义了传感器的记录级别
+     * - INFO: 基本信息级别，只记录关键指标
+     * - DEBUG: 调试级别，记录更详细的指标信息
+     * - TRACE: 跟踪级别，记录最详细的指标信息
+     */
     public enum RecordingLevel {
         INFO(0, "INFO"), DEBUG(1, "DEBUG"), TRACE(2, "TRACE");
 
@@ -160,25 +187,38 @@ public final class Sensor {
     }
 
     /**
-     * The name this sensor is registered with. This name will be unique among all registered sensors.
+     * 获取传感器的注册名称
+     * 该名称在所有已注册的传感器中是唯一的，用于标识和查找特定的传感器
+     * 
+     * @return 传感器的唯一名称
      */
     public String name() {
         return this.name;
     }
 
+    /**
+     * 获取该传感器的所有父传感器
+     * 父传感器用于构建传感器的层级结构，当前传感器的记录会传播到父传感器
+     * 
+     * @return 父传感器列表的不可修改视图
+     */
     List<Sensor> parents() {
         return unmodifiableList(asList(parents));
     }
 
     /**
-     * @return true if the sensor's record level indicates that the metric will be recorded, false otherwise
+     * 检查当前传感器是否应该记录度量值
+     * 基于传感器的记录级别(INFO/DEBUG/TRACE)和配置的记录级别判断
+     * 
+     * @return 如果应该记录返回true，否则返回false
      */
     public boolean shouldRecord() {
         return this.recordingLevel.shouldRecord(config.recordLevel().id);
     }
 
     /**
-     * Record an occurrence, this is just short-hand for {@link #record(double) record(1.0)}
+     * 记录一次发生，这是{@link #record(double) record(1.0)}的简写方式
+     * 通常用于记录事件计数，每次调用相当于记录值1.0
      */
     public void record() {
         if (shouldRecord()) {
@@ -187,10 +227,11 @@ public final class Sensor {
     }
 
     /**
-     * Record a value with this sensor
-     * @param value The value to record
-     * @throws QuotaViolationException if recording this value moves a metric beyond its configured maximum or minimum
-     *         bound
+     * 使用传感器记录一个值
+     * 该值将被应用到所有关联的度量指标中，并可能触发配额检查
+     * 
+     * @param value 要记录的数值
+     * @throws QuotaViolationException 如果记录的值超出了配置的最大或最小边界值
      */
     public void record(double value) {
         if (shouldRecord()) {
@@ -199,12 +240,12 @@ public final class Sensor {
     }
 
     /**
-     * Record a value at a known time. This method is slightly faster than {@link #record(double)} since it will reuse
-     * the time stamp.
-     * @param value The value we are recording
-     * @param timeMs The current POSIX time in milliseconds
-     * @throws QuotaViolationException if recording this value moves a metric beyond its configured maximum or minimum
-     *         bound
+     * 在指定时间点记录一个值
+     * 该方法比{@link #record(double)}稍快，因为它重用了提供的时间戳而不是获取当前时间
+     * 
+     * @param value 要记录的数值
+     * @param timeMs POSIX时间戳(毫秒)
+     * @throws QuotaViolationException 如果记录的值超出了配置的最大或最小边界值
      */
     public void record(double value, long timeMs) {
         if (shouldRecord()) {
@@ -213,13 +254,12 @@ public final class Sensor {
     }
 
     /**
-     * Record a value at a known time. This method is slightly faster than {@link #record(double)} since it will reuse
-     * the time stamp.
-     * @param value The value we are recording
-     * @param timeMs The current POSIX time in milliseconds
-     * @param checkQuotas Indicate if quota must be enforced or not
-     * @throws QuotaViolationException if recording this value moves a metric beyond its configured maximum or minimum
-     *         bound
+     * 在指定时间点记录一个值，并可选择是否进行配额检查
+     * 
+     * @param value 要记录的数值
+     * @param timeMs POSIX时间戳(毫秒)
+     * @param checkQuotas 是否执行配额检查，true表示检查，false表示不检查
+     * @throws QuotaViolationException 当checkQuotas为true且记录的值超出配置的边界值时抛出
      */
     public void record(double value, long timeMs, boolean checkQuotas) {
         if (shouldRecord()) {
@@ -227,29 +267,49 @@ public final class Sensor {
         }
     }
 
+    /**
+     * 内部记录方法，实现了值的实际记录逻辑
+     * 
+     * @param value 要记录的数值
+     * @param timeMs 记录时间戳
+     * @param checkQuotas 是否检查配额
+     */
     private void recordInternal(double value, long timeMs, boolean checkQuotas) {
+        // 更新最后记录时间
         this.lastRecordTime = timeMs;
         synchronized (this) {
             synchronized (metricLock()) {
-                // increment all the stats
+                // 更新所有统计指标的值
                 for (StatAndConfig statAndConfig : this.stats) {
                     statAndConfig.stat.record(statAndConfig.config(), value, timeMs);
                 }
             }
+            // 如果需要，执行配额检查
             if (checkQuotas)
                 checkQuotas(timeMs);
         }
+        // 将记录传播到所有父传感器
         for (Sensor parent : parents)
             parent.record(value, timeMs, checkQuotas);
     }
 
     /**
-     * Check if we have violated our quota for any metric that has a configured quota
+     * 检查所有配置了配额的度量指标是否违反了配额限制
+     * 这是一个便捷方法，使用当前时间执行配额检查
      */
     public void checkQuotas() {
         checkQuotas(time.milliseconds());
     }
 
+    /**
+     * 在指定时间点检查所有度量指标的配额
+     * 遍历所有度量指标，对配置了配额的指标进行检查：
+     * 1. 对于TokenBucket类型的指标，检查值是否小于0
+     * 2. 对于其他类型的指标，检查值是否在可接受范围内
+     * 
+     * @param timeMs 检查时的时间戳
+     * @throws QuotaViolationException 当任何指标违反其配额限制时抛出
+     */
     public void checkQuotas(long timeMs) {
         for (KafkaMetric metric : this.metrics.values()) {
             MetricConfig config = metric.config();
@@ -258,10 +318,12 @@ public final class Sensor {
                 if (quota != null) {
                     double value = metric.measurableValue(timeMs);
                     if (metric.measurable() instanceof TokenBucket) {
+                        // 令牌桶类型特殊处理：检查是否有可用令牌
                         if (value < 0) {
                             throw new QuotaViolationException(metric, value, quota.bound());
                         }
                     } else {
+                        // 其他类型：检查值是否在配额限制范围内
                         if (!quota.acceptable(value)) {
                             throw new QuotaViolationException(metric, value, quota.bound());
                         }
@@ -272,28 +334,31 @@ public final class Sensor {
     }
 
     /**
-     * Register a compound statistic with this sensor with no config override
-     * @param stat The stat to register
-     * @return true if stat is added to sensor, false if sensor is expired
+     * 注册一个复合统计指标，使用传感器默认配置
+     * 
+     * @param stat 要注册的统计指标
+     * @return 如果统计指标添加成功返回true，如果传感器已过期返回false
      */
     public boolean add(CompoundStat stat) {
         return add(stat, null);
     }
 
     /**
-     * Register a compound statistic with this sensor which yields multiple measurable quantities (like a histogram)
-     * @param stat The stat to register
-     * @param config The configuration for this stat. If null then the stat will use the default configuration for this
-     *        sensor.
-     * @return true if stat is added to sensor, false if sensor is expired
+     * 注册一个复合统计指标，该指标可以产生多个可测量的量（如直方图）
+     * 
+     * @param stat 要注册的统计指标
+     * @param config 该统计指标的配置。如果为null则使用传感器的默认配置
+     * @return 如果统计指标添加成功返回true，如果传感器已过期返回false
      */
     public synchronized boolean add(CompoundStat stat, MetricConfig config) {
         if (hasExpired())
             return false;
 
+        // 确定使用的配置：优先使用传入的配置，否则使用传感器默认配置
         final MetricConfig statConfig = config == null ? this.config : config;
         stats.add(new StatAndConfig(Objects.requireNonNull(stat), () -> statConfig));
         Object lock = metricLock();
+        // 注册复合统计指标中的所有可测量指标
         for (NamedMeasurable m : stat.stats()) {
             final KafkaMetric metric = new KafkaMetric(lock, m.name(), m.stat(), statConfig, time);
             if (!metrics.containsKey(metric.metricName())) {
@@ -308,10 +373,11 @@ public final class Sensor {
     }
 
     /**
-     * Register a metric with this sensor
-     * @param metricName The name of the metric
-     * @param stat The statistic to keep
-     * @return true if metric is added to sensor, false if sensor is expired
+     * 注册一个简单的度量指标，使用传感器默认配置
+     * 
+     * @param metricName 度量指标的名称
+     * @param stat 要维护的统计指标
+     * @return 如果度量指标添加成功返回true，如果传感器已过期返回false
      */
     public boolean add(MetricName metricName, MeasurableStat stat) {
         return add(metricName, stat, null);

@@ -99,28 +99,20 @@ public class ProducerConfig extends AbstractConfig {
      * 生产者发送批次的大小配置（单位：字节）
      * 当多条消息要发送到同一个分区时，生产者会尝试将消息打包在一起，
      * 以减少请求次数，提高客户端和服务器的性能
-     * 默认值在Kafka 4.0中从0改为5，因为更大的批次通常能带来更好的性能
+     * linger.ms默认值在Kafka 4.0中从0改为5，因为更大的批次通常能带来更好的性能
      */
     public static final String BATCH_SIZE_CONFIG = "batch.size";
-    private static final String BATCH_SIZE_DOC = "The producer will attempt to batch records together into fewer requests whenever multiple records are being sent"
-                                                 + " to the same partition. This helps performance on both the client and the server. This configuration controls the "
-                                                 + "default batch size in bytes. "
+    private static final String BATCH_SIZE_DOC = "当多条消息被发送到同一个分区时，生产者会尝试将这些记录合并到更少的请求中。这有助于提升客户端和服务器端的性能。该配置控制默认的批次大小（单位：字节）。"
                                                  + "<p>"
-                                                 + "No attempt will be made to batch records larger than this size. "
+                                                 + "不会尝试对大于此大小的记录进行批处理。"
                                                  + "<p>"
-                                                 + "Requests sent to brokers will contain multiple batches, one for each partition with data available to be sent. "
+                                                 + "发送到broker的请求会包含多个批次，每个具有可发送数据的分区对应一个批次。"
                                                  + "<p>"
-                                                 + "A small batch size will make batching less common and may reduce throughput (a batch size of zero will disable "
-                                                 + "batching entirely). A very large batch size may use memory a bit more wastefully as we will always allocate a "
-                                                 + "buffer of the specified batch size in anticipation of additional records."
+                                                 + "较小的批次大小会使批处理变得不太常见，可能会降低吞吐量（批次大小为零会完全禁用批处理）。过大的批次大小可能会造成内存使用效率略低，因为我们总是会分配指定批次大小的缓冲区以期待更多的记录。"
                                                  + "<p>"
-                                                 + "Note: This setting gives the upper bound of the batch size to be sent. If we have fewer than this many bytes accumulated "
-                                                 + "for this partition, we will 'linger' for the <code>linger.ms</code> time waiting for more records to show up. "
-                                                 + "This <code>linger.ms</code> setting defaults to 5, which means the producer will wait for 5ms or until the record batch is "
-                                                 + "of <code>batch.size</code>(whichever happens first) before sending the record batch. Note that broker backpressure can "
-                                                 + " result in a higher effective linger time than this setting."
-                                                 + "The default changed from 0 to 5 in Apache Kafka 4.0 as the efficiency gains from larger batches typically result in "
-                                                 + "similar or lower producer latency despite the increased linger.";
+                                                 + "注意：此设置给出了要发送的批次大小的上限。如果我们为此分区累积的字节数少于这个值，我们会在<code>linger.ms</code>时间内等待更多记录加入。"
+                                                 + "<code>linger.ms</code>的默认值为5，这意味着生产者会等待5ms或直到记录批次达到<code>batch.size</code>（以先发生者为准）才发送记录批次。请注意，broker的背压可能会导致实际的等待时间比这个设置更长。"
+                                                 + "在Apache Kafka 4.0中，默认值从0改为5，因为更大批次带来的效率提升通常会导致生产者延迟相似或更低，尽管增加了等待时间。";
 
     /** 
      * <code>partitioner.adaptive.partitioning.enable</code>
@@ -671,6 +663,7 @@ public class ProducerConfig extends AbstractConfig {
         CONFIG = new ConfigDef()
                 // 定义bootstrap.servers配置：Kafka集群连接地址列表
                 .define(BOOTSTRAP_SERVERS_CONFIG, Type.LIST, Collections.emptyList(), new ConfigDef.NonNullValidator(), Importance.HIGH, CommonClientConfigs.BOOTSTRAP_SERVERS_DOC)
+                                //DNS配置，默认是USE_ALL_DNS_IPS
                                 .define(CLIENT_DNS_LOOKUP_CONFIG,
                                         Type.STRING,
                                         ClientDnsLookup.USE_ALL_DNS_IPS.toString(),
@@ -678,24 +671,32 @@ public class ProducerConfig extends AbstractConfig {
                                            ClientDnsLookup.RESOLVE_CANONICAL_BOOTSTRAP_SERVERS_ONLY.toString()),
                                         Importance.MEDIUM,
                                         CommonClientConfigs.CLIENT_DNS_LOOKUP_DOC)
+                                //默认是32M
                                 .define(BUFFER_MEMORY_CONFIG, Type.LONG, 32 * 1024 * 1024L, atLeast(0L), Importance.HIGH, BUFFER_MEMORY_DOC)
+                                //重试次数 默认是Integer.MAX_VALUE
                                 .define(RETRIES_CONFIG, Type.INT, Integer.MAX_VALUE, between(0, Integer.MAX_VALUE), Importance.HIGH, RETRIES_DOC)
+                                //acks 默认是all
                                 .define(ACKS_CONFIG,
                                         Type.STRING,
                                         "all",
                                         in("all", "-1", "0", "1"),
                                         Importance.LOW,
                                         ACKS_DOC)
+                                //压缩类型 默认是 none 不压缩
                                 .define(COMPRESSION_TYPE_CONFIG, Type.STRING, CompressionType.NONE.name, in(Utils.enumOptions(CompressionType.class)), Importance.HIGH, COMPRESSION_TYPE_DOC)
                                 .define(COMPRESSION_GZIP_LEVEL_CONFIG, Type.INT, CompressionType.GZIP.defaultLevel(), CompressionType.GZIP.levelValidator(), Importance.MEDIUM, COMPRESSION_GZIP_LEVEL_DOC)
                                 .define(COMPRESSION_LZ4_LEVEL_CONFIG, Type.INT, CompressionType.LZ4.defaultLevel(), CompressionType.LZ4.levelValidator(), Importance.MEDIUM, COMPRESSION_LZ4_LEVEL_DOC)
                                 .define(COMPRESSION_ZSTD_LEVEL_CONFIG, Type.INT, CompressionType.ZSTD.defaultLevel(), CompressionType.ZSTD.levelValidator(), Importance.MEDIUM, COMPRESSION_ZSTD_LEVEL_DOC)
+                                //默认16kb
                                 .define(BATCH_SIZE_CONFIG, Type.INT, 16384, atLeast(0), Importance.MEDIUM, BATCH_SIZE_DOC)
                                 .define(PARTITIONER_ADPATIVE_PARTITIONING_ENABLE_CONFIG, Type.BOOLEAN, true, Importance.LOW, PARTITIONER_ADPATIVE_PARTITIONING_ENABLE_DOC)
                                 .define(PARTITIONER_AVAILABILITY_TIMEOUT_MS_CONFIG, Type.LONG, 0, atLeast(0), Importance.LOW, PARTITIONER_AVAILABILITY_TIMEOUT_MS_DOC)
                                 .define(PARTITIONER_IGNORE_KEYS_CONFIG, Type.BOOLEAN, false, Importance.MEDIUM, PARTITIONER_IGNORE_KEYS_DOC)
+                                //linger.ms配置：消息发送前等待的时间，默认为5ms
                                 .define(LINGER_MS_CONFIG, Type.LONG, 5, atLeast(0), Importance.MEDIUM, LINGER_MS_DOC)
+                                //默认2分钟
                                 .define(DELIVERY_TIMEOUT_MS_CONFIG, Type.INT, 120 * 1000, atLeast(0), Importance.MEDIUM, DELIVERY_TIMEOUT_MS_DOC)
+                                //client_id 默认是空
                                 .define(CLIENT_ID_CONFIG, Type.STRING, "", Importance.MEDIUM, CommonClientConfigs.CLIENT_ID_DOC)
                                 .define(SEND_BUFFER_CONFIG, Type.INT, 128 * 1024, atLeast(CommonClientConfigs.SEND_BUFFER_LOWER_BOUND), Importance.MEDIUM, CommonClientConfigs.SEND_BUFFER_DOC)
                                 .define(RECEIVE_BUFFER_CONFIG, Type.INT, 32 * 1024, atLeast(CommonClientConfigs.RECEIVE_BUFFER_LOWER_BOUND), Importance.MEDIUM, CommonClientConfigs.RECEIVE_BUFFER_DOC)
@@ -707,6 +708,7 @@ public class ProducerConfig extends AbstractConfig {
                                         MAX_REQUEST_SIZE_DOC)
                                 .define(RECONNECT_BACKOFF_MS_CONFIG, Type.LONG, 50L, atLeast(0L), Importance.LOW, CommonClientConfigs.RECONNECT_BACKOFF_MS_DOC)
                                 .define(RECONNECT_BACKOFF_MAX_MS_CONFIG, Type.LONG, 1000L, atLeast(0L), Importance.LOW, CommonClientConfigs.RECONNECT_BACKOFF_MAX_MS_DOC)
+                                //默认是100ms
                                 .define(RETRY_BACKOFF_MS_CONFIG,
                                         Type.LONG,
                                         CommonClientConfigs.DEFAULT_RETRY_BACKOFF_MS,
@@ -724,12 +726,14 @@ public class ProducerConfig extends AbstractConfig {
                                         true,
                                         Importance.LOW,
                                         ENABLE_METRICS_PUSH_DOC)
+                                //默认是60000 ms 也就是 1分钟
                                 .define(MAX_BLOCK_MS_CONFIG,
                                         Type.LONG,
                                         60 * 1000,
                                         atLeast(0),
                                         Importance.MEDIUM,
                                         MAX_BLOCK_MS_DOC)
+                                //默认是 30 秒
                                 .define(REQUEST_TIMEOUT_MS_CONFIG,
                                         Type.INT,
                                         30 * 1000,

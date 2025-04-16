@@ -17,40 +17,73 @@
 package org.apache.kafka.common.protocol;
 
 /**
- * Helper class which facilitates zero-copy network transmission. See {@link SendBuilder}.
+ * 辅助类，用于支持零拷贝网络传输功能。参见 {@link SendBuilder}。
+ * 该类主要用于累计计算消息的总大小，包括普通数据大小和零拷贝数据大小。
+ * 零拷贝是一种优化技术，可以避免数据在内核空间和用户空间之间的多次拷贝，从而提高性能。
  */
 public class MessageSizeAccumulator {
+    // 消息的总大小，包括普通数据和零拷贝数据的大小总和
     private int totalSize = 0;
+    // 零拷贝数据的大小，是总大小的一部分
     private int zeroCopySize = 0;
 
     /**
-     * Get the total size of the message.
+     * 获取消息的总大小。
+     * 总大小包含了普通数据大小和零拷贝数据大小的总和。
      *
-     * @return total size in bytes
+     * @return 消息总大小（字节数）
      */
     public int totalSize() {
+        // 返回累计的总大小
         return totalSize;
     }
 
     /**
-     * Size excluding zero copy fields as specified by {@link #zeroCopySize}. This is typically the size of the byte
-     * buffer used to serialize messages.
+     * 获取不包含零拷贝字段的大小。
+     * 这通常是用于序列化消息的字节缓冲区的大小。
+     * 计算方式为总大小减去零拷贝数据的大小。
+     *
+     * @return 不包含零拷贝数据的大小（字节数）
      */
     public int sizeExcludingZeroCopy() {
+        // 返回普通数据的大小（总大小减去零拷贝数据大小）
         return totalSize - zeroCopySize;
     }
 
+    /**
+     * 添加零拷贝数据的大小。
+     * 当添加零拷贝数据时，会同时更新总大小和零拷贝大小。
+     *
+     * @param size 要添加的零拷贝数据大小（字节数）
+     */
     public void addZeroCopyBytes(int size) {
+        // 更新零拷贝数据大小
         zeroCopySize += size;
+        // 同时更新总大小
         totalSize += size;
     }
 
+    /**
+     * 添加普通数据的大小。
+     * 只更新总大小，不影响零拷贝数据大小。
+     *
+     * @param size 要添加的普通数据大小（字节数）
+     */
     public void addBytes(int size) {
+        // 仅更新总大小
         totalSize += size;
     }
 
+    /**
+     * 将另一个MessageSizeAccumulator的大小数据合并到当前实例中。
+     * 会分别累加总大小和零拷贝大小。
+     *
+     * @param size 要合并的MessageSizeAccumulator实例
+     */
     public void add(MessageSizeAccumulator size) {
+        // 累加总大小
         this.totalSize += size.totalSize;
+        // 累加零拷贝数据大小
         this.zeroCopySize += size.zeroCopySize;
     }
 

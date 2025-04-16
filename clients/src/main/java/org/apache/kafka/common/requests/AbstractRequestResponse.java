@@ -18,7 +18,24 @@ package org.apache.kafka.common.requests;
 
 import org.apache.kafka.common.protocol.ApiMessage;
 
+/**
+ * Kafka请求和响应的基础接口
+ * 
+ * 该接口作为所有Kafka请求(Request)和响应(Response)类的公共抽象，定义了获取底层消息数据的标准方法。
+ * 通过实现这个接口，所有的请求响应类都能以统一的方式提供其消息内容。
+ * 
+ * 设计目的：
+ * 1. 统一接口：为所有请求和响应类提供一致的数据访问方式
+ * 2. 类型安全：通过ApiMessage确保消息数据的类型安全
+ * 3. 解耦合：将具体的消息实现与通用处理逻辑分离
+ */
 public interface AbstractRequestResponse {
 
+    /**
+     * 获取请求或响应的具体消息数据
+     * 
+     * @return ApiMessage 返回具体的消息实现，可能是请求数据或响应数据
+     *         每个实现类都会返回其对应的特定消息类型
+     */
     ApiMessage data();
 }
