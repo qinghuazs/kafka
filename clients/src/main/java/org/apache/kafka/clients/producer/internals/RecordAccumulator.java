@@ -291,8 +291,7 @@ public class RecordAccumulator {
                                      Cluster cluster) {
         // 检查分区是否发生并发变更
         if (topicInfo.builtInPartitioner.isPartitionChanged(partitionInfo)) {
-            log.trace("主题 {} 的分区 {} 被并发追加切换,正在重试",
-                    partitionInfo.partition(), topic);
+            log.trace("主题 {} 的分区 {} 被并发追加切换,正在重试", partitionInfo.partition(), topic);
             return true;
         }
 
@@ -300,6 +299,7 @@ public class RecordAccumulator {
         // 检查所有批次是否都已填满,如果是则可以进行切换
         if (allBatchesFull(deque)) {
             topicInfo.builtInPartitioner.updatePartitionInfo(partitionInfo, 0, cluster, true);
+            //更新分区信息后的再次确认
             if (topicInfo.builtInPartitioner.isPartitionChanged(partitionInfo)) {
                 log.trace("完成了主题 {} 分区 {} 之前被禁用的切换,正在重试", topic, partitionInfo.partition());
                 return true;
@@ -336,7 +336,7 @@ public class RecordAccumulator {
                                      long maxTimeToBlock,
                                      long nowMs,
                                      Cluster cluster) throws InterruptedException {
-        // 获取或创建主题信息,包含内置分区器
+        // 获取或创建主题信息,包含内置分区器 batchSize即为粘性分区的大小
         TopicInfo topicInfo = topicInfoMap.computeIfAbsent(topic, k -> new TopicInfo(createBuiltInPartitioner(logContext, k, batchSize)));
 
         // 追踪正在进行的追加操作数量,确保在abortIncompleteBatches()中不会遗漏批次
@@ -410,6 +410,11 @@ public class RecordAccumulator {
             }
         } finally {
             free.deallocate(buffer);
+            //这是为了保证计数的准确性。
+            //在append方法开始时调用incrementAndGet()增加计数是为了追踪正在进行的追加操作数量，
+            //这样可以确保在abortIncompleteBatches()中不会遗漏批次。
+            //而在finally块中调用decrementAndGet()是为了在追加操作完成后（无论成功还是失败）减少计数，保持计数的一致性。
+            //这种成对的增减操作是并发编程中的常见模式，用于追踪并发操作的数量。
             appendsInProgress.decrementAndGet();
         }
     }
@@ -504,6 +509,9 @@ public class RecordAccumulator {
         // 获取队列中的最后一个批次
         ProducerBatch last = deque.peekLast();
         // 如果队列为空(last==null)或最后一个批次已满,则返回true
+        // last==null可以判定队列为空是因为last是通过deque.peekLast()获取的。
+        // 在ArrayDeque的实现中，peekLast()方法会返回队列的最后一个元素，如果队列为空则返回null。
+        // 所以当last==null时，说明deque.peekLast()返回了null，这直接表明了队列中没有任何元素。
         return last == null || last.isFull();
     }
 

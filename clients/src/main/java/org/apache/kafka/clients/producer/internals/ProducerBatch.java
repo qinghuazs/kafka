@@ -208,7 +208,7 @@ public final class ProducerBatch {
         } else {
             // 追加消息到记录构建器
             this.recordsBuilder.append(timestamp, key, value, headers);
-            // 更新批次中最大消息大小
+            // 更新批次中最大消息大小： 最大记录大小和新消息的大小 estimateSizeInBytesUpperBound得出的是一个预估值
             this.maxRecordSize = Math.max(this.maxRecordSize, AbstractRecords.estimateSizeInBytesUpperBound(magic(),
                     recordsBuilder.compression().type(), key, value, headers));
             // 更新最后追加时间

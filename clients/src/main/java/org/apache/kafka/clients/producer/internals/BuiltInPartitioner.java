@@ -226,30 +226,8 @@ public class BuiltInPartitioner {
         // 原子地增加已生产字节数
         int producedBytes = partitionInfo.producedBytes.addAndGet(appendedBytes);
 
-        // 分区切换策略说明：
-        // 我们尝试在向一个分区生产stickyBatchSize字节后切换分区，但这可能会影响批处理效率，
-        // 因为分区切换可能发生在批次尚未准备好发送时。这种情况在高linger.ms设置下特别明显。
-        // 
-        // 考虑以下例子：
-        // linger.ms=500, producer每500ms生产12KB, batch.size=16KB
-        //   - 第一个批次在500ms内收集12KB，发送
-        //   - 第二个批次收集4KB后切换分区，最终发送4KB
-        //   - 如此循环，我们会得到12KB和4KB的批次
-        // 
-        // 为了获得更优的批处理并避免4KB的小批次，调用者可以在批次未准备好时禁止分区切换：
-        //   - 第一个批次在500ms内收集12KB，发送
-        //   - 第二个批次收集4KB，但因为批次未准备好而不切换分区
-        //   - 第二个批次继续收集到12KB，发送后再切换分区
-        //   - 如此循环，我们只会发送12KB的批次
-        // 
-        // 我们将生产字节数上限设为批次大小的2倍，以避免极端情况
-        // （例如，混合了带键和不带键的消息时，带键消息可能在禁用切换的批次准备好后创建未准备好的批次）
-        // 
-        // 结果是，在高linger.ms设置下，我们会在生产stickyBatchSize到stickyBatchSize*2字节之间切换分区，
-        // 以更好地对齐批次边界
         if (producedBytes >= stickyBatchSize * 2) {
-            log.trace("已生产{}字节，超过批次大小{}字节的两倍，切换开关设置为{}",
-                producedBytes, stickyBatchSize, enableSwitch);
+            log.trace("已生产{}字节，超过批次大小{}字节的两倍，切换开关设置为{}", producedBytes, stickyBatchSize, enableSwitch);
         }
 
         // 在以下两种情况下切换分区：

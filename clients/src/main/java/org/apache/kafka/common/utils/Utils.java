@@ -275,11 +275,19 @@ public final class Utils {
     }
 
     /**
-     * Wrap an array as a nullable ByteBuffer.
-     * @param array The nullable array to wrap
-     * @return The wrapping ByteBuffer or null if array is null
+     * 将字节数组包装为可为空的ByteBuffer对象。
+     * 这个方法提供了一个安全的方式来处理可能为空的字节数组，并将其转换为ByteBuffer。
+     * 
+     * @param array 要包装的字节数组，可以为null
+     * @return 如果输入数组为null则返回null，否则返回包装该数组的ByteBuffer对象
+     * 
+     * 实现说明：
+     * 1. 首先检查输入数组是否为null
+     * 2. 如果数组为null，直接返回null
+     * 3. 如果数组不为null，使用ByteBuffer.wrap()方法创建一个新的ByteBuffer
      */
     public static ByteBuffer wrapNullable(byte[] array) {
+        // 使用三元运算符进行null检查，如果数组为null则返回null，否则将数组包装为ByteBuffer
         return array == null ? null : ByteBuffer.wrap(array);
     }
 
@@ -379,149 +387,189 @@ public final class Utils {
     }
 
     /**
-     * Sleep for a bit
-     * @param ms The duration of the sleep
+     * 使系统线程休眠指定的毫秒数
+     * 
+     * @param ms 休眠的毫秒数
      */
     public static void sleep(long ms) {
         try {
+            // 调用Thread.sleep()使当前线程休眠
             Thread.sleep(ms);
         } catch (InterruptedException e) {
-            // this is okay, we just wake up early
+            // 如果线程被中断，重新设置中断状态
+            // 这里不抛出异常是因为提前唤醒是可以接受的
             Thread.currentThread().interrupt();
         }
     }
 
     /**
-     * Instantiate the class
+     * 通过反射机制实例化一个类
+     * 该方法要求类必须有一个公共的无参构造函数
+     * 
+     * @param <T> 要实例化的类的类型
+     * @param c 要实例化的类的Class对象
+     * @return 类的新实例
+     * @throws KafkaException 如果实例化过程中发生错误
      */
     public static <T> T newInstance(Class<T> c) {
+        // 检查传入的Class对象是否为null
         if (c == null)
             throw new KafkaException("class cannot be null");
         try {
+            // 使用反射获取无参构造函数并创建实例
             return c.getDeclaredConstructor().newInstance();
         } catch (NoSuchMethodException e) {
+            // 如果找不到无参构造函数，抛出异常
             throw new KafkaException("Could not find a public no-argument constructor for " + c.getName(), e);
         } catch (ReflectiveOperationException | RuntimeException e) {
+            // 处理其他反射相关异常或运行时异常
             throw new KafkaException("Could not instantiate class " + c.getName(), e);
         }
     }
 
     /**
-     * Look up the class by name and instantiate it.
-     * @param klass class name
-     * @param base super class of the class to be instantiated
-     * @param <T> the type of the base class
-     * @return the new instance
+     * 根据类名查找并实例化一个类，该类必须是指定基类的子类
+     * 
+     * @param klass 要实例化的类的全限定名
+     * @param base 要实例化的类必须继承的基类
+     * @param <T> 基类的类型
+     * @return 类的新实例
+     * @throws ClassNotFoundException 如果找不到指定的类
      */
     public static <T> T newInstance(String klass, Class<T> base) throws ClassNotFoundException {
+        // 先加载类，然后创建实例
         return Utils.newInstance(loadClass(klass, base));
     }
 
     /**
-     * Look up a class by name.
-     * @param klass class name
-     * @param base super class of the class for verification
-     * @param <T> the type of the base class
-     * @return the new class
+     * 根据类名加载一个类，该类必须是指定基类的子类
+     * 
+     * @param klass 要加载的类的全限定名
+     * @param base 要加载的类必须继承的基类
+     * @param <T> 基类的类型
+     * @return 加载的类的Class对象
+     * @throws ClassNotFoundException 如果找不到指定的类
      */
     public static <T> Class<? extends T> loadClass(String klass, Class<T> base) throws ClassNotFoundException {
+        // 获取上下文类加载器或Kafka的类加载器
         ClassLoader contextOrKafkaClassLoader = Utils.getContextOrKafkaClassLoader();
-        // Use loadClass here instead of Class.forName because the name we use here may be an alias
-        // and not match the name of the class that gets loaded. If that happens, Class.forName can
-        // throw an exception.
+        
+        // 使用loadClass而不是Class.forName，因为类名可能是别名
+        // 如果使用Class.forName，当类名是别名时可能会抛出异常
         Class<?> loadedClass = contextOrKafkaClassLoader.loadClass(klass);
-        // Invoke forName here with the true name of the requested class to cause class
-        // initialization to take place.
+        
+        // 使用真实的类名调用forName来确保类的初始化
+        // 同时验证加载的类是否是base的子类
         return Class.forName(loadedClass.getName(), true, contextOrKafkaClassLoader).asSubclass(base);
     }
 
     /**
-     * Cast {@code klass} to {@code base} and instantiate it.
-     * @param klass The class to instantiate
-     * @param base A know baseclass of klass.
-     * @param <T> the type of the base class
-     * @throws ClassCastException If {@code klass} is not a subclass of {@code base}.
-     * @return the new instance.
+     * 将一个类转换为指定的基类类型并实例化它
+     * 
+     * @param klass 要实例化的类的Class对象
+     * @param base 基类的Class对象
+     * @param <T> 基类的类型
+     * @return 类的新实例
+     * @throws ClassCastException 如果klass不是base的子类
      */
     public static <T> T newInstance(Class<?> klass, Class<T> base) {
+        // 将klass转换为base的子类类型，然后创建实例
         return Utils.newInstance(klass.asSubclass(base));
     }
 
     /**
-     * Construct a new object using a class name and parameters.
+     * 使用类名和参数构造一个新对象
+     * 参数以类型-值对的形式提供，例如：(String.class, "name", Integer.class, 42)
      *
-     * @param className                 The full name of the class to construct.
-     * @param params                    A sequence of (type, object) elements.
-     * @param <T>                       The type of object to construct.
-     * @return                          The new object.
-     * @throws ClassNotFoundException   If there was a problem constructing the object.
+     * @param className 要构造的类的全限定名
+     * @param params 构造函数参数，格式为：(参数1类型, 参数1值, 参数2类型, 参数2值, ...)
+     * @param <T> 要构造的对象的类型
+     * @return 构造的新对象
+     * @throws ClassNotFoundException 如果构造对象时发生问题
      */
     public static <T> T newParameterizedInstance(String className, Object... params)
             throws ClassNotFoundException {
+        // 创建参数类型数组和参数值数组
         Class<?>[] argTypes = new Class<?>[params.length / 2];
         Object[] args = new Object[params.length / 2];
         try {
+            // 加载类
             Class<?> c = Utils.loadClass(className, Object.class);
+            // 解析参数类型和值
             for (int i = 0; i < params.length / 2; i++) {
                 argTypes[i] = (Class<?>) params[2 * i];
                 args[i] = params[(2 * i) + 1];
             }
+            // 获取构造函数并创建实例
             @SuppressWarnings("unchecked")
             Constructor<T> constructor = (Constructor<T>) c.getConstructor(argTypes);
             return constructor.newInstance(args);
         } catch (NoSuchMethodException e) {
+            // 找不到匹配的构造函数
             throw new ClassNotFoundException(String.format("Failed to find " +
                 "constructor with %s for %s", Arrays.stream(argTypes).map(Object::toString).collect(Collectors.joining(", ")), className), e);
         } catch (InstantiationException e) {
+            // 实例化失败
             throw new ClassNotFoundException(String.format("Failed to instantiate " +
                 "%s", className), e);
         } catch (IllegalAccessException e) {
+            // 无法访问构造函数
             throw new ClassNotFoundException(String.format("Unable to access " +
                 "constructor of %s", className), e);
         } catch (InvocationTargetException e) {
+            // 构造函数抛出异常
             throw new KafkaException(String.format("The constructor of %s threw an exception", className), e.getCause());
         }
     }
 
     /**
-     * Generates 32 bit murmur2 hash from byte array
-     * @param data byte array to hash
-     * @return 32 bit hash of the given array
+     * 使用MurmurHash2算法生成32位哈希值
+     * MurmurHash是一种非加密型哈希函数，适用于一般的哈希检索操作
+     * 
+     * @param data 要计算哈希值的字节数组
+     * @return 32位哈希值
      */
     @SuppressWarnings("fallthrough")
     public static int murmur2(final byte[] data) {
+        // 获取数据长度
         int length = data.length;
+        // 初始化种子值
         int seed = 0x9747b28c;
-        // 'm' and 'r' are mixing constants generated offline.
-        // They're not really 'magic', they just happen to work well.
+        // 'm'和'r'是预先计算好的混合常量
         final int m = 0x5bd1e995;
         final int r = 24;
 
-        // Initialize the hash to a random value
+        // 使用seed和数据长度初始化哈希值
         int h = seed ^ length;
+        // 计算4字节为一组的组数
         int length4 = length / 4;
 
+        // 主循环：每次处理4个字节
         for (int i = 0; i < length4; i++) {
             final int i4 = i * 4;
+            // 将4个字节组合成一个32位整数
             int k = (data[i4 + 0] & 0xff) + ((data[i4 + 1] & 0xff) << 8) + ((data[i4 + 2] & 0xff) << 16) + ((data[i4 + 3] & 0xff) << 24);
+            // 对k进行混合
             k *= m;
             k ^= k >>> r;
             k *= m;
+            // 更新哈希值
             h *= m;
             h ^= k;
         }
 
-        // Handle the last few bytes of the input array
+        // 处理剩余的字节（0-3个字节）
         switch (length % 4) {
-            case 3:
+            case 3: // 处理剩余的3个字节
                 h ^= (data[(length & ~3) + 2] & 0xff) << 16;
-            case 2:
+            case 2: // 处理剩余的2个字节
                 h ^= (data[(length & ~3) + 1] & 0xff) << 8;
-            case 1:
+            case 1: // 处理剩余的1个字节
                 h ^= data[length & ~3] & 0xff;
                 h *= m;
         }
 
+        // 最终的混合
         h ^= h >>> 13;
         h *= m;
         h ^= h >>> 15;

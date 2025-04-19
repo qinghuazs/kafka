@@ -37,16 +37,17 @@ import java.nio.ByteBuffer;
 import static org.apache.kafka.common.utils.Utils.wrapNullable;
 
 /**
- * This class is used to write new log data in memory, i.e. this is the write path for {@link MemoryRecords}.
- * It transparently handles compression and exposes methods for appending new records, possibly with message
- * format conversion.
- *
- * In cases where keeping memory retention low is important and there's a gap between the time that record appends stop
- * and the builder is closed (e.g. the Producer), it's important to call `closeForRecordAppends` when the former happens.
- * This will release resources like compression buffers that can be relatively large (64 KB for LZ4).
+ * 此类用于在内存中写入新的日志数据，是{@link MemoryRecords}的写入路径实现。
+ * 它透明地处理压缩并提供追加新记录的方法，可能需要进行消息格式转换。
+ * 
+ * 在内存占用需要保持较低且记录追加停止到构建器关闭之间存在时间间隔的情况下（例如Producer），
+ * 在追加停止时调用`closeForRecordAppends`非常重要。这将释放压缩缓冲区等资源
+ * （对于LZ4压缩，这些资源可能高达64 KB）。
  */
 public class MemoryRecordsBuilder implements AutoCloseable {
+    // 压缩率估算因子，用于预估压缩后的数据大小
     private static final float COMPRESSION_RATE_ESTIMATION_FACTOR = 1.05f;
+    // 表示已关闭的输出流，当尝试写入时抛出异常
     private static final DataOutputStream CLOSED_STREAM = new DataOutputStream(new OutputStream() {
         @Override
         public void write(int b) {
@@ -54,41 +55,66 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         }
     });
 
+    // 时间戳类型（CREATE_TIME或LOG_APPEND_TIME）
     private final TimestampType timestampType;
+    // 压缩类型（如NONE、GZIP、SNAPPY、LZ4、ZSTD等）
     private final Compression compression;
-    // Used to hold a reference to the underlying ByteBuffer so that we can write the record batch header and access
-    // the written bytes. ByteBufferOutputStream allocates a new ByteBuffer if the existing one is not large enough,
-    // so it's not safe to hold a direct reference to the underlying ByteBuffer.
+    // 用于保存底层ByteBuffer的引用，以便写入记录批次头部和访问已写入的字节
+    // ByteBufferOutputStream在现有缓冲区不够大时会分配新的ByteBuffer，
+    // 因此直接持有对底层ByteBuffer的引用是不安全的
     private final ByteBufferOutputStream bufferStream;
+    // 消息格式版本号
     private final byte magic;
+    // 初始写入位置
     private final int initialPosition;
+    // 基准偏移量，表示此批次第一条消息的偏移量
     private final long baseOffset;
+    // 日志追加时间
     private final long logAppendTime;
+    // 是否为控制批次（如事务标记）
     private final boolean isControlBatch;
+    // 分区leader的epoch值
+    // 分区leader的任期号,用于标识分区leader的版本,每当leader发生变更时递增,
+    // 用于防止"脑裂"等异常情况
     private final int partitionLeaderEpoch;
+    // 写入字节限制
     private final int writeLimit;
+    // 批次头部大小（字节数）
     private final int batchHeaderSizeInBytes;
+    // 删除时间界限（用于日志压缩）
     private final long deleteHorizonMs;
 
-    // Use a conservative estimate of the compression ratio. The producer overrides this using statistics
-    // from previous batches before appending any records.
+    // 使用保守的压缩率估计值，生产者会在追加记录前根据之前批次的统计信息覆盖此值
     private float estimatedCompressionRatio = 1.0F;
 
-    // Used to append records, may compress data on the fly
+    // 用于追加记录的输出流，可能会即时压缩数据
     private DataOutputStream appendStream;
+    // 是否为事务性消息
     private boolean isTransactional;
+    // 生产者ID
     private long producerId;
+    // 生产者epoch值
     private short producerEpoch;
+    // 序列号基准值
     private int baseSequence;
-    private int uncompressedRecordsSizeInBytes; // Number of bytes (excluding the header) written before compression
+    // 压缩前的记录总字节数（不包括头部）
+    private int uncompressedRecordsSizeInBytes;
+    // 记录数量
     private int numRecords;
+    // 实际压缩率
     private float actualCompressionRatio;
+    // 最大时间戳
     private long maxTimestamp;
+    // 具有最大时间戳的记录的偏移量
     private long offsetOfMaxTimestamp = -1;
+    // 最后一条记录的偏移量
     private Long lastOffset = null;
+    // 基准时间戳
     private Long baseTimestamp = null;
 
+    // 已构建的内存记录对象
     private MemoryRecords builtRecords;
+    // 是否已中止
     private boolean aborted = false;
 
     public MemoryRecordsBuilder(ByteBufferOutputStream bufferStream,
@@ -299,85 +325,125 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     /**
-     * Return the sum of the size of the batch header (always uncompressed) and the records (before compression).
+     * 返回批次头部（始终未压缩）和记录（压缩前）的总大小。
+     * 此方法用于获取写入的未压缩字节数，包括批次头部和记录数据。
      */
     public int uncompressedBytesWritten() {
+        // 返回未压缩的记录大小和批次头部大小之和
         return uncompressedRecordsSizeInBytes + batchHeaderSizeInBytes;
     }
 
+    /**
+     * 设置生产者状态信息，包括生产者ID、epoch、序列号基准值和事务标志。
+     * 这些信息用于实现精确一次语义和事务性消息。
+     */
     public void setProducerState(long producerId, short producerEpoch, int baseSequence, boolean isTransactional) {
         if (isClosed()) {
-            // Sequence numbers are assigned when the batch is closed while the accumulator is being drained.
-            // If the resulting ProduceRequest to the partition leader failed for a retriable error, the batch will
-            // be re queued. In this case, we should not attempt to set the state again, since changing the producerId and sequence
-            // once a batch has been sent to the broker risks introducing duplicates.
+            // 当批次关闭时会分配序列号。如果向分区leader的ProduceRequest失败并可重试，
+            // 批次会重新入队。此时不应再次设置状态，因为更改已发送到broker的批次的producerId和序列号
+            // 可能会导致消息重复。
             throw new IllegalStateException("Trying to set producer state of an already closed batch. This indicates a bug on the client.");
         }
+        // 设置生产者ID、epoch、序列号基准值和事务标志
         this.producerId = producerId;
         this.producerEpoch = producerEpoch;
         this.baseSequence = baseSequence;
         this.isTransactional = isTransactional;
     }
 
+    /**
+     * 覆盖批次中最后一条记录的偏移量。
+     * 只能在记录构建完成之前调用此方法。
+     */
     public void overrideLastOffset(long lastOffset) {
+        // 如果记录已经构建完成，则不允许覆盖最后的偏移量
         if (builtRecords != null)
             throw new IllegalStateException("Cannot override the last offset after the records have been built");
         this.lastOffset = lastOffset;
     }
 
     /**
-     * Release resources required for record appends (e.g. compression buffers). Once this method is called, it's only
-     * possible to update the RecordBatch header.
+     * 释放记录追加所需的资源（如压缩缓冲区）。
+     * 调用此方法后，只能更新RecordBatch头部。
+     * 这个方法对于内存管理很重要，特别是在使用压缩时。
      */
     public void closeForRecordAppends() {
         if (appendStream != CLOSED_STREAM) {
             try {
+                // 关闭追加流，释放相关资源
                 appendStream.close();
             } catch (IOException e) {
                 throw new KafkaException(e);
             } finally {
+                // 将追加流设置为已关闭状态
                 appendStream = CLOSED_STREAM;
             }
         }
     }
 
+    /**
+     * 中止当前批次的构建过程。
+     * 这会释放资源并将缓冲区位置重置到初始位置。
+     */
     public void abort() {
+        // 关闭记录追加
         closeForRecordAppends();
+        // 重置缓冲区位置到初始位置
         buffer().position(initialPosition);
+        // 标记批次已中止
         aborted = true;
     }
 
+    /**
+     * 重新打开批次并重写生产者状态。
+     * 用于在需要重新处理批次时更新生产者相关信息。
+     */
     public void reopenAndRewriteProducerState(long producerId, short producerEpoch, int baseSequence, boolean isTransactional) {
+        // 不能重新打开已中止的批次
         if (aborted)
             throw new IllegalStateException("Should not reopen a batch which is already aborted.");
+        // 清除已构建的记录
         builtRecords = null;
+        // 更新生产者状态信息
         this.producerId = producerId;
         this.producerEpoch = producerEpoch;
         this.baseSequence = baseSequence;
         this.isTransactional = isTransactional;
     }
 
-
+    /**
+     * 关闭记录构建器并完成批次构建。
+     * 这个方法会处理压缩、写入批次头部，并创建最终的MemoryRecords对象。
+     */
     public void close() {
+        // 检查批次是否已中止
         if (aborted)
             throw new IllegalStateException("Cannot close MemoryRecordsBuilder as it has already been aborted");
 
+        // 如果记录已经构建完成，直接返回
         if (builtRecords != null)
             return;
 
+        // 验证生产者状态
         validateProducerState();
 
+        // 关闭记录追加
         closeForRecordAppends();
 
         if (numRecords == 0L) {
+            // 如果没有记录，重置缓冲区位置并返回空记录
             buffer().position(initialPosition);
             builtRecords = MemoryRecords.EMPTY;
         } else {
+            // 根据消息格式版本选择不同的头部写入方式
             if (magic > RecordBatch.MAGIC_VALUE_V1)
+                // 计算新版本格式的实际压缩率
                 this.actualCompressionRatio = (float) writeDefaultBatchHeader() / this.uncompressedRecordsSizeInBytes;
             else if (compression.type() != CompressionType.NONE)
+                // 计算旧版本格式的实际压缩率
                 this.actualCompressionRatio = (float) writeLegacyCompressedWrapperHeader() / this.uncompressedRecordsSizeInBytes;
 
+            // 创建最终的MemoryRecords对象
             ByteBuffer buffer = buffer().duplicate();
             buffer.flip();
             buffer.position(initialPosition);
@@ -429,54 +495,84 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     /**
-     * Write the header to the legacy batch.
-     * @return the written compressed bytes.
+     * 写入旧版本（legacy）批次的头部信息。
+     * 该方法用于处理旧版本消息格式的批次头部写入，包括压缩和时间戳信息的处理。
+     * 
+     * @return 写入的压缩字节数
      */
     private int writeLegacyCompressedWrapperHeader() {
+        // 确保记录批次可写入
         ensureOpenForRecordBatchWrite();
+        // 获取底层缓冲区
         ByteBuffer buffer = bufferStream.buffer();
+        // 保存当前位置
         int pos = buffer.position();
+        // 将位置重置到批次开始处
         buffer.position(initialPosition);
 
+        // 计算包装器大小（减去日志开销）
         int wrapperSize = pos - initialPosition - Records.LOG_OVERHEAD;
+        // 计算实际压缩的字节数（减去记录开销）
         int writtenCompressed = wrapperSize - LegacyRecord.recordOverhead(magic);
+        // 写入旧版本批次头部（包含最后偏移量和大小信息）
         AbstractLegacyRecordBatch.writeHeader(buffer, lastOffset, wrapperSize);
 
+        // 根据时间戳类型确定使用的时间戳
         long timestamp = timestampType == TimestampType.LOG_APPEND_TIME ? logAppendTime : maxTimestamp;
+        // 写入压缩记录头部（包含魔数、大小、时间戳、压缩类型等信息）
         LegacyRecord.writeCompressedRecordHeader(buffer, magic, wrapperSize, timestamp, compression.type(), timestampType);
 
+        // 恢复缓冲区位置到原来的位置
         buffer.position(pos);
+        // 返回压缩后的字节数
         return writtenCompressed;
     }
 
     /**
-     * Append a new record at the given offset.
+     * 在指定偏移量处追加一条新记录。
+     * 该方法处理记录的追加操作，包括各种验证检查和格式版本的兼容性处理。
+     * 
+     * @param offset 记录的绝对偏移量
+     * @param isControlRecord 是否为控制记录
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键
+     * @param value 记录的值
+     * @param headers 记录的头部信息数组
      */
     private void appendWithOffset(long offset, boolean isControlRecord, long timestamp, ByteBuffer key,
                                   ByteBuffer value, Header[] headers) {
         try {
+            // 验证控制记录只能追加到控制批次中
             if (isControlRecord != isControlBatch)
                 throw new IllegalArgumentException("Control records can only be appended to control batches");
 
+            // 确保偏移量单调递增
             if (lastOffset != null && offset <= lastOffset)
                 throw new IllegalArgumentException(String.format("Illegal offset %d following previous offset %d " +
                         "(Offsets must increase monotonically).", offset, lastOffset));
 
+            // 验证时间戳的有效性
             if (timestamp < 0 && timestamp != RecordBatch.NO_TIMESTAMP)
                 throw new IllegalArgumentException("Invalid negative timestamp " + timestamp);
 
+            // 检查消息格式版本是否支持记录头部
             if (magic < RecordBatch.MAGIC_VALUE_V2 && headers != null && headers.length > 0)
                 throw new IllegalArgumentException("Magic v" + magic + " does not support record headers");
 
+            // 如果基准时间戳未设置，则使用当前记录的时间戳
             if (baseTimestamp == null)
                 baseTimestamp = timestamp;
 
+            // 根据消息格式版本选择不同的追加方式
             if (magic > RecordBatch.MAGIC_VALUE_V1) {
+                // 新版本格式：追加默认记录
                 appendDefaultRecord(offset, timestamp, key, value, headers);
             } else {
+                // 旧版本格式：追加传统记录
                 appendLegacyRecord(offset, timestamp, key, value, magic);
             }
         } catch (IOException e) {
+            // 处理I/O异常
             throw new KafkaException("I/O exception when writing to the append stream, closing", e);
         }
     }
@@ -494,143 +590,201 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     /**
-     * Append a new record at the given offset.
-     * @param offset The absolute offset of the record in the log buffer
-     * @param timestamp The record timestamp
-     * @param key The record key
-     * @param value The record value
-     * @param headers The record headers if there are any
+     * 在指定偏移量处追加一条新记录。
+     * 这是最完整的非控制记录追加方法，支持指定消息头部。
+     * 
+     * @param offset 记录在日志缓冲区中的绝对偏移量
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键
+     * @param value 记录的值
+     * @param headers 记录的头部信息数组，如果有的话
      */
     public void appendWithOffset(long offset, long timestamp, ByteBuffer key, ByteBuffer value, Header[] headers) {
+        // 调用内部方法追加记录，isControl参数为false表示这是普通记录而非控制记录
         appendWithOffset(offset, false, timestamp, key, value, headers);
     }
 
     /**
-     * Append a new record at the given offset.
-     * @param offset The absolute offset of the record in the log buffer
-     * @param timestamp The record timestamp
-     * @param key The record key
-     * @param value The record value
+     * 在指定偏移量处追加一条新记录。
+     * 这个重载方法接受byte数组形式的键值对，内部会将其包装为ByteBuffer。
+     * 
+     * @param offset 记录在日志缓冲区中的绝对偏移量
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键（字节数组）
+     * @param value 记录的值（字节数组）
      */
     public void appendWithOffset(long offset, long timestamp, byte[] key, byte[] value) {
+        // 将byte数组包装为ByteBuffer，并使用空消息头追加记录
         appendWithOffset(offset, timestamp, wrapNullable(key), wrapNullable(value), Record.EMPTY_HEADERS);
     }
 
     /**
-     * Append a new record at the given offset.
-     * @param offset The absolute offset of the record in the log buffer
-     * @param timestamp The record timestamp
-     * @param key The record key
-     * @param value The record value
+     * 在指定偏移量处追加一条新记录。
+     * 这个重载方法接受ByteBuffer形式的键值对，但不包含消息头。
+     * 
+     * @param offset 记录在日志缓冲区中的绝对偏移量
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键（ByteBuffer）
+     * @param value 记录的值（ByteBuffer）
      */
     public void appendWithOffset(long offset, long timestamp, ByteBuffer key, ByteBuffer value) {
+        // 使用空消息头追加记录
         appendWithOffset(offset, timestamp, key, value, Record.EMPTY_HEADERS);
     }
 
     /**
-     * Append a new record at the given offset.
-     * @param offset The absolute offset of the record in the log buffer
-     * @param record The record to append
+     * 在指定偏移量处追加一条新记录。
+     * 这个重载方法直接接受SimpleRecord对象，从中提取所需的所有字段。
+     * 
+     * @param offset 记录在日志缓冲区中的绝对偏移量
+     * @param record 要追加的SimpleRecord对象
      */
     public void appendWithOffset(long offset, SimpleRecord record) {
+        // 从SimpleRecord中提取所有必要字段并追加记录
         appendWithOffset(offset, record.timestamp(), record.key(), record.value(), record.headers());
     }
 
     /**
-     * Append a control record at the given offset. The control record type must be known or
-     * this method will raise an error.
+     * 在指定偏移量处追加一条控制记录。
+     * 控制记录用于特殊用途（如事务标记），其类型必须是已知的，否则会抛出异常。
      *
-     * @param offset The absolute offset of the record in the log buffer
-     * @param record The record to append
+     * @param offset 记录在日志缓冲区中的绝对偏移量
+     * @param record 要追加的SimpleRecord对象（作为控制记录）
+     * @throws IllegalArgumentException 如果控制记录类型未知
      */
     public void appendControlRecordWithOffset(long offset, SimpleRecord record) {
+        // 从记录的key中解析控制记录类型ID
         short typeId = ControlRecordType.parseTypeId(record.key());
+        // 根据类型ID获取控制记录类型
         ControlRecordType type = ControlRecordType.fromTypeId(typeId);
+        // 如果是未知的控制记录类型，抛出异常
         if (type == ControlRecordType.UNKNOWN)
             throw new IllegalArgumentException("Cannot append record with unknown control record type " + typeId);
 
+        // 追加控制记录，isControl参数为true表示这是一个控制记录
         appendWithOffset(offset, true, record.timestamp(),
             record.key(), record.value(), record.headers());
     }
 
     /**
-     * Append a new record at the next sequential offset.
-     * @param timestamp The record timestamp
-     * @param key The record key
-     * @param value The record value
+     * 在下一个连续偏移量处追加一条新记录。
+     * 这是一个简化的方法重载，不包含消息头信息。
+     * 
+     * @param timestamp 记录的时间戳，表示消息的创建时间或日志追加时间
+     * @param key 记录的键，用于消息分区和日志压缩
+     * @param value 记录的值，即实际的消息内容
      */
     public void append(long timestamp, ByteBuffer key, ByteBuffer value) {
+        // 调用包含空消息头的重载方法，Record.EMPTY_HEADERS是一个空的消息头数组
         append(timestamp, key, value, Record.EMPTY_HEADERS);
     }
 
     /**
-     * Append a new record at the next sequential offset.
-     * @param timestamp The record timestamp
-     * @param key The record key
-     * @param value The record value
-     * @param headers The record headers if there are any
+     * 在下一个连续偏移量处追加一条新记录。
+     * 这是主要的追加方法，支持完整的记录格式，包括消息头。
+     * 
+     * @param timestamp 记录的时间戳，表示消息的创建时间或日志追加时间
+     * @param key 记录的键，用于消息分区和日志压缩
+     * @param value 记录的值，即实际的消息内容
+     * @param headers 记录的消息头数组，包含额外的元数据信息
      */
     public void append(long timestamp, ByteBuffer key, ByteBuffer value, Header[] headers) {
+        // 调用带偏移量的追加方法，使用nextSequentialOffset()获取下一个连续的偏移量
         appendWithOffset(nextSequentialOffset(), timestamp, key, value, headers);
     }
 
     /**
-     * Append a new record at the next sequential offset.
-     * @param timestamp The record timestamp
-     * @param key The record key
-     * @param value The record value
+     * 在下一个连续偏移量处追加一条新记录。
+     * 这是一个接受字节数组参数的便捷方法重载。
+     * 
+     * @param timestamp 记录的时间戳，表示消息的创建时间或日志追加时间
+     * @param key 记录的键的字节数组形式
+     * @param value 记录的值的字节数组形式
      */
     public void append(long timestamp, byte[] key, byte[] value) {
+        // 将字节数组包装为ByteBuffer（允许为null），并使用空消息头追加记录
         append(timestamp, wrapNullable(key), wrapNullable(value), Record.EMPTY_HEADERS);
     }
 
     /**
-     * Append a new record at the next sequential offset.
-     * @param timestamp The record timestamp
-     * @param key The record key
-     * @param value The record value
-     * @param headers The record headers if there are any
+     * 在下一个连续的偏移量位置追加一条新记录。
+     * 这是一个基础的追加方法，用于添加普通的消息记录。
+     *
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键（可以为null）
+     * @param value 记录的值（可以为null）
+     * @param headers 记录的头部信息（如果有的话）
      */
     public void append(long timestamp, byte[] key, byte[] value, Header[] headers) {
+        // 将key和value包装为ByteBuffer，并调用重载的append方法
         append(timestamp, wrapNullable(key), wrapNullable(value), headers);
     }
 
     /**
-     * Append a new record at the next sequential offset.
-     * @param record The record to append
+     * 在下一个连续的偏移量位置追加一条新记录。
+     * 这是一个便捷方法，直接接受SimpleRecord对象作为参数。
+     *
+     * @param record 要追加的记录对象
      */
     public void append(SimpleRecord record) {
+        // 获取下一个连续偏移量并追加记录
         appendWithOffset(nextSequentialOffset(), record);
     }
 
     /**
-     * Append a control record at the next sequential offset.
+     * 在下一个连续的偏移量位置追加一条控制记录。
+     * 控制记录用于特殊的系统操作，如事务控制、分区leader变更等。
      *
-     * @param timestamp The record timestamp
-     * @param type The control record type (cannot be UNKNOWN)
-     * @param value The control record value
+     * @param timestamp 记录的时间戳
+     * @param type 控制记录类型（不能为UNKNOWN）
+     * @param value 控制记录的值
      */
     public void appendControlRecord(long timestamp, ControlRecordType type, ByteBuffer value) {
+        // 获取控制记录的键结构
         Struct keyStruct = type.recordKey();
+        // 分配一个新的ByteBuffer来存储键
         ByteBuffer key = ByteBuffer.allocate(keyStruct.sizeOf());
+        // 将键结构写入ByteBuffer
         keyStruct.writeTo(key);
+        // 翻转ByteBuffer，准备读取
         key.flip();
+        // 使用空的头部信息追加控制记录
         appendWithOffset(nextSequentialOffset(), true, timestamp, key, value, Record.EMPTY_HEADERS);
     }
 
+    /**
+     * 追加事务结束标记。
+     * 用于标记事务的提交或中止状态。
+     *
+     * @param timestamp 记录的时间戳
+     * @param marker 事务结束标记对象
+     */
     public void appendEndTxnMarker(long timestamp, EndTransactionMarker marker) {
+        // 检查是否有有效的生产者ID
         if (producerId == RecordBatch.NO_PRODUCER_ID)
             throw new IllegalArgumentException("End transaction marker requires a valid producerId");
+        // 检查批次是否启用了事务
         if (!isTransactional)
             throw new IllegalArgumentException("End transaction marker depends on batch transactional flag being enabled");
+        // 序列化标记值
         ByteBuffer value = marker.serializeValue();
+        // 追加控制记录
         appendControlRecord(timestamp, marker.controlType(), value);
     }
 
+    /**
+     * 追加leader变更消息。
+     * 用于记录分区leader的变更信息。
+     *
+     * @param timestamp 记录的时间戳
+     * @param leaderChangeMessage leader变更消息对象
+     */
     public void appendLeaderChangeMessage(long timestamp, LeaderChangeMessage leaderChangeMessage) {
+        // 检查分区leader的epoch是否有效
         if (partitionLeaderEpoch == RecordBatch.NO_PARTITION_LEADER_EPOCH) {
             throw new IllegalArgumentException("Partition leader epoch must be valid, but get " + partitionLeaderEpoch);
         }
+        // 追加leader变更控制记录
         appendControlRecord(
             timestamp,
             ControlRecordType.LEADER_CHANGE,
@@ -638,7 +792,15 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         );
     }
 
+    /**
+     * 追加快照头部消息。
+     * 用于记录快照相关的元数据信息。
+     *
+     * @param timestamp 记录的时间戳
+     * @param snapshotHeaderRecord 快照头部记录对象
+     */
     public void appendSnapshotHeaderMessage(long timestamp, SnapshotHeaderRecord snapshotHeaderRecord) {
+        // 追加快照头部控制记录
         appendControlRecord(
             timestamp,
             ControlRecordType.SNAPSHOT_HEADER,
@@ -747,54 +909,112 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     /**
-     * Append the record at the next consecutive offset. If no records have been appended yet, use the base
-     * offset of this builder.
-     * @param record The record to add
+     * 在下一个连续的偏移量位置追加记录。如果还没有追加过任何记录，则使用构建器的基准偏移量。
+     * 这个方法主要用于追加旧版本格式的记录。
+     * 
+     * @param record 要添加的旧版本格式记录
      */
     public void append(LegacyRecord record) {
+        // 调用appendWithOffset方法，使用下一个连续的偏移量追加记录
         appendWithOffset(nextSequentialOffset(), record);
     }
 
+    /**
+     * 追加默认格式的记录到内存中。
+     * 这个方法处理新版本格式(magic >= 2)的记录追加，支持记录头部和更多的元数据。
+     * 
+     * @param offset 记录的绝对偏移量
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键
+     * @param value 记录的值
+     * @param headers 记录的头部数组
+     * @throws IOException 如果写入过程中发生I/O错误
+     */
     private void appendDefaultRecord(long offset, long timestamp, ByteBuffer key, ByteBuffer value,
                                      Header[] headers) throws IOException {
+        // 确保记录追加器处于打开状态
         ensureOpenForRecordAppend();
+        // 计算相对于批次基准偏移量的偏移量增量
         int offsetDelta = (int) (offset - baseOffset);
+        // 计算相对于批次基准时间戳的时间戳增量
         long timestampDelta = timestamp - baseTimestamp;
+        // 将记录写入输出流，并获取写入的字节数
         int sizeInBytes = DefaultRecord.writeTo(appendStream, offsetDelta, timestampDelta, key, value, headers);
+        // 更新记录写入的统计信息
         recordWritten(offset, timestamp, sizeInBytes);
     }
 
+    /**
+     * 追加旧版本格式的记录到内存中。
+     * 这个方法处理旧版本格式(magic < 2)的记录追加，维护与旧版本的兼容性。
+     * 
+     * @param offset 记录的绝对偏移量
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键
+     * @param value 记录的值
+     * @param magic 消息格式版本号
+     * @return 记录的CRC校验值
+     * @throws IOException 如果写入过程中发生I/O错误
+     */
     private long appendLegacyRecord(long offset, long timestamp, ByteBuffer key, ByteBuffer value, byte magic) throws IOException {
+        // 确保记录追加器处于打开状态
         ensureOpenForRecordAppend();
 
+        // 计算记录的大小（不包括头部开销）
         int size = LegacyRecord.recordSize(magic, key, value);
+        // 写入记录头部，包含内部偏移量和记录大小
         AbstractLegacyRecordBatch.writeHeader(appendStream, toInnerOffset(offset), size);
 
+        // 如果使用日志追加时间，则使用配置的logAppendTime作为时间戳
         if (timestampType == TimestampType.LOG_APPEND_TIME)
             timestamp = logAppendTime;
+        // 写入记录内容并计算CRC校验值
         long crc = LegacyRecord.write(appendStream, magic, timestamp, key, value, CompressionType.NONE, timestampType);
+        // 更新记录写入的统计信息，包括日志开销
         recordWritten(offset, timestamp, size + Records.LOG_OVERHEAD);
         return crc;
     }
 
+    /**
+     * 计算记录的内部偏移量。
+     * 对于压缩的消息批次，需要使用相对偏移量；对于未压缩的消息，使用绝对偏移量。
+     * 
+     * @param offset 记录的绝对偏移量
+     * @return 用于写入的内部偏移量
+     */
     private long toInnerOffset(long offset) {
-        // use relative offsets for compressed messages with magic v1
+        // 对于magic > 0且启用压缩的情况，使用相对偏移量
         if (magic > 0 && compression.type() != CompressionType.NONE)
             return offset - baseOffset;
+        // 其他情况使用绝对偏移量
         return offset;
     }
 
+    /**
+     * 更新记录写入后的各项统计信息。
+     * 这个方法在每次写入记录后调用，用于维护批次的状态信息。
+     * 
+     * @param offset 记录的绝对偏移量
+     * @param timestamp 记录的时间戳
+     * @param size 记录的大小（字节数）
+     */
     private void recordWritten(long offset, long timestamp, int size) {
+        // 检查记录数量是否超过最大限制
         if (numRecords == Integer.MAX_VALUE)
             throw new IllegalArgumentException("Maximum number of records per batch exceeded, max records: " + Integer.MAX_VALUE);
+        // 检查偏移量增量是否超过最大限制
         if (offset - baseOffset > Integer.MAX_VALUE)
             throw new IllegalArgumentException("Maximum offset delta exceeded, base offset: " + baseOffset +
                     ", last offset: " + offset);
 
+        // 更新记录计数
         numRecords += 1;
+        // 更新未压缩的记录总大小
         uncompressedRecordsSizeInBytes += size;
+        // 更新最后一条记录的偏移量
         lastOffset = offset;
 
+        // 对于新版本格式的记录，更新最大时间戳及其对应的偏移量
         if (magic > RecordBatch.MAGIC_VALUE_V0 && timestamp > maxTimestamp) {
             maxTimestamp = timestamp;
             offsetOfMaxTimestamp = offset;
@@ -814,14 +1034,21 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     /**
-     * Get an estimate of the number of bytes written (based on the estimation factor hard-coded in {@link CompressionType}).
-     * @return The estimated number of bytes written
+     * 获取已写入字节数的估算值(基于{@link CompressionType}中硬编码的估算因子)。
+     * 此方法用于预估记录批次的总字节大小，以便进行内存分配和批次大小控制。
+     * 
+     * @return 估算的已写入字节数
      */
     private int estimatedBytesWritten() {
+        // 如果不使用压缩，直接返回批次头部大小加上未压缩的记录大小
         if (compression.type() == CompressionType.NONE) {
             return batchHeaderSizeInBytes + uncompressedRecordsSizeInBytes;
         } else {
-            // estimate the written bytes to the underlying byte buffer based on uncompressed written bytes
+            // 如果使用压缩，基于未压缩字节数估算写入到底层ByteBuffer的字节数
+            // 计算公式: 批次头部大小 + (未压缩记录大小 * 预估压缩率 * 压缩率估算因子)
+            // 其中:
+            // - estimatedCompressionRatio: 基于历史压缩效果的预估压缩率
+            // - COMPRESSION_RATE_ESTIMATION_FACTOR: 额外的安全系数(1.05)，用于应对压缩率波动
             return batchHeaderSizeInBytes + (int) (uncompressedRecordsSizeInBytes * estimatedCompressionRatio * COMPRESSION_RATE_ESTIMATION_FACTOR);
         }
     }
@@ -834,39 +1061,55 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     }
 
     /**
-     * Check if we have room for a new record containing the given key/value pair. If no records have been
-     * appended, then this returns true.
+     * 检查是否有足够空间添加包含给定key/value对的新记录。如果当前批次还没有任何记录，则返回true。
+     * 
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键（字节数组）
+     * @param value 记录的值（字节数组）
+     * @param headers 记录的头部信息
+     * @return 如果有足够空间则返回true，否则返回false
      */
     public boolean hasRoomFor(long timestamp, byte[] key, byte[] value, Header[] headers) {
+        // 将字节数组包装为ByteBuffer并调用重载方法
         return hasRoomFor(timestamp, wrapNullable(key), wrapNullable(value), headers);
     }
 
     /**
-     * Check if we have room for a new record containing the given key/value pair. If no records have been
-     * appended, then this returns true.
+     * 检查是否有足够空间添加包含给定key/value对的新记录。如果当前批次还没有任何记录，则返回true。
+     * 
+     * 注意：返回值是基于写入压缩器的字节估算，当使用压缩时可能不准确。这种情况下，后续的追加操作
+     * 可能会导致底层字节缓冲流进行动态缓冲区重新分配。
      *
-     * Note that the return value is based on the estimate of the bytes written to the compressor, which may not be
-     * accurate if compression is used. When this happens, the following append may cause dynamic buffer
-     * re-allocation in the underlying byte buffer stream.
+     * @param timestamp 记录的时间戳
+     * @param key 记录的键（ByteBuffer）
+     * @param value 记录的值（ByteBuffer）
+     * @param headers 记录的头部信息
+     * @return 如果有足够空间则返回true，否则返回false
      */
     public boolean hasRoomFor(long timestamp, ByteBuffer key, ByteBuffer value, Header[] headers) {
+        // 如果批次已满，直接返回false
         if (isFull())
             return false;
 
-        // We always allow at least one record to be appended (the ByteBufferOutputStream will grow as needed)
+        // 如果是第一条记录，总是允许追加（ByteBufferOutputStream会根据需要自动增长）
         if (numRecords == 0)
             return true;
 
         final int recordSize;
+        // 根据不同的魔数版本计算记录大小
         if (magic < RecordBatch.MAGIC_VALUE_V2) {
+            // 旧版本格式：记录大小 = 日志开销 + 记录实际大小
             recordSize = Records.LOG_OVERHEAD + LegacyRecord.recordSize(magic, key, value);
         } else {
+            // 新版本格式：计算偏移量增量和时间戳增量
             int nextOffsetDelta = lastOffset == null ? 0 : (int) (lastOffset - baseOffset + 1);
             long timestampDelta = baseTimestamp == null ? 0 : timestamp - baseTimestamp;
+            // 使用DefaultRecord计算记录大小，包含所有元数据
             recordSize = DefaultRecord.sizeInBytes(nextOffsetDelta, timestampDelta, key, value, headers);
         }
 
-        // Be conservative and not take compression of the new record into consideration.
+        // 保守估计：不考虑新记录的压缩效果
+        // 检查写入限制是否足够容纳估算的字节数
         return this.writeLimit >= estimatedBytesWritten() + recordSize;
     }
 
@@ -886,32 +1129,76 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         return builtRecords != null;
     }
 
+    /**
+     * 判断当前记录批次是否已满，满足以下任一条件时返回true：
+     * 1. 追加流已关闭（appendStream == CLOSED_STREAM）
+     * 2. 已添加至少一条记录（numRecords > 0）且预估的已写入字节数超过写入限制（writeLimit）
+     * 
+     * 特别说明：写入限制（writeLimit）仅在添加第一条记录后才会生效，这样设计是为了确保：
+     * - 即使producer的batch.size设置为0（用于禁用批处理），我们依然能创建非空的批次
+     * - 避免出现完全无法写入记录的情况
+     * 
+     * @return 如果批次已满返回true，否则返回false
+     */
     public boolean isFull() {
-        // note that the write limit is respected only after the first record is added which ensures we can always
-        // create non-empty batches (this is used to disable batching when the producer's batch size is set to 0).
+        // 注意：写入限制仅在添加首条记录后才生效，这确保了即使在禁用批处理的情况下（producer的batch.size=0）
+        // 我们也总能创建非空的批次
         return appendStream == CLOSED_STREAM || (this.numRecords > 0 && this.writeLimit <= estimatedBytesWritten());
     }
 
     /**
-     * Get an estimate of the number of bytes written to the underlying buffer. The returned value
-     * is exactly correct if the record set is not compressed or if the builder has been closed.
+     * 获取写入底层缓冲区的字节数估计值。
+     * 在以下两种情况下，返回值是完全准确的：
+     * 1. 记录集未被压缩
+     * 2. 构建器已经被关闭
+     * 
+     * @return 估计的字节数
      */
     public int estimatedSizeInBytes() {
+        // 如果记录已经构建完成，直接返回实际大小；否则返回估计值
         return builtRecords != null ? builtRecords.sizeInBytes() : estimatedBytesWritten();
     }
 
+    /**
+     * 获取记录批次的魔数版本。
+     * 魔数用于标识消息格式的版本，不同版本支持不同的特性。
+     * 
+     * @return 魔数版本值
+     */
     public byte magic() {
         return magic;
     }
 
+    /**
+     * 获取下一个顺序偏移量。
+     * 如果当前没有最后一条记录的偏移量，则返回基准偏移量；
+     * 否则返回最后一条记录偏移量加1。
+     * 
+     * @return 下一个顺序偏移量
+     */
     private long nextSequentialOffset() {
         return lastOffset == null ? baseOffset : lastOffset + 1;
     }
 
+    /**
+     * 记录信息类，用于存储记录批次的时间戳相关信息。
+     * 包含最大时间戳和具有最大时间戳的记录的浅层偏移量。
+     */
     public static class RecordsInfo {
+        /** 记录批次中的最大时间戳 */
         public final long maxTimestamp;
+        /** 
+         * 具有最大时间戳的记录批次的最后一个偏移量。
+         * 如果多个批次具有相同的最大时间戳，则选择最早的批次。
+         */
         public final long shallowOffsetOfMaxTimestamp;
 
+        /**
+         * 构造记录信息对象
+         * 
+         * @param maxTimestamp 最大时间戳
+         * @param shallowOffsetOfMaxTimestamp 具有最大时间戳的记录批次的最后一个偏移量
+         */
         public RecordsInfo(long maxTimestamp,
                            long shallowOffsetOfMaxTimestamp) {
             this.maxTimestamp = maxTimestamp;

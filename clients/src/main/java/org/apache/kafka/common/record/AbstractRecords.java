@@ -122,23 +122,47 @@ public abstract class AbstractRecords implements Records {
     }
 
     /**
-     * Get an upper bound estimate on the batch size needed to hold a record with the given fields. This is only
-     * an estimate because it does not take into account overhead from the compression algorithm.
+     * 获取存储给定字段的记录批次所需的最大字节数估计值
+     * 
+     * @param magic 记录格式的魔数版本
+     * @param compressionType 压缩类型
+     * @param key 记录的键
+     * @param value 记录的值
+     * @param headers 记录的头部信息
+     * @return 记录批次的最大字节数估计值
+     * 
+     * 注意：这只是一个估计值，因为它没有考虑压缩算法带来的额外开销
      */
     public static int estimateSizeInBytesUpperBound(byte magic, CompressionType compressionType, byte[] key, byte[] value, Header[] headers) {
+        // 将字节数组包装成ByteBuffer，然后调用重载方法进行计算
         return estimateSizeInBytesUpperBound(magic, compressionType, Utils.wrapNullable(key), Utils.wrapNullable(value), headers);
     }
 
     /**
-     * Get an upper bound estimate on the batch size needed to hold a record with the given fields. This is only
-     * an estimate because it does not take into account overhead from the compression algorithm.
+     * 获取存储给定字段的记录批次所需的最大字节数估计值（ByteBuffer版本）
+     * 
+     * @param magic 记录格式的魔数版本
+     * @param compressionType 压缩类型
+     * @param key 记录的键（ByteBuffer格式）
+     * @param value 记录的值（ByteBuffer格式）
+     * @param headers 记录的头部信息
+     * @return 记录批次的最大字节数估计值
+     * 
+     * 该方法根据不同的魔数版本和压缩类型计算大小：
+     * 1. 对于V2及以上版本：使用DefaultRecordBatch的估算方法
+     * 2. 对于V0/V1版本：
+     *    - 有压缩：LOG_OVERHEAD + 记录开销 + 记录大小
+     *    - 无压缩：LOG_OVERHEAD + 记录大小
      */
     public static int estimateSizeInBytesUpperBound(byte magic, CompressionType compressionType, ByteBuffer key,
                                                     ByteBuffer value, Header[] headers) {
+        // 对于V2及以上版本的记录格式
         if (magic >= RecordBatch.MAGIC_VALUE_V2)
             return DefaultRecordBatch.estimateBatchSizeUpperBound(key, value, headers);
+        // 对于V0/V1版本，且使用了压缩
         else if (compressionType != CompressionType.NONE)
             return Records.LOG_OVERHEAD + LegacyRecord.recordOverhead(magic) + LegacyRecord.recordSize(magic, key, value);
+        // 对于V0/V1版本，且没有使用压缩
         else
             return Records.LOG_OVERHEAD + LegacyRecord.recordSize(magic, key, value);
     }
