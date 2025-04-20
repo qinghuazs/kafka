@@ -37,37 +37,50 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * An internal class which represents the API versions supported by a particular node.
+ * 一个内部类，用于表示特定节点支持的API版本信息。
+ * 该类维护了节点支持的所有API版本信息，包括:
+ * 1. 已知API的版本范围(supportedVersions)
+ * 2. 未知API的版本信息(unknownApis)
+ * 3. 支持的特性版本范围(supportedFeatures)
+ * 4. 已确定的特性版本(finalizedFeatures)
  */
 public class NodeApiVersions {
 
-    // A map of the usable versions of each API, keyed by the ApiKeys instance
+    // 存储每个API可用版本的映射，键为ApiKeys实例
+    // 这个映射包含了所有已知的API及其支持的版本范围
     private final Map<ApiKeys, ApiVersion> supportedVersions = new EnumMap<>(ApiKeys.class);
 
-    // List of APIs which the broker supports, but which are unknown to the client
+    // 存储broker支持但客户端未知的API列表
+    // 这些API可能是新版本broker引入的，但当前客户端版本还不支持
     private final List<ApiVersion> unknownApis = new ArrayList<>();
 
+    // 存储支持的特性及其版本范围的映射
+    // 键为特性名称，值为该特性支持的版本范围
     private final Map<String, SupportedVersionRange> supportedFeatures;
 
+    // 存储已确定的特性及其版本的映射
+    // 键为特性名称，值为该特性的最终版本号
     private final Map<String, Short> finalizedFeatures;
 
+    // 已确定特性的时间戳
     private final long finalizedFeaturesEpoch;
 
     /**
-     * Create a NodeApiVersions object with the current ApiVersions.
+     * 使用当前API版本创建一个NodeApiVersions对象。
+     * 这个方法会创建一个空的覆盖集合，使用默认的客户端API版本。
      *
-     * @return A new NodeApiVersions object.
+     * @return 一个新的NodeApiVersions对象
      */
     public static NodeApiVersions create() {
         return create(Collections.emptyList());
     }
 
     /**
-     * Create a NodeApiVersions object.
+     * 创建一个NodeApiVersions对象。
+     * 这个方法允许指定要覆盖的API版本，未指定的API版本将使用当前客户端的默认值。
      *
-     * @param overrides API versions to override. Any ApiVersion not specified here will be set to the current client
-     *                  value.
-     * @return A new NodeApiVersions object.
+     * @param overrides 要覆盖的API版本集合。任何未在此指定的ApiVersion都将使用当前客户端的值
+     * @return 一个新的NodeApiVersions对象
      */
     public static NodeApiVersions create(Collection<ApiVersion> overrides) {
         List<ApiVersion> apiVersions = new LinkedList<>(overrides);
@@ -86,12 +99,13 @@ public class NodeApiVersions {
 
 
     /**
-     * Create a NodeApiVersions object with a single ApiKey. It is mainly used in tests.
+     * 创建一个只包含单个ApiKey的NodeApiVersions对象。
+     * 这个方法主要用于测试目的。
      *
-     * @param apiKey ApiKey's id.
-     * @param minVersion ApiKey's minimum version.
-     * @param maxVersion ApiKey's maximum version.
-     * @return A new NodeApiVersions object.
+     * @param apiKey API的唯一标识符
+     * @param minVersion API支持的最小版本号
+     * @param maxVersion API支持的最大版本号
+     * @return 一个新的NodeApiVersions对象
      */
     public static NodeApiVersions create(short apiKey, short minVersion, short maxVersion) {
         return create(Collections.singleton(new ApiVersion()
@@ -137,14 +151,16 @@ public class NodeApiVersions {
     }
 
     /**
-     * Return the most recent version supported by both the node and the local software.
+     * 返回节点和本地软件都支持的最新版本号。
+     * 这个方法会在API支持的版本范围内选择最高的可用版本。
      */
     public short latestUsableVersion(ApiKeys apiKey) {
         return latestUsableVersion(apiKey, apiKey.oldestVersion(), apiKey.latestVersion());
     }
 
     /**
-     * Get the latest version supported by the broker within an allowed range of versions
+     * 获取broker在指定版本范围内支持的最新版本。
+     * 这个方法会检查broker支持的版本是否在允许的版本范围内，并返回该范围内的最高版本。
      */
     public short latestUsableVersion(ApiKeys apiKey, short oldestAllowedVersion, short latestAllowedVersion) {
         if (!supportedVersions.containsKey(apiKey))
@@ -165,9 +181,10 @@ public class NodeApiVersions {
     }
 
     /**
-     * Convert the object to a string with no linebreaks.<p/>
-     * <p>
-     * This toString method is relatively expensive, so avoid calling it unless debug logging is turned on.
+     * 将对象转换为不带换行符的字符串。
+     * 
+     * 注意：这个toString方法的性能开销相对较大，
+     * 除非开启了调试日志，否则应避免调用此方法。
      */
     @Override
     public String toString() {
@@ -175,9 +192,10 @@ public class NodeApiVersions {
     }
 
     /**
-     * Convert the object to a string.
+     * 将对象转换为字符串。
+     * 这个方法提供了格式化输出的选项，可以控制是否在每个API后添加换行符。
      *
-     * @param lineBreaks True if we should add a linebreak after each api.
+     * @param lineBreaks 如果为true，则在每个api后添加换行符
      */
     public String toString(boolean lineBreaks) {
         // The apiVersion collection may not be in sorted order.  We put it into
@@ -210,29 +228,47 @@ public class NodeApiVersions {
         return bld.toString();
     }
 
+    /**
+     * 将API版本信息转换为文本格式。
+     * 这个方法用于生成API版本的详细文本描述，包括版本号范围和兼容性状态。
+     *
+     * @param apiVersion 要转换的API版本信息
+     * @return 格式化后的API版本信息文本
+     */
     private String apiVersionToText(ApiVersion apiVersion) {
+        // 创建StringBuilder用于构建输出文本
         StringBuilder bld = new StringBuilder();
         ApiKeys apiKey = null;
+        
+        // 检查是否是已知的API，并添加API名称和ID
         if (ApiKeys.hasId(apiVersion.apiKey())) {
             apiKey = ApiKeys.forId(apiVersion.apiKey());
             bld.append(apiKey.name).append("(").append(apiKey.id).append("): ");
         } else {
+            // 处理未知API的情况
             bld.append("UNKNOWN(").append(apiVersion.apiKey()).append("): ");
         }
 
+        // 添加版本范围信息
         if (apiVersion.minVersion() == apiVersion.maxVersion()) {
+            // 如果最小版本和最大版本相同，只显示一个版本号
             bld.append(apiVersion.minVersion());
         } else {
+            // 显示版本范围
             bld.append(apiVersion.minVersion()).append(" to ").append(apiVersion.maxVersion());
         }
 
+        // 对于已知的API，添加兼容性信息
         if (apiKey != null) {
             ApiVersion supportedVersion = supportedVersions.get(apiKey);
             if (apiKey.latestVersion() < supportedVersion.minVersion()) {
+                // 节点版本过新，客户端不支持
                 bld.append(" [unusable: node too new]");
             } else if (supportedVersion.maxVersion() < apiKey.oldestVersion()) {
+                // 节点版本过旧，客户端不支持
                 bld.append(" [unusable: node too old]");
             } else {
+                // 计算可用的最高版本号
                 short latestUsableVersion = Utils.min(apiKey.latestVersion(), supportedVersion.maxVersion());
                 bld.append(" [usable: ").append(latestUsableVersion).append("]");
             }
@@ -241,27 +277,47 @@ public class NodeApiVersions {
     }
 
     /**
-     * Get the version information for a given API.
+     * 获取指定API的版本信息。
      *
-     * @param apiKey The api key to lookup
-     * @return The api version information from the broker or null if it is unsupported
+     * @param apiKey 要查询的API键
+     * @return 如果API支持则返回其版本信息，否则返回null
      */
     public ApiVersion apiVersion(ApiKeys apiKey) {
         return supportedVersions.get(apiKey);
     }
 
+    /**
+     * 获取所有支持的API版本信息。
+     *
+     * @return 包含所有支持的API版本的映射
+     */
     public Map<ApiKeys, ApiVersion> allSupportedApiVersions() {
         return supportedVersions;
     }
 
+    /**
+     * 获取所有支持的特性及其版本范围。
+     *
+     * @return 特性名称到版本范围的映射
+     */
     public Map<String, SupportedVersionRange> supportedFeatures() {
         return supportedFeatures;
     }
 
+    /**
+     * 获取所有已确定的特性及其版本。
+     *
+     * @return 特性名称到版本号的映射
+     */
     public Map<String, Short> finalizedFeatures() {
         return finalizedFeatures;
     }
 
+    /**
+     * 获取已确定特性的时间戳。
+     *
+     * @return 特性确定的时间戳
+     */
     public long finalizedFeaturesEpoch() {
         return finalizedFeaturesEpoch;
     }

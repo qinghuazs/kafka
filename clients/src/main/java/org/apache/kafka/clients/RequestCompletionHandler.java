@@ -17,10 +17,25 @@
 package org.apache.kafka.clients;
 
 /**
- * A callback interface for attaching an action to be executed when a request is complete and the corresponding response
- * has been received. This handler will also be invoked if there is a disconnection while handling the request.
+ * 请求完成回调接口
+ * 
+ * 该接口用于在异步请求完成时执行回调操作。当以下情况发生时会触发回调：
+ * 1. 请求正常完成并收到对应的响应
+ * 2. 在处理请求过程中发生连接断开
+ * 
+ * 实现类可以通过实现onComplete方法来处理这些场景，从而实现异步请求的后续处理逻辑。
+ * 该接口是Kafka客户端异步通信机制的重要组成部分。
  */
 public interface RequestCompletionHandler {
 
+    /**
+     * 请求完成时的回调方法
+     * 
+     * @param response 包含请求结果的响应对象，其中包含：
+     *                - 原始请求的元数据
+     *                - 响应数据
+     *                - 请求处理的状态信息（如是否断开连接、是否超时等）
+     *                - 请求的延迟时间等统计信息
+     */
     void onComplete(ClientResponse response);
 }
