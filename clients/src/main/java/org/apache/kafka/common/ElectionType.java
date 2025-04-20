@@ -23,25 +23,41 @@ import java.util.Arrays;
 import java.util.Set;
 
 /**
- * Options for {@link org.apache.kafka.clients.admin.Admin#electLeaders(ElectionType, Set, org.apache.kafka.clients.admin.ElectLeadersOptions)}.
+ * Kafka分区leader选举的类型选项，用于{@link org.apache.kafka.clients.admin.Admin#electLeaders(ElectionType, Set, org.apache.kafka.clients.admin.ElectLeadersOptions)}方法。
+ * 
+ * 该类的API仍在演进中，详见{@link org.apache.kafka.clients.admin.Admin}。
  *
- * The API of this class is evolving, see {@link org.apache.kafka.clients.admin.Admin} for details.
+ * 选举类型包括：
+ * - PREFERRED: 首选副本选举，只从ISR(同步副本集合)中选择leader
+ * - UNCLEAN: 不干净的选举，允许从非ISR副本中选择leader，可能会丢失数据
  */
 @InterfaceStability.Evolving
 public enum ElectionType {
-    PREFERRED((byte) 0), UNCLEAN((byte) 1);
+    // 首选副本选举类型，字节值为0
+    PREFERRED((byte) 0), 
+    // 不干净的选举类型，字节值为1
+    UNCLEAN((byte) 1);
 
+    // 选举类型对应的字节值
     public final byte value;
 
+    // 构造函数，初始化选举类型的字节值
     ElectionType(byte value) {
         this.value = value;
     }
 
+    /**
+     * 根据字节值获取对应的选举类型
+     * 
+     * @param value 选举类型的字节值
+     * @return 对应的ElectionType枚举值
+     * @throws IllegalArgumentException 当传入的字节值不是有效的选举类型值时抛出
+     */
     public static ElectionType valueOf(byte value) {
         if (value == PREFERRED.value) {
-            return PREFERRED;
+            return PREFERRED;  // 返回首选副本选举类型
         } else if (value == UNCLEAN.value) {
-            return UNCLEAN;
+            return UNCLEAN;   // 返回不干净的选举类型
         } else {
             throw new IllegalArgumentException(
                     String.format("Value %s must be one of %s", value, Arrays.asList(ElectionType.values())));

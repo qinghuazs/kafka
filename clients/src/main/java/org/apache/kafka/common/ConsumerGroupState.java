@@ -24,31 +24,56 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * The consumer group state.
- * @deprecated Since 4.0. Use {@link GroupState} instead.
+ * 消费者组状态。
+ * 
+ * 包含以下状态：
+ * - UNKNOWN: 未知状态
+ * - PREPARING_REBALANCE: 准备重平衡，组成员变化时的状态
+ * - COMPLETING_REBALANCE: 完成重平衡，等待成员确认分配
+ * - STABLE: 稳定状态，所有成员正常工作
+ * - DEAD: 死亡状态，组不存在
+ * - EMPTY: 空状态，没有活跃成员
+ * - ASSIGNING: 正在分配分区
+ * - RECONCILING: 正在协调状态
+ * 
+ * @deprecated 从4.0版本开始废弃。请使用{@link GroupState}替代。
  */
 @Deprecated
 public enum ConsumerGroupState {
+    // 未知状态
     UNKNOWN("Unknown"),
+    // 准备进行重平衡的状态
     PREPARING_REBALANCE("PreparingRebalance"),
+    // 完成重平衡等待成员确认的状态
     COMPLETING_REBALANCE("CompletingRebalance"),
+    // 消费者组稳定工作的状态
     STABLE("Stable"),
+    // 消费者组已死亡的状态
     DEAD("Dead"),
+    // 消费者组为空的状态
     EMPTY("Empty"),
+    // 正在进行分区分配的状态
     ASSIGNING("Assigning"),
+    // 正在进行状态协调的状态
     RECONCILING("Reconciling");
 
+    // 存储状态名称到枚举值的映射关系，用于状态名称的大小写不敏感查找
     private static final Map<String, ConsumerGroupState> NAME_TO_ENUM = Arrays.stream(values())
         .collect(Collectors.toMap(state -> state.name.toUpperCase(Locale.ROOT), Function.identity()));
 
+    // 状态的字符串表示
     private final String name;
 
+    // 构造函数，初始化状态名称
     ConsumerGroupState(String name) {
         this.name = name;
     }
 
     /**
-     * Case-insensitive consumer group state lookup by string name.
+     * 根据状态名称查找对应的消费者组状态，大小写不敏感。
+     * 
+     * @param name 状态名称
+     * @return 如果找到对应状态则返回该状态，否则返回UNKNOWN
      */
     public static ConsumerGroupState parse(String name) {
         ConsumerGroupState state = NAME_TO_ENUM.get(name.toUpperCase(Locale.ROOT));

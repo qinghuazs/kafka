@@ -18,19 +18,43 @@ package org.apache.kafka.common;
 
 import java.util.Locale;
 
+/**
+ * Kafka的事务隔离级别定义。
+ * 支持两种隔离级别：
+ * - READ_UNCOMMITTED：读未提交，可以读取到未提交的事务消息
+ * - READ_COMMITTED：读已提交，只能读取已提交的事务消息
+ */
 public enum IsolationLevel {
-    READ_UNCOMMITTED((byte) 0), READ_COMMITTED((byte) 1);
+    // 读未提交级别，id为0
+    READ_UNCOMMITTED((byte) 0), 
+    // 读已提交级别，id为1
+    READ_COMMITTED((byte) 1);
 
+    // 隔离级别的数字标识
     private final byte id;
 
+    /**
+     * 构造函数
+     * @param id 隔离级别的数字标识
+     */
     IsolationLevel(byte id) {
         this.id = id;
     }
 
+    /**
+     * 获取隔离级别的数字标识
+     * @return 隔离级别对应的字节值
+     */
     public byte id() {
         return id;
     }
 
+    /**
+     * 根据数字标识获取对应的隔离级别枚举值
+     * @param id 隔离级别的数字标识
+     * @return 对应的IsolationLevel枚举值
+     * @throws IllegalArgumentException 如果id不是有效的隔离级别标识
+     */
     public static IsolationLevel forId(byte id) {
         switch (id) {
             case 0:
@@ -38,10 +62,13 @@ public enum IsolationLevel {
             case 1:
                 return READ_COMMITTED;
             default:
-                throw new IllegalArgumentException("Unknown isolation level " + id);
+                throw new IllegalArgumentException("未知的隔离级别 " + id);
         }
     }
 
+    /**
+     * 返回隔离级别的小写字符串表示
+     */
     @Override
     public String toString() {
         return super.toString().toLowerCase(Locale.ROOT);

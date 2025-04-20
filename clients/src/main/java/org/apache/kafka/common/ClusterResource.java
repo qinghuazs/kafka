@@ -20,25 +20,37 @@ package org.apache.kafka.common;
 import java.util.Objects;
 
 /**
- * The <code>ClusterResource</code> class encapsulates metadata for a Kafka cluster.
+ * <code>ClusterResource</code>类封装了Kafka集群的元数据信息。
+ * 
+ * 该类主要用于：
+ * 1. 存储集群的唯一标识符(clusterId)
+ * 2. 在集群元数据更新时通知监听器
+ * 3. 用于区分不同的Kafka集群
  */
 public class ClusterResource {
 
+    // 集群的唯一标识符
     private final String clusterId;
 
     /**
-     * Create {@link ClusterResource} with a cluster id. Note that cluster id may be {@code null} if the
-     * metadata request was sent to a broker without support for cluster ids. The first version of Kafka
-     * to support cluster id is 0.10.1.0.
-     * @param clusterId The cluster id
+     * 创建{@link ClusterResource}实例。
+     * 
+     * 注意：如果元数据请求发送到不支持集群ID的broker，clusterId可能为{@code null}。
+     * Kafka从0.10.1.0版本开始支持集群ID。
+     * 
+     * @param clusterId 集群ID
      */
     public ClusterResource(String clusterId) {
         this.clusterId = clusterId;
     }
 
     /**
-     * Return the cluster id. Note that it may be {@code null} if the metadata request was sent to a broker without
-     * support for cluster ids. The first version of Kafka to support cluster id is 0.10.1.0.
+     * 获取集群ID。
+     * 
+     * 注意：如果元数据请求发送到不支持集群ID的broker，返回值可能为{@code null}。
+     * Kafka从0.10.1.0版本开始支持集群ID。
+     * 
+     * @return 集群ID
      */
     public String clusterId() {
         return clusterId;

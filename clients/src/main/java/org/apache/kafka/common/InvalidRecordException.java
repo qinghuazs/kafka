@@ -18,14 +18,28 @@ package org.apache.kafka.common;
 
 import org.apache.kafka.common.errors.ApiException;
 
+/**
+ * 表示记录无效的异常。
+ * 当Kafka遇到格式错误、校验失败或其他导致记录不可用的情况时，
+ * 会抛出此异常。这是一个API级别的异常，继承自ApiException。
+ */
 public class InvalidRecordException extends ApiException {
 
     private static final long serialVersionUID = 1;
 
+    /**
+     * 使用指定的错误消息创建异常
+     * @param s 描述记录无效原因的错误消息
+     */
     public InvalidRecordException(String s) {
         super(s);
     }
 
+    /**
+     * 使用指定的错误消息和原因创建异常
+     * @param message 描述记录无效原因的错误消息
+     * @param cause 导致此异常的原始异常
+     */
     public InvalidRecordException(String message, Throwable cause) {
         super(message, cause);
     }

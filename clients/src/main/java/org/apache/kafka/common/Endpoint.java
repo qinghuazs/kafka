@@ -23,17 +23,29 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Represents a broker endpoint.
+ * 表示一个Broker端点。
+ * 端点包含了Broker的监听器名称、安全协议、主机名和端口等信息，
+ * 用于客户端与Broker建立连接。
  */
-
 @InterfaceStability.Evolving
 public class Endpoint {
 
+    // 监听器名称，用于标识特定的监听器配置
     private final String listenerName;
+    // 安全协议类型，如PLAINTEXT、SSL、SASL等
     private final SecurityProtocol securityProtocol;
+    // Broker的主机名或IP地址
     private final String host;
+    // Broker监听的端口号
     private final int port;
 
+    /**
+     * 创建一个新的端点实例
+     * @param listenerName 监听器名称
+     * @param securityProtocol 安全协议
+     * @param host 主机名
+     * @param port 端口号
+     */
     public Endpoint(String listenerName, SecurityProtocol securityProtocol, String host, int port) {
         this.listenerName = listenerName;
         this.securityProtocol = securityProtocol;
@@ -42,34 +54,39 @@ public class Endpoint {
     }
 
     /**
-     * Returns the listener name of this endpoint. This is non-empty for endpoints provided
-     * to broker plugins, but may be empty when used in clients.
+     * 返回端点的监听器名称。
+     * 对于提供给broker插件的端点，该值不为空；
+     * 但在客户端使用时可能为空。
      */
     public Optional<String> listenerName() {
         return Optional.ofNullable(listenerName);
     }
 
     /**
-     * Returns the security protocol of this endpoint.
+     * 返回端点使用的安全协议
      */
     public SecurityProtocol securityProtocol() {
         return securityProtocol;
     }
 
     /**
-     * Returns advertised host name of this endpoint.
+     * 返回端点的已配置主机名
      */
     public String host() {
         return host;
     }
 
     /**
-     * Returns the port to which the listener is bound.
+     * 返回监听器绑定的端口号
      */
     public int port() {
         return port;
     }
 
+    /**
+     * 比较两个端点是否相等
+     * 当所有字段(监听器名称、安全协议、主机名、端口)都相等时返回true
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -87,18 +104,26 @@ public class Endpoint {
 
     }
 
+    /**
+     * 生成端点的哈希码
+     * 使用所有字段计算哈希值
+     */
     @Override
     public int hashCode() {
         return Objects.hash(listenerName, securityProtocol, host, port);
     }
 
+    /**
+     * 返回端点的字符串表示
+     * 包含所有字段的值
+     */
     @Override
     public String toString() {
         return "Endpoint(" +
-            "listenerName='" + listenerName + '\'' +
+            "listenerName='" + listenerName + "'" +
             ", securityProtocol=" + securityProtocol +
-            ", host='" + host + '\'' +
+            ", host='" + host + "'" +
             ", port=" + port +
-            ')';
+            ")";
     }
 }

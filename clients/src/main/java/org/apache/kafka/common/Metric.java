@@ -17,17 +17,21 @@
 package org.apache.kafka.common;
 
 /**
- * A metric tracked for monitoring purposes.
+ * 用于监控目的的度量指标接口。
+ * 该接口定义了Kafka中所有可监控指标的基本结构，包括指标名称和值。
  */
 public interface Metric {
 
     /**
-     * A name for this metric
+     * 获取该指标的名称
+     * 返回一个MetricName对象，包含了指标的名称、分组、描述和标签等信息
      */
     MetricName metricName();
 
     /**
-     * The value of the metric, which may be measurable or a non-measurable gauge
+     * 获取该指标的当前值
+     * 返回值可以是一个可测量的数值，也可以是一个不可测量的计量值（gauge）
+     * 由于指标值的类型可能多样，所以返回类型为Object
      */
     Object metricValue();
 

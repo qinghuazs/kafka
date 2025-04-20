@@ -83,18 +83,38 @@ public final class MetricName {
         this.tags = Objects.requireNonNull(tags);
     }
 
+    /**
+     * 获取指标的名称
+     *
+     * @return 指标名称，永不为null
+     */
     public String name() {
         return this.name;
     }
 
+    /**
+     * 获取指标所属的分组名称
+     *
+     * @return 分组名称，永不为null
+     */
     public String group() {
         return this.group;
     }
 
+    /**
+     * 获取指标的额外键值对属性
+     *
+     * @return 标签映射，永不为null
+     */
     public Map<String, String> tags() {
         return this.tags;
     }
 
+    /**
+     * 获取指标的描述信息
+     *
+     * @return 指标描述，永不为null
+     */
     public String description() {
         return this.description;
     }

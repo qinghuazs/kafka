@@ -22,28 +22,30 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * A template for a MetricName. It contains a name, group, and description, as
- * well as all the tags that will be used to create the mBean name. Tag values
- * are omitted from the template, but are filled in at runtime with their
- * specified values. The order of the tags is maintained, if an ordered set
- * is provided, so that the mBean names can be compared and sorted lexicographically.
+ * MetricName的模板类。包含名称、分组和描述信息，以及用于创建mBean名称的所有标签。
+ * 标签值在模板中被省略，但会在运行时填充具体的值。如果提供了有序集合，标签的顺序将被保持，
+ * 这样mBean的名称就可以按字典序进行比较和排序。
  */
 public class MetricNameTemplate {
+    // 指标的名称
     private final String name;
+    // 指标所属的分组
     private final String group;
+    // 指标的描述信息
     private final String description;
+    // 使用LinkedHashSet保持标签的插入顺序
     private final LinkedHashSet<String> tags;
 
     /**
-     * Create a new template. Note that the order of the tags will be preserved if the supplied
-     * {@code tagsNames} set has an order.
+     * 创建一个新的模板。注意：如果提供的tagsNames集合是有序的，标签的顺序将被保持。
      *
-     * @param name the name of the metric; may not be null
-     * @param group the name of the group; may not be null
-     * @param description the description of the metric; may not be null
-     * @param tagsNames the set of metric tag names, which can/should be a set that maintains order; may not be null
+     * @param name 指标的名称，不能为null
+     * @param group 指标所属的分组，不能为null
+     * @param description 指标的描述信息，不能为null
+     * @param tagsNames 指标标签名称的集合，应该是一个保持顺序的集合，不能为null
      */
     public MetricNameTemplate(String name, String group, String description, Set<String> tagsNames) {
+        // 使用Objects.requireNonNull确保参数不为null
         this.name = Objects.requireNonNull(name);
         this.group = Objects.requireNonNull(group);
         this.description = Objects.requireNonNull(description);
@@ -51,66 +53,81 @@ public class MetricNameTemplate {
     }
 
     /**
-     * Create a new template. Note that the order of the tags will be preserved.
+     * 创建一个新的模板。这个构造方法接受可变参数形式的标签名称。
+     * 注意：标签的顺序将被保持。
      *
-     * @param name the name of the metric; may not be null
-     * @param group the name of the group; may not be null
-     * @param description the description of the metric; may not be null
-     * @param tagsNames the names of the metric tags in the preferred order; none of the tag names should be null
+     * @param name 指标的名称，不能为null
+     * @param group 指标所属的分组，不能为null
+     * @param description 指标的描述信息，不能为null
+     * @param tagsNames 按照首选顺序排列的指标标签名称，所有标签名称都不能为null
      */
     public MetricNameTemplate(String name, String group, String description, String... tagsNames) {
+        // 调用另一个构造方法，将可变参数转换为Set
         this(name, group, description, getTags(tagsNames));
     }
 
+    /**
+     * 将可变参数形式的标签名称转换为LinkedHashSet
+     * 
+     * @param keys 标签名称数组
+     * @return 包含所有标签名称的LinkedHashSet
+     */
     private static LinkedHashSet<String> getTags(String... keys) {
         LinkedHashSet<String> tags = new LinkedHashSet<>();
-
+        // 将所有标签添加到LinkedHashSet中
         Collections.addAll(tags, keys);
-
         return tags;
     }
 
     /**
-     * Get the name of the metric.
+     * 获取指标的名称
      *
-     * @return the metric name; never null
+     * @return 指标名称，永不为null
      */
     public String name() {
         return this.name;
     }
 
     /**
-     * Get the name of the group.
+     * 获取指标所属的分组名称
      *
-     * @return the group name; never null
+     * @return 分组名称，永不为null
      */
     public String group() {
         return this.group;
     }
 
     /**
-     * Get the description of the metric.
+     * 获取指标的描述信息
      *
-     * @return the metric description; never null
+     * @return 指标描述，永不为null
      */
     public String description() {
         return this.description;
     }
 
     /**
-     * Get the set of tag names for the metric.
+     * 获取指标的标签名称集合
      *
-     * @return the ordered set of tag names; never null but possibly empty
+     * @return 有序的标签名称集合，永不为null但可能为空
      */
     public Set<String> tags() {
         return tags;
     }
 
+    /**
+     * 计算对象的哈希码
+     * 使用name、group和tags字段计算哈希值
+     */
     @Override
     public int hashCode() {
         return Objects.hash(name, group, tags);
     }
 
+    /**
+     * 比较两个MetricNameTemplate对象是否相等
+     * 比较name、group和tags字段的值
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -122,6 +139,10 @@ public class MetricNameTemplate {
                 Objects.equals(tags, other.tags);
     }
 
+    /**
+     * 返回对象的字符串表示
+     * 格式化输出name、group和tags字段的值
+     */
     @Override
     public String toString() {
         return String.format("name=%s, group=%s, tags=%s", name, group, tags);

@@ -23,31 +23,32 @@ import java.io.PrintStream;
 import java.util.Map;
 
 /**
- * This interface allows to define Formatters that can be used to parse and format records read by a
- *  Consumer instance for display.
- * The kafka-console-consumer has built-in support for MessageFormatter, via the --formatter flag.
+ * 消息格式化器接口。
+ * 用于定义如何解析和格式化Consumer读取的记录以供显示。
+ * kafka-console-consumer工具通过--formatter参数内置支持此接口。
  *
- * Kafka provides a few implementations to display records of internal topics such as __consumer_offsets,
- * __transaction_state and the MirrorMaker2 topics.
- *
+ * Kafka提供了多个实现来显示内部主题的记录，例如：
+ * - __consumer_offsets：消费者偏移量主题
+ * - __transaction_state：事务状态主题
+ * - MirrorMaker2主题：用于集群镜像的主题
  */
 public interface MessageFormatter extends Configurable, Closeable {
 
     /**
-     * Configures the MessageFormatter
-     * @param configs Map to configure the formatter
+     * 配置消息格式化器
+     * @param configs 用于配置格式化器的参数映射
      */
     default void configure(Map<String, ?> configs) {}
 
     /**
-     * Parses and formats a record for display
-     * @param consumerRecord the record to format
-     * @param output the print stream used to output the record
+     * 解析并格式化一条记录用于显示
+     * @param consumerRecord 需要格式化的消费者记录
+     * @param output 用于输出格式化结果的打印流
      */
     void writeTo(ConsumerRecord<byte[], byte[]> consumerRecord, PrintStream output);
 
     /**
-     * Closes the formatter
+     * 关闭格式化器，释放相关资源
      */
     default void close() {}
 }
