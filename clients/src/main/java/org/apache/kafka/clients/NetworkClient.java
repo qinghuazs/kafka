@@ -1821,19 +1821,55 @@ public class NetworkClient implements KafkaClient {
         return discoverBrokerVersions;
     }
 
+    /**
+     * 表示已发送但尚未收到响应的请求。
+     * 这个类维护了请求的所有相关信息，包括请求头、目标节点、回调处理器等，
+     * 用于跟踪请求的生命周期、处理超时和限流等场景。
+     */
     static class InFlightRequest {
+        /* 请求头，包含API版本、客户端ID等元数据信息 */
         final RequestHeader header;
+        
+        /* 目标节点的标识符(通常是host:port格式) */
         final String destination;
+        
+        /* 当收到响应时要调用的回调处理器 */
         final RequestCompletionHandler callback;
+        
+        /* 是否期望从服务器收到响应 */
         final boolean expectResponse;
+        
+        /* 实际的请求对象，包含请求的具体内容 */
         final AbstractRequest request;
-        final boolean isInternalRequest; // used to flag requests which are initiated internally by NetworkClient
+        
+        /* 标记该请求是否由NetworkClient内部发起(如元数据请求) */
+        final boolean isInternalRequest;
+        
+        /* 要发送的网络数据包 */
         final Send send;
+        
+        /* 请求发送时的时间戳(毫秒) */
         final long sendTimeMs;
+        
+        /* 请求创建时的时间戳(毫秒) */
         final long createdTimeMs;
+        
+        /* 请求的超时时间(毫秒) */
         final long requestTimeoutMs;
+        
+        /* 服务器对该请求实施的限流时间(毫秒) */
         long throttleTimeMs;
 
+        /**
+         * 从ClientRequest创建InFlightRequest的构造函数
+         * 
+         * @param clientRequest 客户端请求对象，包含请求的基本信息
+         * @param header 请求头
+         * @param isInternalRequest 是否是内部请求
+         * @param request 具体的请求内容
+         * @param send 要发送的网络数据包
+         * @param sendTimeMs 发送时间戳
+         */
         public InFlightRequest(ClientRequest clientRequest,
                                RequestHeader header,
                                boolean isInternalRequest,
@@ -1852,6 +1888,20 @@ public class NetworkClient implements KafkaClient {
                  sendTimeMs);
         }
 
+        /**
+         * 完整参数的构造函数
+         * 
+         * @param header 请求头
+         * @param requestTimeoutMs 请求超时时间
+         * @param createdTimeMs 请求创建时间
+         * @param destination 目标节点
+         * @param callback 完成回调
+         * @param expectResponse 是否期望响应
+         * @param isInternalRequest 是否内部请求
+         * @param request 请求内容
+         * @param send 发送数据包
+         * @param sendTimeMs 发送时间
+         */
         public InFlightRequest(RequestHeader header,
                                int requestTimeoutMs,
                                long createdTimeMs,
@@ -1874,34 +1924,77 @@ public class NetworkClient implements KafkaClient {
             this.sendTimeMs = sendTimeMs;
         }
 
+        /**
+         * 计算从请求发送到现在经过的时间(毫秒)
+         * 
+         * @param currentTimeMs 当前时间戳
+         * @return 经过的时间，始终大于等于0
+         */
         public long timeElapsedSinceSendMs(long currentTimeMs) {
             return Math.max(0, currentTimeMs - sendTimeMs);
         }
 
+        /**
+         * 获取服务器对该请求实施的限流时间
+         * 
+         * @return 限流时间(毫秒)
+         */
         public long throttleTimeMs() {
             return throttleTimeMs;
         }
 
+        /**
+         * 计算从请求创建到现在经过的时间(毫秒)
+         * 
+         * @param currentTimeMs 当前时间戳
+         * @return 经过的时间，始终大于等于0
+         */
         public long timeElapsedSinceCreateMs(long currentTimeMs) {
             return Math.max(0, currentTimeMs - createdTimeMs);
         }
 
+        /**
+         * 创建一个表示请求成功完成的响应对象
+         * 
+         * @param response 服务器返回的响应
+         * @param timeMs 完成时的时间戳
+         * @return 客户端响应对象
+         */
         public ClientResponse completed(AbstractResponse response, long timeMs) {
             return new ClientResponse(header, callback, destination, createdTimeMs, timeMs,
                     false, null, null, response);
         }
 
+        /**
+         * 创建一个表示请求超时的响应对象
+         * 注意：超时的请求同时也被视为断开连接
+         * 
+         * @param timeMs 超时发生时的时间戳
+         * @return 客户端响应对象
+         */
         public ClientResponse timedOut(long timeMs) {
             // A timed out request is considered disconnected as well
             return new ClientResponse(header, callback, destination, createdTimeMs, timeMs,
                     true, true, null, null, null);
         }
 
+        /**
+         * 创建一个表示连接断开的响应对象
+         * 
+         * @param timeMs 断开连接时的时间戳
+         * @return 客户端响应对象
+         */
         public ClientResponse disconnected(long timeMs) {
             return new ClientResponse(header, callback, destination, createdTimeMs, timeMs,
                     true, null, null, null);
         }
 
+        /**
+         * 将InFlightRequest对象转换为字符串表示
+         * 包含了请求的关键信息，用于日志记录和调试
+         * 
+         * @return 包含请求详细信息的字符串
+         */
         @Override
         public String toString() {
             return "InFlightRequest(header=" + header +
@@ -1915,6 +2008,12 @@ public class NetworkClient implements KafkaClient {
                     ", send=" + send + ")";
         }
 
+        /**
+         * 增加请求的限流时间
+         * 当收到服务器的限流响应时调用此方法
+         * 
+         * @param throttleTimeMs 要增加的限流时间(毫秒)
+         */
         public void incrementThrottleTime(long throttleTimeMs) {
             this.throttleTimeMs = throttleTimeMs + this.throttleTimeMs;
         }

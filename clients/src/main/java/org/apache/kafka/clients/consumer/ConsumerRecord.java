@@ -24,37 +24,53 @@ import org.apache.kafka.common.record.TimestampType;
 import java.util.Optional;
 
 /**
- * A key/value pair to be received from Kafka. This also consists of a topic name and 
- * a partition number from which the record is being received, an offset that points 
- * to the record in a Kafka partition, and a timestamp as marked by the corresponding ProducerRecord.
+ * Kafka消费者接收的记录，包含键值对数据
+ * 同时包含以下元数据：
+ * - 主题名称
+ * - 分区号
+ * - 偏移量（在分区中的位置）
+ * - 时间戳（来自对应的ProducerRecord）
  */
 public class ConsumerRecord<K, V> {
+    // 表示没有时间戳的常量
     public static final long NO_TIMESTAMP = RecordBatch.NO_TIMESTAMP;
+    // 表示序列化大小未知的常量
     public static final int NULL_SIZE = -1;
 
+    // 记录所属的主题
     private final String topic;
+    // 记录所属的分区
     private final int partition;
+    // 记录在分区中的偏移量
     private final long offset;
+    // 记录的时间戳
     private final long timestamp;
+    // 时间戳的类型（CREATE_TIME或LOG_APPEND_TIME）
     private final TimestampType timestampType;
+    // 序列化后的key大小（字节）
     private final int serializedKeySize;
+    // 序列化后的value大小（字节）
     private final int serializedValueSize;
+    // 记录的头部信息
     private final Headers headers;
+    // 记录的键
     private final K key;
+    // 记录的值
     private final V value;
+    // leader epoch（可选，用于检测数据丢失）
     private final Optional<Integer> leaderEpoch;
+    // 投递计数（可选，用于共享消费组）
     private final Optional<Short> deliveryCount;
 
     /**
-     * Creates a record to be received from a specified topic and partition (provided for
-     * compatibility with Kafka 0.9 before the message format supported timestamps and before
-     * serialized metadata were exposed).
+     * 创建一个消费记录（兼容Kafka 0.9版本的构造函数）
+     * 该版本不支持时间戳和序列化元数据
      *
-     * @param topic The topic this record is received from
-     * @param partition The partition of the topic this record is received from
-     * @param offset The offset of this record in the corresponding Kafka partition
-     * @param key The key of the record, if one exists (null is allowed)
-     * @param value The record contents
+     * @param topic 记录所属的主题
+     * @param partition 记录所属的分区
+     * @param offset 记录在分区中的偏移量
+     * @param key 记录的键（可以为null）
+     * @param value 记录的值
      */
     public ConsumerRecord(String topic,
                           int partition,
@@ -66,19 +82,19 @@ public class ConsumerRecord<K, V> {
     }
 
     /**
-     * Creates a record to be received from a specified topic and partition.
+     * 创建一个完整的消费记录（不包含投递计数）
      *
-     * @param topic The topic this record is received from
-     * @param partition The partition of the topic this record is received from
-     * @param offset The offset of this record in the corresponding Kafka partition
-     * @param timestamp The timestamp of the record.
-     * @param timestampType The timestamp type
-     * @param serializedKeySize The length of the serialized key
-     * @param serializedValueSize The length of the serialized value
-     * @param key The key of the record, if one exists (null is allowed)
-     * @param value The record contents
-     * @param headers The headers of the record
-     * @param leaderEpoch Optional leader epoch of the record (may be empty for legacy record formats)
+     * @param topic 记录所属的主题
+     * @param partition 记录所属的分区
+     * @param offset 记录在分区中的偏移量
+     * @param timestamp 记录的时间戳
+     * @param timestampType 时间戳类型
+     * @param serializedKeySize 序列化后的key大小
+     * @param serializedValueSize 序列化后的value大小
+     * @param key 记录的键（可以为null）
+     * @param value 记录的值
+     * @param headers 记录的头部信息
+     * @param leaderEpoch leader epoch（可选）
      */
     public ConsumerRecord(String topic,
                           int partition,
@@ -96,20 +112,20 @@ public class ConsumerRecord<K, V> {
     }
 
     /**
-     * Creates a record to be received from a specified topic and partition.
+     * 创建一个完整的消费记录（包含所有字段）
      *
-     * @param topic The topic this record is received from
-     * @param partition The partition of the topic this record is received from
-     * @param offset The offset of this record in the corresponding Kafka partition
-     * @param timestamp The timestamp of the record.
-     * @param timestampType The timestamp type
-     * @param serializedKeySize The length of the serialized key
-     * @param serializedValueSize The length of the serialized value
-     * @param key The key of the record, if one exists (null is allowed)
-     * @param value The record contents
-     * @param headers The headers of the record
-     * @param leaderEpoch Optional leader epoch of the record (may be empty for legacy record formats)
-     * @param deliveryCount Optional delivery count of the record (may be empty when deliveries not counted)
+     * @param topic 记录所属的主题
+     * @param partition 记录所属的分区
+     * @param offset 记录在分区中的偏移量
+     * @param timestamp 记录的时间戳
+     * @param timestampType 时间戳类型
+     * @param serializedKeySize 序列化后的key大小
+     * @param serializedValueSize 序列化后的value大小
+     * @param key 记录的键（可以为null）
+     * @param value 记录的值
+     * @param headers 记录的头部信息
+     * @param leaderEpoch leader epoch（可选）
+     * @param deliveryCount 投递计数（可选）
      */
     public ConsumerRecord(String topic,
                           int partition,
@@ -123,11 +139,14 @@ public class ConsumerRecord<K, V> {
                           Headers headers,
                           Optional<Integer> leaderEpoch,
                           Optional<Short> deliveryCount) {
+        // 校验主题名称不能为null
         if (topic == null)
             throw new IllegalArgumentException("Topic cannot be null");
+        // 校验头部信息不能为null
         if (headers == null)
             throw new IllegalArgumentException("Headers cannot be null");
 
+        // 初始化所有字段
         this.topic = topic;
         this.partition = partition;
         this.offset = offset;
@@ -143,96 +162,97 @@ public class ConsumerRecord<K, V> {
     }
 
     /**
-     * The topic this record is received from (never null)
+     * 获取记录所属的主题（永远不会返回null）
      */
     public String topic() {
         return this.topic;
     }
 
     /**
-     * The partition from which this record is received
+     * 获取记录所属的分区号
      */
     public int partition() {
         return this.partition;
     }
 
     /**
-     * The headers (never null)
+     * 获取记录的头部信息（永远不会返回null）
      */
     public Headers headers() {
         return headers;
     }
     
     /**
-     * The key (or null if no key is specified)
+     * 获取记录的键（如果没有指定键则返回null）
      */
     public K key() {
         return key;
     }
 
     /**
-     * The value
+     * 获取记录的值
      */
     public V value() {
         return value;
     }
 
     /**
-     * The position of this record in the corresponding Kafka partition.
+     * 获取记录在Kafka分区中的偏移量位置
      */
     public long offset() {
         return offset;
     }
 
     /**
-     * The timestamp of this record, in milliseconds elapsed since unix epoch.
+     * 获取记录的时间戳（从Unix纪元开始的毫秒数）
      */
     public long timestamp() {
         return timestamp;
     }
 
     /**
-     * The timestamp type of this record
+     * 获取记录的时间戳类型
      */
     public TimestampType timestampType() {
         return timestampType;
     }
 
     /**
-     * The size of the serialized, uncompressed key in bytes. If key is null, the returned size
-     * is -1.
+     * 获取序列化后的键的大小（字节）
+     * 如果键为null，返回-1
      */
     public int serializedKeySize() {
         return this.serializedKeySize;
     }
 
     /**
-     * The size of the serialized, uncompressed value in bytes. If value is null, the
-     * returned size is -1.
+     * 获取序列化后的值的大小（字节）
+     * 如果值为null，返回-1
      */
     public int serializedValueSize() {
         return this.serializedValueSize;
     }
 
     /**
-     * Get the leader epoch for the record if available
-     *
-     * @return the leader epoch or empty for legacy record formats
+     * 获取记录的leader epoch（如果可用）
+     * @return leader epoch，对于旧版本的记录格式返回空
      */
     public Optional<Integer> leaderEpoch() {
         return leaderEpoch;
     }
 
     /**
-     * Get the delivery count for the record if available. Deliveries
-     * are counted for records delivered by share groups.
-     *
-     * @return the delivery count or empty when deliveries not counted
+     * 获取记录的投递计数（如果可用）
+     * 只有在共享消费组中才会计数
+     * @return 投递计数，如果未计数则返回空
      */
     public Optional<Short> deliveryCount() {
         return deliveryCount;
     }
 
+    /**
+     * 将记录转换为字符串表示形式，包含所有字段信息
+     */
     @Override
     public String toString() {
         return "ConsumerRecord(topic = " + topic

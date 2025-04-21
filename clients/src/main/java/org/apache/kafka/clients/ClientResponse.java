@@ -22,20 +22,29 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.RequestHeader;
 
 /**
- * A response from the server. Contains both the body of the response as well as the correlated request
- * metadata that was originally sent.
+ * 服务器的响应。包含响应体以及原始请求的相关元数据。
  */
 public class ClientResponse {
 
+    // 原始请求的请求头
     private final RequestHeader requestHeader;
+    // 请求完成时的回调处理器
     private final RequestCompletionHandler callback;
+    // 目标服务器的标识符
     private final String destination;
+    // 接收响应的时间戳（毫秒）
     private final long receivedTimeMs;
+    // 请求延迟时间（毫秒）
     private final long latencyMs;
+    // 客户端是否在完全读取响应之前断开连接
     private final boolean disconnected;
+    // 是否因超时而断开连接
     private final boolean timedOut;
+    // API版本不匹配异常
     private final UnsupportedVersionException versionMismatch;
+    // 认证异常
     private final AuthenticationException authenticationException;
+    // 响应体
     private final AbstractResponse responseBody;
 
     /**
@@ -109,46 +118,90 @@ public class ClientResponse {
         this.responseBody = responseBody;
     }
 
+    /**
+     * 获取响应接收时间
+     * @return 接收响应的时间戳（毫秒）
+     */
     public long receivedTimeMs() {
         return receivedTimeMs;
     }
 
+    /**
+     * 检查是否在读取响应过程中断开连接
+     * @return 如果连接断开返回true，否则返回false
+     */
     public boolean wasDisconnected() {
         return disconnected;
     }
 
+    /**
+     * 检查是否因超时而断开连接
+     * @return 如果因超时断开返回true，否则返回false
+     */
     public boolean wasTimedOut() {
         return timedOut;
     }
 
+    /**
+     * 获取API版本不匹配异常
+     * @return 版本不匹配异常对象，如果没有版本不匹配则为null
+     */
     public UnsupportedVersionException versionMismatch() {
         return versionMismatch;
     }
 
+    /**
+     * 获取认证异常
+     * @return 认证异常对象，如果没有认证错误则为null
+     */
     public AuthenticationException authenticationException() {
         return authenticationException;
     }
 
+    /**
+     * 获取请求头
+     * @return 原始请求的请求头对象
+     */
     public RequestHeader requestHeader() {
         return requestHeader;
     }
 
+    /**
+     * 获取目标服务器标识符
+     * @return 目标服务器的标识符
+     */
     public String destination() {
         return destination;
     }
 
+    /**
+     * 获取响应体
+     * @return 响应的具体内容
+     */
     public AbstractResponse responseBody() {
         return responseBody;
     }
 
+    /**
+     * 检查是否包含响应体
+     * @return 如果响应体不为null返回true，否则返回false
+     */
     public boolean hasResponse() {
         return responseBody != null;
     }
 
+    /**
+     * 获取请求延迟时间
+     * @return 从发送请求到接收响应的时间间隔（毫秒）
+     */
     public long requestLatencyMs() {
         return latencyMs;
     }
 
+    /**
+     * 执行请求完成回调
+     * 如果设置了回调处理器，则调用其onComplete方法
+     */
     public void onComplete() {
         if (callback != null)
             callback.onComplete(this);
