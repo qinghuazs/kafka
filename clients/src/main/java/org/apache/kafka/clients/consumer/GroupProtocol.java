@@ -18,24 +18,49 @@ package org.apache.kafka.clients.consumer;
 
 import java.util.Locale;
 
+/**
+ * Kafka消费者组协议类型的枚举。
+ * 定义了Kafka支持的两种不同的消费者组协议类型，用于控制消费者组的行为模式。
+ */
 public enum GroupProtocol {
-    /** Classic group protocol.  */
+    /** 
+     * 经典消费者组协议。
+     * 这是Kafka最初的消费者组实现方式，主要特点是：
+     * 1. 一个分区只能被消费者组内的一个消费者消费
+     * 2. 消费者组成员之间严格分区所有权
+     * 3. 提供强有序性保证
+     */
     CLASSIC("CLASSIC"),
 
-    /** Consumer group protocol */
+    /** 
+     * 新版消费者组协议
+     * 这是Kafka后来引入的改进版消费者组协议，主要特点是：
+     * 1. 支持更灵活的消费模式
+     * 2. 提供更好的扩展性
+     * 3. 可以实现更细粒度的消费控制
+     */
     CONSUMER("CONSUMER");
 
     /**
-     * String representation of the group protocol.
+     * 协议类型的字符串表示。
+     * 用于在配置和API中标识具体的协议类型。
      */
     public final String name;
 
+    /**
+     * 构造函数
+     * @param name 协议类型的字符串标识符
+     */
     GroupProtocol(final String name) {
         this.name = name;
     }
 
     /**
-     * Case-insensitive group protocol lookup by string name.
+     * 根据字符串名称查找对应的协议类型（大小写不敏感）。
+     * 
+     * @param name 要查找的协议类型名称
+     * @return 对应的GroupProtocol枚举值
+     * @throws IllegalArgumentException 如果找不到对应的协议类型
      */
     public static GroupProtocol of(final String name) {
         return GroupProtocol.valueOf(name.toUpperCase(Locale.ROOT));

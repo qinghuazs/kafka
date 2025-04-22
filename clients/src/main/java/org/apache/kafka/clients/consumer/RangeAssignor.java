@@ -94,15 +94,41 @@ import java.util.stream.Collectors;
  * rebalancing when replicas are added or removed to improve consumer rack alignment.
  * </p>
  */
+/**
+ * RangeAssignor实现了Kafka消费者组的分区分配策略，采用按主题范围分配的方式。
+ * 主要特点：
+ * 1. 按主题进行分配：对每个主题单独处理，将分区按数字顺序排列，消费者按字典序排列
+ * 2. 均衡分配：将每个主题的分区数除以消费者数，得到每个消费者应分配的分区数
+ * 3. 处理余数：如果分区数不能被消费者数整除，前面的消费者会多分配一个分区
+ * 4. 支持静态成员：通过group.instance.id实现分配的稳定性
+ * 5. 支持机架感知：尝试将分区分配给与其副本位于同一机架的消费者
+ */
 public class RangeAssignor extends AbstractPartitionAssignor {
+    // 分配器的名称，用于标识该分配策略
     public static final String RANGE_ASSIGNOR_NAME = "range";
+    // 用于对TopicPartition进行排序的比较器
     private static final TopicPartitionComparator PARTITION_COMPARATOR = new TopicPartitionComparator();
 
+    /**
+     * 返回分配器的名称
+     * @return 返回"range"，表示这是范围分配器
+     */
     @Override
     public String name() {
         return RANGE_ASSIGNOR_NAME;
     }
 
+    /**
+     * 构建每个主题的消费者列表映射
+     * @param consumerMetadata 消费者元数据，包含消费者ID和订阅信息
+     * @return 返回主题到消费者列表的映射
+     * 
+     * 实现细节：
+     * 1. 创建主题到消费者列表的映射
+     * 2. 遍历每个消费者的订阅信息
+     * 3. 为每个消费者创建包含其ID、实例ID和机架ID的MemberInfo对象
+     * 4. 将消费者信息添加到其订阅的每个主题的消费者列表中
+     */
     private Map<String, List<MemberInfo>> consumersPerTopic(Map<String, Subscription> consumerMetadata) {
         Map<String, List<MemberInfo>> topicToConsumers = new HashMap<>();
         consumerMetadata.forEach((consumerId, subscription) -> {
@@ -113,31 +139,61 @@ public class RangeAssignor extends AbstractPartitionAssignor {
     }
 
     /**
-     * Performs range assignment of the specified partitions for the consumers with the provided subscriptions.
-     * If rack-awareness is enabled for one or more consumers, we perform rack-aware assignment first to assign
-     * the subset of partitions that can be aligned on racks, while retaining the same co-partitioning and
-     * per-topic balancing guarantees as non-rack-aware range assignment. The remaining partitions are assigned
-     * using standard non-rack-aware range assignment logic, which may result in mis-aligned racks.
+     * 执行分区分配，将指定的分区分配给订阅的消费者
+     * 
+     * @param partitionsPerTopic 每个主题的分区信息映射
+     * @param subscriptions 消费者的订阅信息映射
+     * @return 返回消费者到分区列表的分配结果映射
+     * 
+     * 实现细节：
+     * 1. 准备阶段：
+     *    - 构建每个主题的消费者列表映射
+     *    - 获取消费者的机架信息
+     *    - 为每个非空主题创建分配状态对象
+     * 
+     * 2. 初始化分配结果：
+     *    - 为每个消费者创建空的分区列表
+     * 
+     * 3. 机架感知分配：
+     *    - 检查是否需要机架感知分配
+     *    - 如果需要，先执行机架感知分配
+     *    - 优先将分区分配给与其副本位于同一机架的消费者
+     * 
+     * 4. 标准范围分配：
+     *    - 对每个主题执行范围分配
+     *    - 将剩余未分配的分区按范围分配给消费者
+     * 
+     * 5. 结果处理：
+     *    - 如果使用了机架感知分配，对分配结果进行排序
+     *    - 返回最终的分配结果
      */
     @Override
     public Map<String, List<TopicPartition>> assignPartitions(Map<String, List<PartitionInfo>> partitionsPerTopic,
                                                               Map<String, Subscription> subscriptions) {
+        // 构建每个主题的消费者列表映射
         Map<String, List<MemberInfo>> consumersPerTopic = consumersPerTopic(subscriptions);
+        // 获取消费者的机架信息
         Map<String, String> consumerRacks = consumerRacks(subscriptions);
+        // 为每个非空主题创建分配状态对象
         List<TopicAssignmentState> topicAssignmentStates = partitionsPerTopic.entrySet().stream()
                 .filter(e -> !e.getValue().isEmpty())
                 .map(e -> new TopicAssignmentState(e.getKey(), e.getValue(), consumersPerTopic.get(e.getKey()), consumerRacks))
                 .collect(Collectors.toList());
 
+        // 初始化分配结果映射
         Map<String, List<TopicPartition>> assignment = new HashMap<>();
         subscriptions.keySet().forEach(memberId -> assignment.put(memberId, new ArrayList<>()));
 
+        // 检查是否需要机架感知分配
         boolean useRackAware = topicAssignmentStates.stream().anyMatch(t -> t.needsRackAwareAssignment);
         if (useRackAware)
+            // 执行机架感知分配
             assignWithRackMatching(topicAssignmentStates, assignment);
 
+        // 执行标准范围分配
         topicAssignmentStates.forEach(t -> assignRanges(t, (c, tp) -> true, assignment));
 
+        // 如果使用了机架感知分配，对结果进行排序
         if (useRackAware)
             assignment.values().forEach(list -> list.sort(PARTITION_COMPARATOR));
         return assignment;
@@ -150,6 +206,18 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         return assignPartitions(partitionInfosWithoutRacks(partitionsPerTopic), subscriptions);
     }
 
+    /**
+     * 为指定主题的消费者分配分区范围
+     * @param assignmentState 主题分配状态，包含未分配的分区和消费者信息
+     * @param mayAssign 判断是否可以将分区分配给消费者的函数
+     * @param assignment 最终的分配结果映射
+     * 
+     * 实现细节：
+     * 1. 遍历每个消费者
+     * 2. 从未分配的分区中筛选出可以分配给当前消费者的分区
+     * 3. 限制分配数量不超过消费者应得的配额
+     * 4. 将筛选出的分区分配给消费者
+     */
     private void assignRanges(TopicAssignmentState assignmentState,
                               BiFunction<String, TopicPartition, Boolean> mayAssign,
                               Map<String, List<TopicPartition>> assignment) {
@@ -167,6 +235,18 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         }
     }
 
+    /**
+     * 执行机架感知的分区分配
+     * @param assignmentStates 所有主题的分配状态集合
+     * @param assignment 最终的分配结果映射
+     * 
+     * 实现细节：
+     * 1. 按消费者组对主题状态进行分组
+     * 2. 对每组主题，按分区数进行分组
+     * 3. 对具有相同分区数的主题组：
+     *    - 如果有多个主题，执行协同分区的机架匹配分配
+     *    - 如果只有一个主题且需要机架感知，执行普通的机架感知分配
+     */
     private void assignWithRackMatching(Collection<TopicAssignmentState> assignmentStates,
                                         Map<String, List<TopicPartition>> assignment) {
 
@@ -183,6 +263,20 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         );
     }
 
+    /**
+     * 为具有相同分区数的多个主题执行协同分区的机架感知分配
+     * @param consumers 消费者及其机架信息的映射
+     * @param numPartitions 每个主题的分区数
+     * @param assignmentStates 需要协同分配的主题状态集合
+     * @param assignment 最终的分配结果映射
+     * 
+     * 实现细节：
+     * 1. 维护一个剩余可分配的消费者集合
+     * 2. 对每个分区号：
+     *    - 寻找第一个机架匹配且还能分配更多分区的消费者
+     *    - 将所有主题的该分区号分配给找到的消费者
+     *    - 如果消费者达到配额，从剩余集合中移除
+     */
     private void assignCoPartitionedWithRackMatching(LinkedHashMap<String, Optional<String>> consumers,
                                                      int numPartitions,
                                                      Collection<TopicAssignmentState> assignmentStates,
@@ -213,6 +307,16 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         assignmentState.onAssigned(consumer, partitions);
     }
 
+    /**
+     * 获取消费者到机架的映射关系
+     * @param subscriptions 消费者订阅信息
+     * @return 返回消费者ID到机架ID的映射
+     * 
+     * 实现细节：
+     * 1. 创建消费者到机架的映射
+     * 2. 遍历所有消费者的订阅信息
+     * 3. 如果消费者指定了非空的机架ID，添加到映射中
+     */
     private Map<String, String> consumerRacks(Map<String, Subscription> subscriptions) {
         Map<String, String> consumerRacks = new HashMap<>(subscriptions.size());
         subscriptions.forEach((memberId, subscription) ->
@@ -220,6 +324,14 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         return consumerRacks;
     }
 
+    /**
+     * 主题分配状态内部类，维护单个主题的分配状态信息
+     * 包含：
+     * 1. 主题的基本信息
+     * 2. 消费者列表及其机架信息
+     * 3. 分区的机架分布信息
+     * 4. 分配进度和配额计算
+     */
     private class TopicAssignmentState {
         private final String topic;
         private final LinkedHashMap<String, Optional<String>> consumers;

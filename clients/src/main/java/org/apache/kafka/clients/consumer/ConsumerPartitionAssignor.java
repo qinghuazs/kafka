@@ -34,80 +34,84 @@ import java.util.Set;
 import static org.apache.kafka.clients.consumer.internals.AbstractStickyAssignor.DEFAULT_GENERATION;
 
 /**
- * This interface is used to define custom partition assignment for use in
- * {@link org.apache.kafka.clients.consumer.KafkaConsumer}. Members of the consumer group subscribe
- * to the topics they are interested in and forward their subscriptions to a Kafka broker serving
- * as the group coordinator. The coordinator selects one member to perform the group assignment and
- * propagates the subscriptions of all members to it. Then {@link #assign(Cluster, GroupSubscription)} is called
- * to perform the assignment and the results are forwarded back to each respective members
+ * 该接口用于在{@link org.apache.kafka.clients.consumer.KafkaConsumer}中定义自定义的分区分配策略。
+ * 消费者组的成员订阅他们感兴趣的主题，并将订阅信息转发给作为组协调器的Kafka broker。
+ * 协调器选择一个成员执行组分配，并将所有成员的订阅信息传递给它。
+ * 然后调用{@link #assign(Cluster, GroupSubscription)}执行分配，结果会返回给各个成员。
  * <p>
- * In some cases, it is useful to forward additional metadata to the assignor in order to make
- * assignment decisions. For this, you can override {@link #subscriptionUserData(Set)} and provide custom
- * userData in the returned Subscription. For example, to have a rack-aware assignor, an implementation
- * can use this user data to forward the rackId belonging to each member.
+ * 在某些情况下，向分配器传递额外的元数据以做出分配决策是很有用的。
+ * 为此，你可以重写{@link #subscriptionUserData(Set)}方法，并在返回的Subscription中提供自定义的userData。
+ * 例如，要实现机架感知的分配器，实现可以使用这个用户数据来转发每个成员所属的机架ID。
  * <p>
- * The implementation can extend {@link Configurable} to get configs from consumer.
+ * 实现类可以扩展{@link Configurable}接口以从消费者获取配置。
  */
 public interface ConsumerPartitionAssignor {
 
     /**
-     * Return serialized data that will be included in the {@link Subscription} sent to the leader
-     * and can be leveraged in {@link #assign(Cluster, GroupSubscription)} ((e.g. local host/rack information)
+     * 返回序列化的数据，这些数据将被包含在发送给leader的{@link Subscription}中，
+     * 并可以在{@link #assign(Cluster, GroupSubscription)}中被利用（例如本地主机/机架信息）
      *
-     * @param topics Topics subscribed to through {@link org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(java.util.Collection)}
-     *               and variants
-     * @return nullable subscription user data
+     * @param topics 通过{@link org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(java.util.Collection)}
+     *               及其变体订阅的主题
+     * @return 可为null的订阅用户数据
      */
     default ByteBuffer subscriptionUserData(Set<String> topics) {
         return null;
     }
 
     /**
-     * Perform the group assignment given the member subscriptions and current cluster metadata.
-     * @param metadata Current topic/broker metadata known by consumer
-     * @param groupSubscription Subscriptions from all members including metadata provided through {@link #subscriptionUserData(Set)}
-     * @return A map from the members to their respective assignments. This should have one entry
-     *         for each member in the input subscription map.
+     * 根据成员的订阅信息和当前集群元数据执行组分配。
+     * @param metadata 消费者已知的当前主题/broker元数据
+     * @param groupSubscription 所有成员的订阅信息，包括通过{@link #subscriptionUserData(Set)}提供的元数据
+     * @return 从成员到其各自分配的映射。输入订阅映射中的每个成员都应该有一个对应的条目。
      */
     GroupAssignment assign(Cluster metadata, GroupSubscription groupSubscription);
 
     /**
-     * Callback which is invoked when a group member receives its assignment from the leader.
-     * @param assignment The local member's assignment as provided by the leader in {@link #assign(Cluster, GroupSubscription)}
-     * @param metadata Additional metadata on the consumer (optional)
+     * 当组成员从leader接收到其分配时调用的回调函数。
+     * @param assignment leader在{@link #assign(Cluster, GroupSubscription)}中提供的本地成员的分配
+     * @param metadata 消费者的额外元数据（可选）
      */
     default void onAssignment(Assignment assignment, ConsumerGroupMetadata metadata) {
     }
 
     /**
-     * Indicate which rebalance protocol this assignor works with;
-     * By default it should always work with {@link RebalanceProtocol#EAGER}.
+     * 指示此分配器使用哪种重平衡协议；
+     * 默认情况下，它应该始终使用{@link RebalanceProtocol#EAGER}。
      */
     default List<RebalanceProtocol> supportedProtocols() {
         return Collections.singletonList(RebalanceProtocol.EAGER);
     }
 
     /**
-     * Return the version of the assignor which indicates how the user metadata encodings
-     * and the assignment algorithm gets evolved.
+     * 返回分配器的版本，该版本表示用户元数据编码和分配算法如何演进。
      */
     default short version() {
         return (short) 0;
     }
 
     /**
-     * Unique name for this assignor (e.g. "range" or "roundrobin" or "sticky"). Note, this is not required
-     * to be the same as the class name specified in {@link ConsumerConfig#PARTITION_ASSIGNMENT_STRATEGY_CONFIG}
-     * @return non-null unique name
+     * 此分配器的唯一名称（例如"range"或"roundrobin"或"sticky"）。
+     * 注意，这不需要与{@link ConsumerConfig#PARTITION_ASSIGNMENT_STRATEGY_CONFIG}中指定的类名相同
+     * @return 非空的唯一名称
      */
     String name();
 
+    /**
+     * 表示消费者的订阅信息，包含订阅的主题列表和可选的用户自定义数据
+     */
     final class Subscription {
+        // 消费者订阅的主题列表
         private final List<String> topics;
+        // 用户自定义数据，可用于传递额外的元数据信息
         private final ByteBuffer userData;
+        // 当前消费者已经拥有的分区列表
         private final List<TopicPartition> ownedPartitions;
+        // 消费者所在的机架ID，用于机架感知的分区分配
         private final Optional<String> rackId;
+        // 消费者的静态成员ID，用于静态成员管理
         private Optional<String> groupInstanceId;
+        // 消费者组的世代ID，用于跟踪重平衡事件
         private final Optional<Integer> generationId;
 
         public Subscription(List<String> topics, ByteBuffer userData, List<TopicPartition> ownedPartitions, int generationId, Optional<String> rackId) {
@@ -172,8 +176,13 @@ public interface ConsumerPartitionAssignor {
         }
     }
 
+    /**
+     * 表示分区分配的结果，包含分配给消费者的分区列表和可选的用户自定义数据
+     */
     final class Assignment {
+        // 分配给消费者的主题分区列表
         private final List<TopicPartition> partitions;
+        // 用户自定义数据，可用于传递额外的分配相关信息
         private final ByteBuffer userData;
 
         public Assignment(List<TopicPartition> partitions, ByteBuffer userData) {
@@ -202,7 +211,11 @@ public interface ConsumerPartitionAssignor {
         }
     }
 
+    /**
+     * 表示消费者组的订阅信息，包含所有消费者的订阅详情
+     */
     final class GroupSubscription {
+        // 消费者ID到其订阅信息的映射
         private final Map<String, Subscription> subscriptions;
 
         public GroupSubscription(Map<String, Subscription> subscriptions) {
@@ -221,7 +234,11 @@ public interface ConsumerPartitionAssignor {
         }
     }
 
+    /**
+     * 表示消费者组的分配结果，包含所有消费者的分区分配详情
+     */
     final class GroupAssignment {
+        // 消费者ID到其分配结果的映射
         private final Map<String, Assignment> assignments;
 
         public GroupAssignment(Map<String, Assignment> assignments) {
@@ -241,21 +258,18 @@ public interface ConsumerPartitionAssignor {
     }
 
     /**
-     * The rebalance protocol defines partition assignment and revocation semantics. The purpose is to establish a
-     * consistent set of rules that all consumers in a group follow in order to transfer ownership of a partition.
-     * {@link ConsumerPartitionAssignor} implementors can claim supporting one or more rebalance protocols via the
-     * {@link ConsumerPartitionAssignor#supportedProtocols()}, and it is their responsibility to respect the rules
-     * of those protocols in their {@link ConsumerPartitionAssignor#assign(Cluster, GroupSubscription)} implementations.
-     * Failures to follow the rules of the supported protocols would lead to runtime error or undefined behavior.
+     * 重平衡协议定义了分区分配和撤销的语义。其目的是建立一套一致的规则，
+     * 使组内所有消费者在转移分区所有权时都遵循这些规则。
+     * {@link ConsumerPartitionAssignor}的实现者可以通过{@link ConsumerPartitionAssignor#supportedProtocols()}
+     * 声明支持一个或多个重平衡协议，并且他们有责任在其{@link ConsumerPartitionAssignor#assign(Cluster, GroupSubscription)}
+     * 实现中遵守这些协议的规则。不遵守支持的协议规则将导致运行时错误或未定义的行为。
      *
-     * The {@link RebalanceProtocol#EAGER} rebalance protocol requires a consumer to always revoke all its owned
-     * partitions before participating in a rebalance event. It therefore allows a complete reshuffling of the assignment.
+     * {@link RebalanceProtocol#EAGER}重平衡协议要求消费者在参与重平衡事件之前必须撤销其拥有的所有分区。
+     * 因此，它允许对分配进行完全重新洗牌。
      *
-     * {@link RebalanceProtocol#COOPERATIVE} rebalance protocol allows a consumer to retain its currently owned
-     * partitions before participating in a rebalance event. The assignor should not reassign any owned partitions
-     * immediately, but instead may indicate consumers the need for partition revocation so that the revoked
-     * partitions can be reassigned to other consumers in the next rebalance event. This is designed for sticky assignment
-     * logic which attempts to minimize partition reassignment with cooperative adjustments.
+     * {@link RebalanceProtocol#COOPERATIVE}重平衡协议允许消费者在参与重平衡事件之前保留其当前拥有的分区。
+     * 分配器不应立即重新分配任何已拥有的分区，而是可以向消费者指示需要撤销分区，以便在下一次重平衡事件中
+     * 将撤销的分区重新分配给其他消费者。这是为粘性分配逻辑设计的，它试图通过协作调整来最小化分区重新分配。
      */
     enum RebalanceProtocol {
         EAGER((byte) 0), COOPERATIVE((byte) 1);
@@ -283,19 +297,30 @@ public interface ConsumerPartitionAssignor {
     }
 
     /**
-     * Get a list of configured instances of {@link org.apache.kafka.clients.consumer.ConsumerPartitionAssignor}
-     * based on the class names/types specified by {@link org.apache.kafka.clients.consumer.ConsumerConfig#PARTITION_ASSIGNMENT_STRATEGY_CONFIG}
+     * 根据{@link org.apache.kafka.clients.consumer.ConsumerConfig#PARTITION_ASSIGNMENT_STRATEGY_CONFIG}
+     * 指定的类名/类型获取已配置的{@link org.apache.kafka.clients.consumer.ConsumerPartitionAssignor}实例列表
+     */
+    /**
+     * 根据提供的分配器类名列表和配置，创建并返回分区分配器实例列表
+     * 
+     * @param assignorClasses 分配器类名列表，可以是类名字符串或Class对象
+     * @param configs 分配器的配置信息
+     * @return 已配置的分区分配器实例列表
+     * @throws KafkaException 当分配器类加载失败或配置无效时
      */
     static List<ConsumerPartitionAssignor> getAssignorInstances(List<String> assignorClasses, Map<String, Object> configs) {
+        // 用于存储创建的分配器实例
         List<ConsumerPartitionAssignor> assignors = new ArrayList<>();
-        // a map to store assignor name -> assignor class name
+        // 用于检查分配器名称是否重复的映射（分配器名称 -> 分配器类名）
         Map<String, String> assignorNameMap = new HashMap<>();
 
+        // 如果没有提供分配器类列表，返回空列表
         if (assignorClasses == null)
             return assignors;
 
+        // 遍历所有提供的分配器类
         for (Object klass : assignorClasses) {
-            // first try to get the class if passed in as a string
+            // 如果提供的是类名字符串，尝试加载对应的类
             if (klass instanceof String) {
                 try {
                     klass = Utils.loadClass((String) klass, Object.class);
@@ -304,17 +329,24 @@ public interface ConsumerPartitionAssignor {
                 }
             }
 
+            // 如果是Class类型，创建实例并进行配置
             if (klass instanceof Class<?>) {
+                // 创建分配器实例
                 Object assignor = Utils.newInstance((Class<?>) klass);
+                // 如果实现了Configurable接口，应用配置
                 if (assignor instanceof Configurable)
                     ((Configurable) assignor).configure(configs);
 
+                // 检查是否是ConsumerPartitionAssignor的实例
                 if (assignor instanceof ConsumerPartitionAssignor) {
+                    // 获取分配器名称
                     String assignorName = ((ConsumerPartitionAssignor) assignor).name();
+                    // 检查分配器名称是否重复
                     if (assignorNameMap.containsKey(assignorName)) {
                         throw new KafkaException("The assignor name: '" + assignorName + "' is used in more than one assignor: " +
                             assignorNameMap.get(assignorName) + ", " + assignor.getClass().getName());
                     }
+                    // 记录分配器名称和类名的映射，并添加到结果列表
                     assignorNameMap.put(assignorName, assignor.getClass().getName());
                     assignors.add((ConsumerPartitionAssignor) assignor);
                 } else {

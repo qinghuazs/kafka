@@ -20,15 +20,48 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 
 import java.util.Locale;
 
+/**
+ * 消息确认类型枚举
+ * 定义了消费者确认消息处理结果的不同状态
+ * 
+ * 设计原理：
+ * 1. 提供明确的消息处理结果标识
+ * 2. 支持不同的错误处理策略
+ * 3. 实现可靠的消息投递
+ */
 @InterfaceStability.Evolving
 public enum AcknowledgeType {
-    /** The record was consumed successfully. */
+    /** 
+     * 消息已成功消费
+     * 表示消费者已经正确处理了消息，可以提交偏移量
+     * 
+     * 使用场景：
+     * 1. 消息处理完全成功
+     * 2. 消息内容符合预期
+     * 3. 业务逻辑执行无异常
+     */
     ACCEPT((byte) 1),
 
-    /** The record was not consumed successfully. Release it for another delivery attempt. */
+    /** 
+     * 消息消费失败，释放以便重新投递
+     * 表示当前消费失败，但允许重新投递给其他消费者或稍后重试
+     * 
+     * 使用场景：
+     * 1. 临时性的处理失败
+     * 2. 需要重试的业务异常
+     * 3. 消费者负载过高需要转移消息
+     */
     RELEASE((byte) 2),
 
-    /** The record was not consumed successfully. Reject it and do not release it for another delivery attempt. */
+    /** 
+     * 消息消费失败，拒绝并且不再重试
+     * 表示消息无法处理，直接丢弃而不是重新投递
+     * 
+     * 使用场景：
+     * 1. 消息格式错误
+     * 2. 业务规则校验失败
+     * 3. 不可重试的严重错误
+     */
     REJECT((byte) 3);
 
     public final byte id;

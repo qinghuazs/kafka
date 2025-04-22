@@ -22,15 +22,40 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * A metadata struct containing the consumer group information.
- * Note: Any change to this class is considered public and requires a KIP.
+ * 消费者组元数据类
+ * 包含了消费者组的核心信息，用于标识和管理消费者组成员
+ * 注意：对此类的任何修改都被视为公共API变更，需要通过KIP流程
+ * 
+ * 设计原理：
+ * 1. 提供消费者组的唯一标识
+ * 2. 跟踪组成员的生命周期
+ * 3. 支持静态成员机制
+ * 
+ * 核心属性：
+ * 1. groupId: 消费者组的唯一标识
+ * 2. generationId: 标识rebalance的代际
+ * 3. memberId: 消费者在组内的唯一标识
+ * 4. groupInstanceId: 静态成员的实例ID
  */
 public class ConsumerGroupMetadata {
+    // 消费者组ID，用于标识一个消费者组
     private final String groupId;
+    // 消费者组的代际ID，每次rebalance都会递增
     private final int generationId;
+    // 消费者在组内的成员ID，由coordinator分配
     private final String memberId;
+    // 静态成员ID，用于支持静态成员机制
     private final Optional<String> groupInstanceId;
 
+    /**
+     * 完整构造函数
+     * 创建包含所有元数据信息的消费者组元数据对象
+     *
+     * @param groupId 消费者组ID，不能为null
+     * @param generationId 代际ID，标识rebalance的版本
+     * @param memberId 成员ID，不能为null
+     * @param groupInstanceId 静态成员ID，不能为null但可以为空Optional
+     */
     public ConsumerGroupMetadata(String groupId,
                                  int generationId,
                                  String memberId,
@@ -41,6 +66,13 @@ public class ConsumerGroupMetadata {
         this.groupInstanceId = Objects.requireNonNull(groupInstanceId, "group.instance.id can't be null");
     }
 
+    /**
+     * 简化构造函数
+     * 仅使用groupId创建元数据对象，其他字段使用默认值
+     * 适用于首次加入组或不需要完整元数据的场景
+     *
+     * @param groupId 消费者组ID
+     */
     public ConsumerGroupMetadata(String groupId) {
         this(groupId,
             JoinGroupRequest.UNKNOWN_GENERATION_ID,
@@ -48,18 +80,34 @@ public class ConsumerGroupMetadata {
             Optional.empty());
     }
 
+    /**
+     * 获取消费者组ID
+     * @return 消费者组的唯一标识
+     */
     public String groupId() {
         return groupId;
     }
 
+    /**
+     * 获取代际ID
+     * @return 当前的代际ID，标识rebalance的版本
+     */
     public int generationId() {
         return generationId;
     }
 
+    /**
+     * 获取成员ID
+     * @return 消费者在组内的唯一标识
+     */
     public String memberId() {
         return memberId;
     }
 
+    /**
+     * 获取静态成员ID
+     * @return 静态成员的实例ID，如果不是静态成员则为空
+     */
     public Optional<String> groupInstanceId() {
         return groupInstanceId;
     }

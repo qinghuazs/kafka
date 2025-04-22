@@ -23,63 +23,79 @@ import org.apache.kafka.common.TopicPartition;
 import java.util.Map;
 
 /**
- * A plugin interface that allows you to intercept (and possibly mutate) records received by the consumer. A primary use-case
- * is for third-party components to hook into the consumer applications for custom monitoring, logging, etc.
- *
+ * 消费者拦截器接口
+ * 
+ * 这是一个插件接口，允许你拦截（并可能修改）消费者接收到的记录。主要用于让第三方组件
+ * 接入消费者应用程序，实现自定义的监控、日志记录等功能。
+ * 
  * <p>
- * This class will get consumer config properties via <code>configure()</code> method, including clientId assigned
- * by KafkaConsumer if not specified in the consumer config. The interceptor implementation needs to be aware that it will be
- * sharing consumer config namespace with other interceptors and serializers, and ensure that there are no conflicts.
- * <p>
- * Exceptions thrown by ConsumerInterceptor methods will be caught, logged, but not propagated further. As a result, if
- * the user configures the interceptor with the wrong key and value type parameters, the consumer will not throw an exception,
- * just log the errors.
- * <p>
- * ConsumerInterceptor callbacks are called from the same thread that invokes
- * {@link org.apache.kafka.clients.consumer.KafkaConsumer#poll(java.time.Duration)}.
- * <p>
- * Implement {@link org.apache.kafka.common.ClusterResourceListener} to receive cluster metadata once it's available. Please see the class documentation for ClusterResourceListener for more information.
- * Implement {@link org.apache.kafka.common.metrics.Monitorable} to enable the interceptor to register metrics. The following tags are automatically added to
- * all metrics registered: <code>config</code> set to <code>interceptor.classes</code>, and <code>class</code> set to the ConsumerInterceptor class name.
+ * 拦截器的主要特点和使用说明：
+ * 1. 配置：通过<code>configure()</code>方法获取消费者配置属性，包括KafkaConsumer分配的clientId
+ *    （如果消费者配置中未指定）。实现时需注意与其他拦截器和序列化器共享配置命名空间，避免冲突。
+ * 
+ * 2. 异常处理：拦截器方法抛出的异常会被捕获并记录日志，但不会向上传播。这意味着即使用户配置了
+ *    错误的键值类型参数，消费者也不会抛出异常，只会记录错误日志。
+ * 
+ * 3. 线程安全：拦截器的回调方法与调用{@link org.apache.kafka.clients.consumer.KafkaConsumer#poll(java.time.Duration)}
+ *    的线程是同一个线程，确保了操作的线程安全性。
+ * 
+ * 4. 扩展功能：
+ *    - 实现{@link org.apache.kafka.common.ClusterResourceListener}接口可以在集群元数据可用时收到通知
+ *    - 实现{@link org.apache.kafka.common.metrics.Monitorable}接口可以注册度量指标
+ *      所有注册的度量指标会自动添加以下标签：
+ *      - <code>config</code>设置为<code>interceptor.classes</code>
+ *      - <code>class</code>设置为ConsumerInterceptor类名
  */
 public interface ConsumerInterceptor<K, V> extends Configurable, AutoCloseable {
 
     /**
-     * This is called just before the records are returned by
-     * {@link org.apache.kafka.clients.consumer.KafkaConsumer#poll(java.time.Duration)}
-     * <p>
-     * This method is allowed to modify consumer records, in which case the new records will be
-     * returned. There is no limitation on number of records that could be returned from this
-     * method. I.e., the interceptor can filter the records or generate new records.
-     * <p>
-     * Any exception thrown by this method will be caught by the caller, logged, but not propagated to the client.
-     * <p>
-     * Since the consumer may run multiple interceptors, a particular interceptor's onConsume() callback will be called
-     * in the order specified by {@link org.apache.kafka.clients.consumer.ConsumerConfig#INTERCEPTOR_CLASSES_CONFIG}.
-     * The first interceptor in the list gets the consumed records, the following interceptor will be passed the records returned
-     * by the previous interceptor, and so on. Since interceptors are allowed to modify records, interceptors may potentially get
-     * the records already modified by other interceptors. However, building a pipeline of mutable interceptors that depend on the output
-     * of the previous interceptor is discouraged, because of potential side-effects caused by interceptors potentially failing
-     * to modify the record and throwing an exception. If one of the interceptors in the list throws an exception from onConsume(),
-     * the exception is caught, logged, and the next interceptor is called with the records returned by the last successful interceptor
-     * in the list, or otherwise the original consumed records.
+     * 消息消费拦截方法
+     * 
+     * 此方法在{@link org.apache.kafka.clients.consumer.KafkaConsumer#poll(java.time.Duration)}
+     * 返回记录之前被调用。
+     * 
+     * 功能特点：
+     * 1. 记录修改：可以修改消费者记录，修改后的记录将被返回给消费者
+     * 2. 记录过滤：可以过滤掉不需要的记录
+     * 3. 记录生成：可以生成新的记录，返回记录数量没有限制
+     * 
+     * 多拦截器处理机制：
+     * 1. 执行顺序：按照{@link org.apache.kafka.clients.consumer.ConsumerConfig#INTERCEPTOR_CLASSES_CONFIG}
+     *    中指定的顺序依次调用各个拦截器
+     * 2. 数据流转：第一个拦截器获取原始记录，后续拦截器依次处理前一个拦截器返回的记录
+     * 3. 异常处理：如果某个拦截器抛出异常，异常会被捕获并记录日志，然后使用最后一个成功的
+     *    拦截器返回的记录（或原始记录）继续调用下一个拦截器
+     * 
+     * 注意事项：
+     * 不建议构建依赖于前一个拦截器输出的可变拦截器管道，因为拦截器可能会修改失败并抛出异常，
+     * 导致不可预期的副作用。
      *
-     * @param records records to be consumed by the client or records returned by the previous interceptors in the list.
-     * @return records that are either modified by the interceptor or same as records passed to this method.
+     * @param records 待消费的记录或前一个拦截器返回的记录
+     * @return 经过拦截器处理后的记录（可能是修改后的记录，也可能与输入记录相同）
      */
     ConsumerRecords<K, V> onConsume(ConsumerRecords<K, V> records);
 
     /**
-     * This is called when offsets get committed.
-     * <p>
-     * Any exception thrown by this method will be ignored by the caller.
+     * 偏移量提交拦截方法
+     * 
+     * 当消费者提交偏移量时调用此方法。可以用于：
+     * 1. 监控偏移量提交情况
+     * 2. 记录提交日志
+     * 3. 执行自定义的偏移量处理逻辑
+     * 
+     * 注意：此方法抛出的任何异常都会被调用者忽略
      *
-     * @param offsets A map of offsets by partition with associated metadata
+     * @param offsets 包含每个分区偏移量及其元数据的映射
      */
     void onCommit(Map<TopicPartition, OffsetAndMetadata> offsets);
 
     /**
-     * This is called when interceptor is closed
+     * 拦截器关闭方法
+     * 
+     * 当拦截器被关闭时调用此方法，用于：
+     * 1. 释放资源
+     * 2. 关闭连接
+     * 3. 执行清理工作
      */
     void close();
 }

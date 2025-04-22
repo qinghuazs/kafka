@@ -22,72 +22,67 @@ import java.time.Duration;
 import java.util.Collection;
 
 /**
- * A callback interface that the user can implement to trigger custom actions when the set of partitions assigned to the
- * consumer changes.
+ * 一个回调接口，用户可以实现该接口来在消费者分配的分区集合发生变化时触发自定义操作。
  * <p>
- * This is applicable when the consumer is having Kafka auto-manage group membership. If the consumer directly assigns partitions,
- * those partitions will never be reassigned and this callback is not applicable.
+ * 此接口仅适用于由Kafka自动管理消费者组成员关系的情况。如果消费者直接分配分区，
+ * 这些分区将永远不会被重新分配，此回调接口也就不适用。
  * <p>
- * When Kafka is managing the group membership, a partition re-assignment will be triggered any time the members of the group change or the subscription
- * of the members changes. This can occur when processes die, new process instances are added or old instances come back to life after failure.
- * Partition re-assignments can also be triggered by changes affecting the subscribed topics (e.g. when the number of partitions is
- * administratively adjusted).
+ * 当Kafka管理组成员关系时，在以下情况下会触发分区重新分配：组成员发生变化或成员的订阅发生变化。
+ * 这可能发生在进程死亡、新进程实例被添加或失败的旧实例重新恢复后。
+ * 分区重新分配也可能由影响已订阅主题的变化触发（例如，当分区数量被管理员调整时）。
  * <p>
- * There are many uses for this functionality. One common use is saving offsets in a custom store. By saving offsets in
- * the {@link #onPartitionsRevoked(Collection)} call we can ensure that any time partition assignment changes
- * the offset gets saved.
+ * 此功能有许多用途。一个常见用途是在自定义存储中保存偏移量。通过在
+ * {@link #onPartitionsRevoked(Collection)}调用中保存偏移量，我们可以确保在分区分配发生变化时
+ * 偏移量得到保存。
  * <p>
- * Another use is flushing out any kind of cache of intermediate results the consumer may be keeping. For example,
- * consider a case where the consumer is subscribed to a topic containing user page views, and the goal is to count the
- * number of page views per user for each five minute window. Let's say the topic is partitioned by the user id so that
- * all events for a particular user go to a single consumer instance. The consumer can keep in memory a running
- * tally of actions per user and only flush these out to a remote data store when its cache gets too big. However if a
- * partition is reassigned it may want to automatically trigger a flush of this cache, before the new owner takes over
- * consumption.
+ * 另一个用途是刷新消费者可能保持的任何中间结果缓存。例如，
+ * 考虑这样一个场景：消费者订阅了包含用户页面浏览的主题，目标是统计每个用户在每个五分钟窗口内的
+ * 页面浏览次数。假设主题按用户ID进行分区，这样特定用户的所有事件都会发送到单个消费者实例。
+ * 消费者可以在内存中保持每个用户操作的运行计数，只在缓存变得太大时才将其刷新到远程数据存储。
+ * 但是如果分区被重新分配，它可能希望在新的所有者接管消费之前自动触发此缓存的刷新。
  * <p>
- * This callback will only execute in the user thread as part of the {@link Consumer#poll(java.time.Duration) poll(long)} call
- * whenever partition assignment changes.
+ * 此回调仅在分区分配发生变化时，作为{@link Consumer#poll(java.time.Duration) poll(long)}调用的一部分
+ * 在用户线程中执行。
  * <p>
- * Under normal conditions, if a partition is reassigned from one consumer to another, then the old consumer will
- * always invoke {@link #onPartitionsRevoked(Collection) onPartitionsRevoked} for that partition prior to the new consumer
- * invoking {@link #onPartitionsAssigned(Collection) onPartitionsAssigned} for the same partition. So if offsets or other state is saved in the
- * {@link #onPartitionsRevoked(Collection) onPartitionsRevoked} call by one consumer member, it will be always accessible by the time the
- * other consumer member taking over that partition and triggering its {@link #onPartitionsAssigned(Collection) onPartitionsAssigned} callback to load the state.
+ * 在正常情况下，如果一个分区从一个消费者重新分配给另一个消费者，则旧消费者将
+ * 始终在新消费者为同一分区调用{@link #onPartitionsAssigned(Collection) onPartitionsAssigned}之前
+ * 调用{@link #onPartitionsRevoked(Collection) onPartitionsRevoked}。因此，如果在
+ * {@link #onPartitionsRevoked(Collection) onPartitionsRevoked}调用中由一个消费者成员保存了偏移量或其他状态，
+ * 它将在接管该分区的其他消费者成员触发其{@link #onPartitionsAssigned(Collection) onPartitionsAssigned}回调以加载状态时始终可访问。
  * <p>
- * You can think of revocation as a graceful way to give up ownership of a partition. In some cases, the consumer may not have an opportunity to do so.
- * For example, if the session times out, then the partitions may be reassigned before we have a chance to revoke them gracefully.
- * For this case, we have a third callback {@link #onPartitionsLost(Collection)}. The difference between this function and
- * {@link #onPartitionsRevoked(Collection)} is that upon invocation of {@link #onPartitionsLost(Collection)}, the partitions
- * may already be owned by some other members in the group and therefore users would not be able to commit its consumed offsets for example.
- * Users could implement these two functions differently (by default,
- * {@link #onPartitionsLost(Collection)} will be calling {@link #onPartitionsRevoked(Collection)} directly); for example, in the
- * {@link #onPartitionsLost(Collection)} we should not need to store the offsets since we know these partitions are no longer owned by the consumer
- * at that time.
+ * 您可以将撤销视为优雅地放弃分区所有权的方式。在某些情况下，消费者可能没有机会这样做。
+ * 例如，如果会话超时，则可能在我们有机会优雅地撤销分区之前重新分配分区。
+ * 对于这种情况，我们有第三个回调{@link #onPartitionsLost(Collection)}。这个函数与
+ * {@link #onPartitionsRevoked(Collection)}的区别在于，在调用{@link #onPartitionsLost(Collection)}时，
+ * 这些分区可能已经被组中的其他成员拥有，因此用户将无法提交其消费的偏移量。
+ * 用户可以不同地实现这两个函数（默认情况下，
+ * {@link #onPartitionsLost(Collection)}将直接调用{@link #onPartitionsRevoked(Collection)}）；例如，在
+ * {@link #onPartitionsLost(Collection)}中，我们不需要存储偏移量，因为我们知道这些分区不再由消费者拥有。
  * <p>
- * During a rebalance event, the {@link #onPartitionsAssigned(Collection) onPartitionsAssigned} function will always be triggered exactly once when
- * the rebalance completes. That is, even if there is no newly assigned partitions for a consumer member, its {@link #onPartitionsAssigned(Collection) onPartitionsAssigned}
- * will still be triggered with an empty collection of partitions. As a result this function can be used also to notify when a rebalance event has happened.
- * With eager rebalancing, {@link #onPartitionsRevoked(Collection)} will always be called at the start of a rebalance. On the other hand, {@link #onPartitionsLost(Collection)}
- * will only be called when there were non-empty partitions that were lost.
- * With cooperative rebalancing, {@link #onPartitionsRevoked(Collection)} and {@link #onPartitionsLost(Collection)}
- * will only be triggered when there are non-empty partitions revoked or lost from this consumer member during a rebalance event.
+ * 在重平衡事件期间，{@link #onPartitionsAssigned(Collection) onPartitionsAssigned}函数将在
+ * 重平衡完成时始终被精确触发一次。也就是说，即使消费者成员没有新分配的分区，其
+ * {@link #onPartitionsAssigned(Collection) onPartitionsAssigned}仍将被触发，但带有一个空的分区集合。
+ * 因此，此函数也可用于通知重平衡事件已发生。
+ * 在急切重平衡中，{@link #onPartitionsRevoked(Collection)}将始终在重平衡开始时被调用。另一方面，
+ * {@link #onPartitionsLost(Collection)}仅在有非空分区丢失时才会被调用。
+ * 在协作重平衡中，{@link #onPartitionsRevoked(Collection)}和{@link #onPartitionsLost(Collection)}
+ * 仅在重平衡事件期间从该消费者成员撤销或丢失非空分区时才会被触发。
  * <p>
- * It is possible
- * for a {@link org.apache.kafka.common.errors.WakeupException} or {@link org.apache.kafka.common.errors.InterruptException}
- * to be raised from one of these nested invocations. In this case, the exception will be propagated to the current
- * invocation of {@link KafkaConsumer#poll(java.time.Duration)} in which this callback is being executed. This means it is not
- * necessary to catch these exceptions and re-attempt to wakeup or interrupt the consumer thread.
- * Also if the callback function implementation itself throws an exception, this exception will be propagated to the current
- * invocation of {@link KafkaConsumer#poll(java.time.Duration)} as well.
+ * 在这些嵌套调用中可能会抛出{@link org.apache.kafka.common.errors.WakeupException}或
+ * {@link org.apache.kafka.common.errors.InterruptException}。在这种情况下，异常将传播到
+ * 正在执行此回调的当前{@link KafkaConsumer#poll(java.time.Duration)}调用。这意味着
+ * 不需要捕获这些异常并重新尝试唤醒或中断消费者线程。
+ * 同样，如果回调函数实现本身抛出异常，该异常也将传播到当前的
+ * {@link KafkaConsumer#poll(java.time.Duration)}调用。
  * <p>
- * Note that callbacks only serve as notification of an assignment change.
- * They cannot be used to express acceptance of the change.
- * Hence throwing an exception from a callback does not affect the assignment in any way,
- * as it will be propagated all the way up to the {@link KafkaConsumer#poll(java.time.Duration)} call.
- * If user captures the exception in the caller, the callback is still assumed successful and no further retries will be attempted.
+ * 请注意，回调仅作为分配变更的通知。
+ * 它们不能用于表示对变更的接受。
+ * 因此，从回调抛出异常不会以任何方式影响分配，
+ * 因为它将一直传播到{@link KafkaConsumer#poll(java.time.Duration)}调用。
+ * 如果用户在调用者中捕获异常，回调仍被认为是成功的，不会尝试进一步重试。
  * <p>
  *
- * Here is pseudo-code for a callback implementation for saving offsets:
+ * 以下是用于保存偏移量的回调实现的示例代码：
  * <pre>
  * {@code
  *   public class SaveOffsetsOnRebalance implements ConsumerRebalanceListener {
@@ -98,17 +93,17 @@ import java.util.Collection;
  *       }
  *
  *       public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
- *           // save the offsets in an external store using some custom code not described here
+ *           // 使用这里未描述的自定义代码将偏移量保存在外部存储中
  *           for(TopicPartition partition: partitions)
  *              saveOffsetInExternalStore(consumer.position(partition));
  *       }
  *
  *       public void onPartitionsLost(Collection<TopicPartition> partitions) {
- *           // do not need to save the offsets since these partitions are probably owned by other consumers already
+ *           // 不需要保存偏移量，因为这些分区可能已经被其他消费者拥有
  *       }
  *
  *       public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
- *           // read the offsets from an external store using some custom code not described here
+ *           // 使用这里未描述的自定义代码从外部存储读取偏移量
  *           for(TopicPartition partition: partitions)
  *              consumer.seek(partition, readOffsetFromExternalStore(partition));
  *       }
@@ -119,80 +114,74 @@ import java.util.Collection;
 public interface ConsumerRebalanceListener {
 
     /**
-     * A callback method the user can implement to provide handling of offset commits to a customized store.
-     * This method will be called during a rebalance operation when the consumer has to give up some partitions.
-     * It can also be called when consumer is being closed ({@link KafkaConsumer#close(Duration)})
-     * or is unsubscribing ({@link KafkaConsumer#unsubscribe()}).
-     * It is recommended that offsets should be committed in this callback to either Kafka or a
-     * custom offset store to prevent duplicate data.
+     * 用户可以实现此回调方法来处理向自定义存储提交偏移量。
+     * 此方法将在重平衡操作期间当消费者必须放弃某些分区时被调用。
+     * 它也可能在消费者被关闭（{@link KafkaConsumer#close(Duration)}）
+     * 或取消订阅（{@link KafkaConsumer#unsubscribe()}）时被调用。
+     * 建议在此回调中将偏移量提交到Kafka或自定义偏移量存储中，以防止数据重复。
      * <p>
-     * In eager rebalancing, it will always be called at the start of a rebalance and after the consumer stops fetching data.
-     * In cooperative rebalancing, it will be called at the end of a rebalance on the set of partitions being revoked iff the set is non-empty.
-     * For examples on usage of this API, see Usage Examples section of {@link KafkaConsumer KafkaConsumer}.
+     * 在急切重平衡中，它将始终在重平衡开始时和消费者停止获取数据后被调用。
+     * 在协作重平衡中，它将在重平衡结束时对被撤销的分区集合调用（当且仅当该集合非空时）。
+     * 有关此API的使用示例，请参见{@link KafkaConsumer KafkaConsumer}的使用示例部分。
      * <p>
-     * It is common for the revocation callback to use the consumer instance in order to commit offsets. It is possible
-     * for a {@link org.apache.kafka.common.errors.WakeupException} or {@link org.apache.kafka.common.errors.InterruptException}
-     * to be raised from one of these nested invocations. In this case, the exception will be propagated to the current
-     * invocation of {@link KafkaConsumer#poll(java.time.Duration)} in which this callback is being executed. This means it is not
-     * necessary to catch these exceptions and re-attempt to wakeup or interrupt the consumer thread.
+     * 撤销回调通常使用消费者实例来提交偏移量。在这些嵌套调用中可能会抛出
+     * {@link org.apache.kafka.common.errors.WakeupException}或{@link org.apache.kafka.common.errors.InterruptException}。
+     * 在这种情况下，异常将传播到正在执行此回调的当前{@link KafkaConsumer#poll(java.time.Duration)}调用。
+     * 这意味着不需要捕获这些异常并重新尝试唤醒或中断消费者线程。
      *
-     * @param partitions The list of partitions that were assigned to the consumer and now need to be revoked (may not
-     *                   include all currently assigned partitions, i.e. there may still be some partitions left)
-     * @throws org.apache.kafka.common.errors.WakeupException If raised from a nested call to {@link KafkaConsumer}
-     * @throws org.apache.kafka.common.errors.InterruptException If raised from a nested call to {@link KafkaConsumer}
+     * @param partitions 分配给消费者但现在需要被撤销的分区列表（可能不包括所有当前分配的分区，
+     *                   即可能仍有一些分区保留）
+     * @throws org.apache.kafka.common.errors.WakeupException 如果从对{@link KafkaConsumer}的嵌套调用中抛出
+     * @throws org.apache.kafka.common.errors.InterruptException 如果从对{@link KafkaConsumer}的嵌套调用中抛出
      */
     void onPartitionsRevoked(Collection<TopicPartition> partitions);
 
     /**
-     * A callback method the user can implement to provide handling of customized offsets on completion of a successful
-     * partition re-assignment. This method will be called after the partition re-assignment completes and before the
-     * consumer starts fetching data, and only as the result of a {@link Consumer#poll(java.time.Duration) poll(long)} call.
+     * 用户可以实现此回调方法来在成功完成分区重新分配时处理自定义偏移量。
+     * 此方法将在分区重新分配完成后且在消费者开始获取数据之前被调用，
+     * 并且仅作为{@link Consumer#poll(java.time.Duration) poll(long)}调用的结果。
      * <p>
-     * It is guaranteed that under normal conditions all the processes in a consumer group will execute their
-     * {@link #onPartitionsRevoked(Collection)} callback before any instance executes its
-     * {@link #onPartitionsAssigned(Collection)} callback. During exceptional scenarios, partitions may be migrated
-     * without the old owner being notified (i.e. their {@link #onPartitionsRevoked(Collection)} callback not triggered),
-     * and later when the old owner consumer realized this event, the {@link #onPartitionsLost(Collection)} callback
-     * will be triggered by the consumer then.
+     * 在正常情况下，保证消费者组中的所有进程都将在任何实例执行其
+     * {@link #onPartitionsAssigned(Collection)}回调之前执行它们的
+     * {@link #onPartitionsRevoked(Collection)}回调。在异常情况下，分区可能会在
+     * 未通知旧所有者的情况下迁移（即其{@link #onPartitionsRevoked(Collection)}回调未触发），
+     * 当旧所有者消费者意识到此事件时，消费者将触发{@link #onPartitionsLost(Collection)}回调。
      * <p>
-     * It is common for the assignment callback to use the consumer instance in order to query offsets. It is possible
-     * for a {@link org.apache.kafka.common.errors.WakeupException} or {@link org.apache.kafka.common.errors.InterruptException}
-     * to be raised from one of these nested invocations. In this case, the exception will be propagated to the current
-     * invocation of {@link KafkaConsumer#poll(java.time.Duration)} in which this callback is being executed. This means it is not
-     * necessary to catch these exceptions and re-attempt to wakeup or interrupt the consumer thread.
+     * 分配回调通常使用消费者实例来查询偏移量。在这些嵌套调用中可能会抛出
+     * {@link org.apache.kafka.common.errors.WakeupException}或{@link org.apache.kafka.common.errors.InterruptException}。
+     * 在这种情况下，异常将传播到正在执行此回调的当前{@link KafkaConsumer#poll(java.time.Duration)}调用。
+     * 这意味着不需要捕获这些异常并重新尝试唤醒或中断消费者线程。
      *
-     * @param partitions The list of partitions that are now assigned to the consumer (previously owned partitions will
-     *                   NOT be included, i.e. this list will only include newly added partitions)
-     * @throws org.apache.kafka.common.errors.WakeupException If raised from a nested call to {@link KafkaConsumer}
-     * @throws org.apache.kafka.common.errors.InterruptException If raised from a nested call to {@link KafkaConsumer}
+     * @param partitions 现在分配给消费者的分区列表（不包括之前拥有的分区，
+     *                   即此列表将仅包括新添加的分区）
+     * @throws org.apache.kafka.common.errors.WakeupException 如果从对{@link KafkaConsumer}的嵌套调用中抛出
+     * @throws org.apache.kafka.common.errors.InterruptException 如果从对{@link KafkaConsumer}的嵌套调用中抛出
      */
     void onPartitionsAssigned(Collection<TopicPartition> partitions);
 
     /**
-     * A callback method you can implement to provide handling of cleaning up resources for partitions that have already
-     * been reassigned to other consumers. This method will not be called during normal execution as the owned partitions would
-     * first be revoked by calling the {@link ConsumerRebalanceListener#onPartitionsRevoked}, before being reassigned
-     * to other consumers during a rebalance event. However, during exceptional scenarios when the consumer realized that it
-     * does not own this partition any longer, i.e. not revoked via a normal rebalance event, then this method would be invoked.
+     * 您可以实现此回调方法来处理已重新分配给其他消费者的分区的资源清理。
+     * 在正常执行期间不会调用此方法，因为在重平衡事件期间重新分配给其他消费者之前，
+     * 拥有的分区首先会通过调用{@link ConsumerRebalanceListener#onPartitionsRevoked}被撤销。
+     * 但是，在异常情况下，当消费者意识到它不再拥有此分区时（即不是通过正常重平衡事件撤销），
+     * 则会调用此方法。
      * <p>
-     * For example, this function is called if a consumer's session timeout has expired, or if a fatal error has been
-     * received indicating the consumer is no longer part of the group.
+     * 例如，如果消费者的会话超时已过期，或者收到表明消费者不再是组成员的致命错误，
+     * 则会调用此函数。
      * <p>
-     * By default it will just trigger {@link ConsumerRebalanceListener#onPartitionsRevoked}; for users who want to distinguish
-     * the handling logic of revoked partitions v.s. lost partitions, they can override the default implementation.
+     * 默认情况下，它将只触发{@link ConsumerRebalanceListener#onPartitionsRevoked}；
+     * 对于想要区分已撤销分区和丢失分区的处理逻辑的用户，他们可以覆盖默认实现。
      * <p>
-     * It is possible
-     * for a {@link org.apache.kafka.common.errors.WakeupException} or {@link org.apache.kafka.common.errors.InterruptException}
-     * to be raised from one of these nested invocations. In this case, the exception will be propagated to the current
-     * invocation of {@link KafkaConsumer#poll(java.time.Duration)} in which this callback is being executed. This means it is not
-     * necessary to catch these exceptions and re-attempt to wakeup or interrupt the consumer thread.
+     * 在这些嵌套调用中可能会抛出{@link org.apache.kafka.common.errors.WakeupException}或
+     * {@link org.apache.kafka.common.errors.InterruptException}。在这种情况下，异常将传播到
+     * 正在执行此回调的当前{@link KafkaConsumer#poll(java.time.Duration)}调用。这意味着
+     * 不需要捕获这些异常并重新尝试唤醒或中断消费者线程。
      *
-     * @param partitions The list of partitions that were assigned to the consumer and now have been reassigned
-     *                   to other consumers. With the current protocol this will always include all of the consumer's
-     *                   previously assigned partitions, but this may change in future protocols (ie there would still
-     *                   be some partitions left)
-     * @throws org.apache.kafka.common.errors.WakeupException If raised from a nested call to {@link KafkaConsumer}
-     * @throws org.apache.kafka.common.errors.InterruptException If raised from a nested call to {@link KafkaConsumer}
+     * @param partitions 之前分配给消费者但现在已重新分配给其他消费者的分区列表。
+     *                   使用当前协议，这将始终包括消费者之前分配的所有分区，
+     *                   但这在未来的协议中可能会改变（即可能仍有一些分区保留）
+     * @throws org.apache.kafka.common.errors.WakeupException 如果从对{@link KafkaConsumer}的嵌套调用中抛出
+     * @throws org.apache.kafka.common.errors.InterruptException 如果从对{@link KafkaConsumer}的嵌套调用中抛出
      */
     default void onPartitionsLost(Collection<TopicPartition> partitions) {
         onPartitionsRevoked(partitions);

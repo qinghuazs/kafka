@@ -21,109 +21,130 @@ import org.apache.kafka.common.header.Header;
 import java.nio.ByteBuffer;
 
 /**
- * A log record is a tuple consisting of a unique offset in the log, a sequence number assigned by
- * the producer, a timestamp, a key and a value.
+ * Kafka日志记录接口，表示一条完整的消息记录。
+ * 每条记录由以下核心组件构成：
+ * 1. 唯一的日志偏移量(offset) - 标识记录在日志中的位置
+ * 2. 生产者分配的序列号(sequence) - 用于消息排序和重复数据删除
+ * 3. 时间戳(timestamp) - 记录创建或接收的时间
+ * 4. 键值对(key-value) - 实际消息内容
+ * 5. 头部信息(headers) - 可选的元数据信息
  */
 public interface Record {
 
+    /** 空的消息头数组，用于在不需要头部信息时返回 */
     Header[] EMPTY_HEADERS = new Header[0];
 
     /**
-     * The offset of this record in the log
-     * @return the offset
+     * 获取记录在日志中的偏移量。
+     * 偏移量是一个单调递增的值，用于唯一标识分区内的消息位置。
+     * @return 记录的偏移量
      */
     long offset();
 
     /**
-     * Get the sequence number assigned by the producer.
-     * @return the sequence number
+     * 获取生产者分配的序列号。
+     * 序列号用于确保消息的顺序性，也用于检测重复消息。
+     * @return 序列号
      */
     int sequence();
 
     /**
-     * Get the size in bytes of this record.
-     * @return the size of the record in bytes
+     * 获取记录的总字节大小。
+     * 包括记录的所有组成部分：头部、键、值等。
+     * @return 记录的总字节数
      */
     int sizeInBytes();
 
     /**
-     * Get the record's timestamp.
-     * @return the record's timestamp
+     * 获取记录的时间戳。
+     * 时间戳可以是消息创建时间或broker接收时间，具体取决于配置。
+     * @return 记录的时间戳
      */
     long timestamp();
 
     /**
-     * Raise a {@link org.apache.kafka.common.errors.CorruptRecordException} if the record does not have a valid checksum.
+     * 验证记录的完整性。
+     * 通过校验和检查确保记录未被损坏，如果校验和无效则抛出CorruptRecordException异常。
      */
     void ensureValid();
 
     /**
-     * Get the size in bytes of the key.
-     * @return the size of the key, or -1 if there is no key
+     * 获取键的字节大小。
+     * @return 键的字节数，如果没有键则返回-1
      */
     int keySize();
 
     /**
-     * Check whether this record has a key
-     * @return true if there is a key, false otherwise
+     * 检查记录是否包含键。
+     * @return 如果有键返回true，否则返回false
      */
     boolean hasKey();
 
     /**
-     * Get the record's key.
-     * @return the key or null if there is none
+     * 获取记录的键。
+     * 键通常用于消息的分区路由和数据分组。
+     * @return 记录的键，如果没有则返回null
      */
     ByteBuffer key();
 
     /**
-     * Get the size in bytes of the value.
-     * @return the size of the value, or -1 if the value is null
+     * 获取值的字节大小。
+     * @return 值的字节数，如果值为null则返回-1
      */
     int valueSize();
 
     /**
-     * Check whether a value is present (i.e. if the value is not null)
-     * @return true if so, false otherwise
+     * 检查记录是否包含值。
+     * @return 如果有值返回true，否则返回false
      */
     boolean hasValue();
 
     /**
-     * Get the record's value
-     * @return the (nullable) value
+     * 获取记录的值。
+     * 值包含了实际的消息内容。
+     * @return 记录的值，可能为null
      */
     ByteBuffer value();
 
     /**
-     * Check whether the record has a particular magic. For versions prior to 2, the record contains its own magic,
-     * so this function can be used to check whether it matches a particular value. For version 2 and above, this
-     * method returns true if the passed magic is greater than or equal to 2.
+     * 检查记录是否具有特定的magic值。
+     * magic值用于标识记录格式的版本：
+     * - 版本2之前：每条记录包含自己的magic值
+     * - 版本2及以上：如果传入的magic值大于等于2则返回true
      *
-     * @param magic the magic value to check
-     * @return true if the record has a magic field (versions prior to 2) and the value matches
+     * @param magic 要检查的magic值
+     * @return 如果记录的magic值匹配则返回true
      */
     boolean hasMagic(byte magic);
 
     /**
-     * For versions prior to 2, check whether the record is compressed (and therefore
-     * has nested record content). For versions 2 and above, this always returns false.
-     * @return true if the magic is lower than 2 and the record is compressed
+     * 检查记录是否被压缩。
+     * 仅适用于版本2之前的记录：
+     * - 版本2之前：可能包含嵌套的记录内容
+     * - 版本2及以上：始终返回false
+     * 
+     * @return 如果magic值小于2且记录被压缩则返回true
      */
     boolean isCompressed();
 
     /**
-     * For versions prior to 2, the record contained a timestamp type attribute. This method can be
-     * used to check whether the value of that attribute matches a particular timestamp type. For versions
-     * 2 and above, this will always be false.
+     * 检查记录的时间戳类型。
+     * 仅适用于版本2之前的记录：
+     * - 版本2之前：记录包含时间戳类型属性
+     * - 版本2及以上：始终返回false
      *
-     * @param timestampType the timestamp type to compare
-     * @return true if the version is lower than 2 and the timestamp type matches
+     * @param timestampType 要比较的时间戳类型
+     * @return 如果版本小于2且时间戳类型匹配则返回true
      */
     boolean hasTimestampType(TimestampType timestampType);
 
     /**
-     * Get the headers. For magic versions 1 and below, this always returns an empty array.
+     * 获取记录的所有头部信息。
+     * 头部信息用于存储消息的元数据：
+     * - magic版本1及以下：始终返回空数组
+     * - magic版本2及以上：返回实际的头部信息
      *
-     * @return the array of headers
+     * @return 头部信息数组
      */
     Header[] headers();
 }

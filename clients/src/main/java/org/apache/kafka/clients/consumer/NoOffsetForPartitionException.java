@@ -23,28 +23,43 @@ import java.util.Collections;
 import java.util.Set;
 
 /**
- * Indicates that there is no stored offset for a partition and no defined offset
- * reset policy.
+ * 该异常表示某个分区没有存储的偏移量（offset）且没有定义重置策略的情况。
+ * 在Kafka消费者组中，每个分区的消费位置都由offset来跟踪。当出现以下情况时会抛出此异常：
+ * 1. 消费者组首次消费某个分区，且没有之前提交的offset
+ * 2. 之前的offset已过期被删除
+ * 3. 消费者配置中未设置auto.offset.reset属性来处理无offset情况
  */
 public class NoOffsetForPartitionException extends InvalidOffsetException {
 
+    // 序列化版本号，用于序列化和反序列化时的版本控制
     private static final long serialVersionUID = 1L;
 
+    // 存储所有没有offset的分区集合
     private final Set<TopicPartition> partitions;
 
+    /**
+     * 单个分区无offset异常的构造函数
+     * @param partition 没有定义offset的分区
+     */
     public NoOffsetForPartitionException(TopicPartition partition) {
         super("Undefined offset with no reset policy for partition: " + partition);
+        // 使用Collections.singleton创建单元素不可变集合
         this.partitions = Collections.singleton(partition);
     }
 
+    /**
+     * 多个分区无offset异常的构造函数
+     * @param partitions 没有定义offset的分区集合
+     */
     public NoOffsetForPartitionException(Collection<TopicPartition> partitions) {
         super("Undefined offset with no reset policy for partitions: " + partitions);
+        // 创建分区集合的不可变副本
         this.partitions = Set.copyOf(partitions);
     }
 
     /**
-     * returns all partitions for which no offsets are defined.
-     * @return all partitions without offsets
+     * 获取所有没有定义offset的分区集合
+     * @return 返回没有offset的分区的不可变集合
      */
     public Set<TopicPartition> partitions() {
         return partitions;

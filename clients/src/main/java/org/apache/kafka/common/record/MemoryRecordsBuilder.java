@@ -1221,3 +1221,21 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         return this.baseSequence;
     }
 }
+
+```mermaid
+flowchart TD
+    A[开始] --> B{验证控制记录}
+    B -->|是控制记录| C[检查偏移量]
+    B -->|不是控制记录| D[抛出异常]
+    C -->|偏移量有效| E[检查时间戳]
+    C -->|偏移量无效| D[抛出异常]
+    E -->|时间戳有效| F{检查消息格式}
+    E -->|时间戳无效| D[抛出异常]
+    F -->|支持记录头部| G[设置基准时间戳]
+    F -->|不支持记录头部| D[抛出异常]
+    G --> H{选择追加方式}
+    H -->|新版本格式| I[追加默认记录]
+    H -->|旧版本格式| J[追加传统记录]
+    I --> K[结束]
+    J --> K[结束]
+```

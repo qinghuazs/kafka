@@ -49,96 +49,77 @@ import java.util.Set;
 import static org.apache.kafka.common.utils.Utils.propsToMap;
 
 /**
- * A client that consumes records from a Kafka cluster using a share group.
+ * 一个使用共享组（share group）从Kafka集群消费记录的客户端。
  * <p>
- *     <em>This is an early access feature under development which is introduced by KIP-932.
- *     It is not suitable for production use until it is fully implemented and released.</em>
+ *     <em>这是由KIP-932引入的早期访问功能，目前正在开发中。
+ *     在完全实现和发布之前，不适合在生产环境中使用。</em>
  *
- * <h3>Cross-Version Compatibility</h3>
- * This client can communicate with brokers that are a version that supports share groups. You will receive an
- * {@link org.apache.kafka.common.errors.UnsupportedVersionException} when invoking an API that is not
- * available on the running broker version.
+ * <h3>跨版本兼容性</h3>
+ * 该客户端可以与支持共享组功能的broker版本进行通信。如果调用当前运行的broker版本不支持的API，
+ * 将会收到{@link org.apache.kafka.common.errors.UnsupportedVersionException}异常。
  *
- * <h3><a name="sharegroups">Share Groups and Topic Subscriptions</a></h3>
- * Kafka uses the concept of <i>share groups</i> to allow a pool of consumers to cooperate on the work of
- * consuming and processing records. All consumer instances sharing the same {@code group.id} will be part of
- * the same share group.
+ * <h3><a name="sharegroups">共享组和主题订阅</a></h3>
+ * Kafka使用<i>共享组</i>的概念来允许一组消费者协同工作，共同消费和处理记录。所有共享相同{@code group.id}
+ * 的消费者实例将属于同一个共享组。
  * <p>
- * Each consumer in a group can dynamically set the list of topics it wants to subscribe to using the
- * {@link #subscribe(Collection)} method. Kafka will deliver each message in the subscribed topics to one
- * consumer in the share group. Unlike consumer groups, share groups balance the partitions between all
- * members of the share group permitting multiple consumers to consume from the same partitions. This gives
- * more flexible sharing of records than a consumer group, at the expense of record ordering.
+ * 组内的每个消费者可以使用{@link #subscribe(Collection)}方法动态设置它想要订阅的主题列表。
+ * Kafka会将订阅主题中的每条消息传递给共享组中的一个消费者。与消费者组不同，共享组允许多个消费者
+ * 从同一个分区消费数据，这在分区间实现了更灵活的记录共享，但代价是失去了记录的顺序保证。
  * <p>
- * Membership in a share group is maintained dynamically: if a consumer fails, the partitions assigned to
- * it will be reassigned to other consumers in the same group. Similarly, if a new consumer joins the group,
- * the partition assignment is re-evaluated and partitions can be moved from existing consumers to the new one.
- * This is known as <i>rebalancing</i> the group and is discussed in more detail <a href="#failures">below</a>.
- * Group rebalancing is also used when new partitions are added to one of the subscribed topics. The group will
- * automatically detect the new partitions through periodic metadata refreshes and assign them to the members of the group.
+ * 共享组的成员关系是动态维护的：如果一个消费者失败，分配给它的分区将被重新分配给同组中的其他消费者。
+ * 同样，如果有新的消费者加入组，分区分配会被重新评估，分区可能会从现有消费者转移到新消费者。
+ * 这个过程被称为<i>重平衡（rebalancing）</i>，详细内容将在<a href="#failures">下文</a>讨论。
+ * 当订阅的主题添加了新的分区时，也会触发组重平衡。组会通过定期的元数据刷新自动检测新分区，
+ * 并将它们分配给组内成员。
  * <p>
- * Conceptually, you can think of a share group as a single logical subscriber made up of multiple consumers.
- * In fact, in other messaging systems, a share group is roughly equivalent to a <em>durable shared subscription</em>.
- * You can have multiple share groups and consumer groups independently consuming from the same topics.
+ * 从概念上讲，你可以将共享组视为由多个消费者组成的单个逻辑订阅者。
+ * 实际上，在其他消息系统中，共享组大致相当于<em>持久共享订阅（durable shared subscription）</em>。
+ * 你可以拥有多个共享组和消费者组独立地从相同的主题消费数据。
  *
- * <h3><a name="failures">Detecting Consumer Failures</a></h3>
- * After subscribing to a set of topics, the consumer will automatically join the group when {@link #poll(Duration)} is
- * invoked. This method is designed to ensure consumer liveness. As long as you continue to call poll, the consumer
- * will stay in the group and continue to receive records from the partitions it was assigned. Under the covers,
- * the consumer sends periodic heartbeats to the broker. If the consumer crashes or is unable to send heartbeats for
- * the duration of the share group's session time-out, then the consumer will be considered dead and its partitions
- * will be reassigned.
+ * <h3><a name="failures">检测消费者故障</a></h3>
+ * 订阅一组主题后，消费者会在调用{@link #poll(Duration)}时自动加入组。这个方法的设计目的是确保消费者的存活状态。
+ * 只要持续调用poll，消费者就会保持在组内并继续从分配给它的分区接收记录。在底层，消费者会定期向broker发送心跳。
+ * 如果消费者崩溃或在共享组的会话超时时间内无法发送心跳，则该消费者将被视为已死亡，其分区将被重新分配。
  * <p>
- * It is also possible that the consumer could encounter a "livelock" situation where it is continuing to send heartbeats
- * in the background, but no progress is being made. To prevent the consumer from holding onto its partitions
- * indefinitely in this case, we provide a liveness detection mechanism using the {@code max.poll.interval.ms} setting.
- * If you don't call poll at least as frequently as this, the client will proactively leave the share group.
- * So to stay in the group, you must continue to call poll.
+ * 消费者也可能遇到"活锁（livelock）"情况，即它在后台继续发送心跳，但实际上没有处理进度。为了防止消费者在这种
+ * 情况下无限期地持有其分区，我们提供了一个使用{@code max.poll.interval.ms}设置的存活检测机制。如果你没有
+ * 按照这个频率调用poll，客户端将主动离开共享组。因此，要保持在组内，你必须继续调用poll。
  *
- * <h3>Record Delivery and Acknowledgement</h3>
- * When a consumer in a share-group fetches records using {@link #poll(Duration)}, it receives available records from any
- * of the topic-partitions that match its subscriptions. Records are acquired for delivery to this consumer with a
- * time-limited acquisition lock. While a record is acquired, it is not available for another consumer. By default,
- * the lock duration is 30 seconds, but it can also be controlled using the group {@code group.share.record.lock.duration.ms}
- * configuration parameter. The idea is that the lock is automatically released once the lock duration has elapsed, and
- * then the record is available to be given to another consumer. The consumer which holds the lock can deal with it in
- * the following ways:
+ * <h3>记录传递和确认</h3>
+ * 当共享组中的消费者使用{@link #poll(Duration)}获取记录时，它会从匹配其订阅的任何主题分区接收可用记录。
+ * 记录在传递给该消费者时会获得一个时间限制的获取锁。当记录被获取时，其他消费者无法访问该记录。默认情况下，
+ * 锁定时间为30秒，但也可以通过组配置参数{@code group.share.record.lock.duration.ms}来控制。这个机制的思想是，
+ * 一旦锁定时间过期，锁会自动释放，然后记录可以被传递给另一个消费者。持有锁的消费者可以通过以下方式处理记录：
  * <ul>
- *     <li>The consumer can acknowledge successful processing of the record</li>
- *     <li>The consumer can release the record, which makes the record available for another delivery attempt</li>
- *     <li>The consumer can reject the record, which indicates that the record is unprocessable and does not make
- *     the record available for another delivery attempt</li>
- *     <li>The consumer can do nothing, in which case the lock is automatically released when the lock duration has elapsed</li>
+ *     <li>消费者可以确认记录已成功处理</li>
+ *     <li>消费者可以释放记录，使记录可以进行另一次传递尝试</li>
+ *     <li>消费者可以拒绝记录，表明该记录无法处理，且不会使该记录可用于另一次传递尝试</li>
+ *     <li>消费者可以不做任何操作，在这种情况下，当锁定时间过期时，锁会自动释放</li>
  * </ul>
- * The cluster limits the number of records acquired for consumers for each topic-partition in a share group. Once the limit
- * is reached, fetching records will temporarily yield no further records until the number of acquired records reduces,
- * as naturally happens when the locks time out. This limit is controlled by the broker configuration property
- * {@code group.share.record.lock.partition.limit}. By limiting the duration of the acquisition lock and automatically
- * releasing the locks, the broker ensures delivery progresses even in the presence of consumer failures.
+ * 集群对共享组中每个主题分区的消费者获取的记录数量有限制。一旦达到限制，获取记录将暂时不会返回更多记录，
+ * 直到已获取的记录数量减少（这种情况自然发生在锁超时时）。这个限制由broker配置属性
+ * {@code group.share.record.lock.partition.limit}控制。通过限制获取锁的持续时间并自动释放锁，
+ * broker确保即使在消费者发生故障的情况下，传递也能继续进行。
  * <p>
- * The consumer can choose to use implicit or explicit acknowledgement of the records it processes.
- * <p>If the application calls {@link #acknowledge(ConsumerRecord, AcknowledgeType)} for any record in the batch,
- * it is using <em>explicit acknowledgement</em>. In this case:
+ * 消费者可以选择使用隐式或显式确认来处理记录。
+ * <p>如果应用程序对批次中的任何记录调用{@link #acknowledge(ConsumerRecord, AcknowledgeType)}，
+ * 就是使用<em>显式确认</em>。在这种情况下：
  * <ul>
- *     <li>The application calls {@link #commitSync()} or {@link #commitAsync()} which commits the acknowledgements to Kafka.
- *     If any records in the batch were not acknowledged, they remain acquired and will be presented to the application
- *     in response to a future poll.</li>
- *     <li>The application calls {@link #poll(Duration)} without committing first, which commits the acknowledgements to
- *     Kafka asynchronously. In this case, no exception is thrown by a failure to commit the acknowledgement.
- *     If any records in the batch were not acknowledged, they remain acquired and will be presented to the application
- *     in response to a future poll.</li>
- *     <li>The application calls {@link #close()} which attempts to commit any pending acknowledgements and
- *     releases any remaining acquired records.</li>
+ *     <li>应用程序调用{@link #commitSync()}或{@link #commitAsync()}来将确认提交到Kafka。
+ *     如果批次中的任何记录未被确认，它们将保持获取状态，并在未来的poll中再次呈现给应用程序。</li>
+ *     <li>应用程序在不先提交的情况下调用{@link #poll(Duration)}，这会异步地将确认提交到Kafka。
+ *     在这种情况下，如果提交确认失败，不会抛出异常。如果批次中的任何记录未被确认，它们将保持获取状态，
+ *     并在未来的poll中再次呈现给应用程序。</li>
+ *     <li>应用程序调用{@link #close()}，这会尝试提交任何待处理的确认并释放所有剩余的已获取记录。</li>
  * </ul>
- * If the application does not call {@link #acknowledge(ConsumerRecord, AcknowledgeType)} for any record in the batch,
- * it is using <em>implicit acknowledgement</em>. In this case:
+ * 如果应用程序没有对批次中的任何记录调用{@link #acknowledge(ConsumerRecord, AcknowledgeType)}，
+ * 就是使用<em>隐式确认</em>。在这种情况下：
  * <ul>
- *     <li>The application calls {@link #commitSync()} or {@link #commitAsync()} which implicitly acknowledges all of
- *     the delivered records as processed successfully and commits the acknowledgements to Kafka.</li>
- *     <li>The application calls {@link #poll(Duration)} without committing, which also implicitly acknowledges all of
- *     the delivered records and commits the acknowledgements to Kafka asynchronously. In this case, no exception is
- *     thrown by a failure to commit the acknowledgements.</li>
- *     <li>The application calls {@link #close()}  which releases any acquired records without acknowledgement.</li>
+ *     <li>应用程序调用{@link #commitSync()}或{@link #commitAsync()}，这会隐式地确认所有已传递的记录
+ *     已成功处理，并将确认提交到Kafka。</li>
+ *     <li>应用程序在不提交的情况下调用{@link #poll(Duration)}，这也会隐式地确认所有已传递的记录，
+ *     并异步地将确认提交到Kafka。在这种情况下，如果提交确认失败，不会抛出异常。</li>
+ *     <li>应用程序调用{@link #close()}，这会释放所有已获取的记录而不进行确认。</li>
  * </ul>
  * <p>
  * The consumer guarantees that the records returned in the {@code ConsumerRecords} object for a specific topic-partition
@@ -261,27 +242,24 @@ import static org.apache.kafka.common.utils.Utils.propsToMap;
  *     remain acquired as part of the same delivery attempt and will be presented to the application in response to another poll.</li>
  * </ol>
  *
- * <h3>Reading Transactional Records</h3>
- * The way that share groups handle transactional records is controlled by the {@code group.share.isolation.level}</code>
- * configuration property. In a share group, the isolation level applies to the entire share group, not just individual
- * consumers.
+ * <h3>读取事务性记录</h3>
+ * 共享组处理事务性记录的方式由{@code group.share.isolation.level}配置属性控制。在共享组中，
+ * 隔离级别应用于整个共享组，而不仅仅是单个消费者。
  * <p>
- * In <code>read_uncommitted</code> isolation level, the share group consumes all non-transactional and transactional
- * records. The consumption is bounded by the high-water mark.
+ * 在<code>read_uncommitted</code>隔离级别下，共享组消费所有非事务性和事务性记录。
+ * 消费受高水位标记（high-water mark）的限制。
  * <p>
- * In <code>read_committed</code> isolation level (not yet supported), the share group only consumes non-transactional
- * records and committed transactional records. The set of records which are eligible to become in-flight records are
- * non-transactional records and committed transactional records only. The consumption is bounded by the last stable
- * offset, so an open transaction blocks the progress of the share group with read_committed isolation level.
+ * 在<code>read_committed</code>隔离级别下（目前尚不支持），共享组只消费非事务性记录和已提交的事务性记录。
+ * 只有非事务性记录和已提交的事务性记录才有资格成为正在处理的记录。消费受最后稳定偏移量的限制，
+ * 因此一个开放的事务会阻塞使用read_committed隔离级别的共享组的进度。
  *
- * <h3><a name="multithreaded">Multithreaded Processing</a></h3>
- * The consumer is NOT thread-safe. It is the responsibility of the user to ensure that multithreaded access
- * is properly synchronized. Unsynchronized access will result in {@link java.util.ConcurrentModificationException}.
+ * <h3><a name="multithreaded">多线程处理</a></h3>
+ * 消费者不是线程安全的。用户有责任确保多线程访问得到适当的同步。未同步的访问将导致
+ * {@link java.util.ConcurrentModificationException}异常。
  * <p>
- * The only exception to this rule is {@link #wakeup()} which can safely be used from an external thread to
- * interrupt an active operation. In this case, a {@link org.apache.kafka.common.errors.WakeupException} will be
- * thrown from the thread blocking on the operation. This can be used to shut down the consumer from another thread.
- * The following snippet shows the typical pattern:
+ * 这个规则的唯一例外是{@link #wakeup()}方法，它可以安全地从外部线程使用来中断活动操作。
+ * 在这种情况下，阻塞在操作上的线程将抛出{@link org.apache.kafka.common.errors.WakeupException}异常。
+ * 这可以用来从另一个线程关闭消费者。以下代码片段展示了典型的模式：
  *
  * <pre>
  * public class KafkaShareConsumerRunner implements Runnable {
@@ -298,17 +276,17 @@ import static org.apache.kafka.common.utils.Utils.propsToMap;
  *             consumer.subscribe(Arrays.asList("topic"));
  *             while (!closed.get()) {
  *                 ConsumerRecords records = consumer.poll(Duration.ofMillis(10000));
- *                 // Handle new records
+ *                 // 处理新记录
  *             }
  *         } catch (WakeupException e) {
- *             // Ignore exception if closing
+ *             // 如果正在关闭则忽略异常
  *             if (!closed.get()) throw e;
  *         } finally {
  *             consumer.close();
  *         }
  *     }
  *
- *     // Shutdown hook which can be called from a separate thread
+ *     // 可以从单独的线程调用的关闭钩子
  *     public void shutdown() {
  *         closed.set(true);
  *         consumer.wakeup();
@@ -316,26 +294,33 @@ import static org.apache.kafka.common.utils.Utils.propsToMap;
  * }
  * </pre>
  *
- * Then in a separate thread, the consumer can be shutdown by setting the closed flag and waking up the consumer.
+ * 然后在单独的线程中，可以通过设置closed标志并唤醒消费者来关闭消费者。
  * <pre>
  *     closed.set(true);
  *     consumer.wakeup();
  * </pre>
  *
  * <p>
- * Note that while it is possible to use thread interrupts instead of {@link #wakeup()} to abort a blocking operation
- * (in which case, {@link InterruptException} will be raised), we discourage their use since they may cause a clean
- * shutdown of the consumer to be aborted. Interrupts are mainly supported for those cases where using {@link #wakeup()}
- * is impossible, such as when a consumer thread is managed by code that is unaware of the Kafka client.
+ * 注意，虽然可以使用线程中断而不是{@link #wakeup()}来中止阻塞操作（在这种情况下，将引发{@link InterruptException}），
+ * 但我们不建议使用它们，因为它们可能导致消费者的清理关闭被中止。中断主要支持那些无法使用{@link #wakeup()}的情况，
+ * 例如当消费者线程由不知道Kafka客户端的代码管理时。
  * <p>
- * We have intentionally avoided implementing a particular threading model for processing. Various options for
- * multithreaded processing are possible, of which the most straightforward is to dedicate a thread to each consumer.
+ * 我们有意避免实现特定的线程处理模型。多线程处理有多种可能的选项，其中最直接的方式是为每个消费者
+ * 专门分配一个线程。
  */
 @InterfaceStability.Evolving
 public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
 
+    /**
+     * 共享消费者代理创建器，用于创建ShareConsumerDelegate实例
+     * 这是一个静态常量，所有KafkaShareConsumer实例共享同一个创建器
+     */
     private static final ShareConsumerDelegateCreator CREATOR = new ShareConsumerDelegateCreator();
 
+    /**
+     * 共享消费者代理对象，实现了具体的消费者功能
+     * 采用代理模式将具体实现委托给此对象，使主类保持简洁
+     */
     private final ShareConsumerDelegate<K, V> delegate;
 
     /**
@@ -350,6 +335,12 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      *
      * @param configs The consumer configs
      */
+    /**
+     * 使用配置映射创建共享消费者实例
+     * 
+     * @param configs 消费者配置，键值对形式，支持字符串或对应类型的对象值
+     *               例如：数值配置可以接受字符串"42"或整数42
+     */
     public KafkaShareConsumer(Map<String, Object> configs) {
         this(configs, null, null);
     }
@@ -362,6 +353,11 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * Note: after creating a {@code KafkaShareConsumer} you must always {@link #close()} it to avoid resource leaks.
      *
      * @param properties The consumer configuration properties
+     */
+    /**
+     * 使用Properties对象创建共享消费者实例
+     * 
+     * @param properties 消费者配置属性
      */
     public KafkaShareConsumer(Properties properties) {
         this(properties, null, null);
@@ -380,6 +376,13 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      *            won't be called in the consumer when the deserializer is passed in directly.
      * @param valueDeserializer The deserializer for value that implements {@link Deserializer}. The configure() method
      *            won't be called in the consumer when the deserializer is passed in directly.
+     */
+    /**
+     * 使用Properties对象和指定的键值反序列化器创建共享消费者实例
+     * 
+     * @param properties 消费者配置属性
+     * @param keyDeserializer 键的反序列化器，直接传入时不会调用其configure()方法
+     * @param valueDeserializer 值的反序列化器，直接传入时不会调用其configure()方法
      */
     public KafkaShareConsumer(Properties properties,
                               Deserializer<K> keyDeserializer,
@@ -400,6 +403,13 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * @param valueDeserializer The deserializer for value that implements {@link Deserializer}. The configure() method
      *            won't be called in the consumer when the deserializer is passed in directly.
      */
+    /**
+     * 使用配置映射和指定的键值反序列化器创建共享消费者实例
+     * 
+     * @param configs 消费者配置映射
+     * @param keyDeserializer 键的反序列化器，直接传入时不会调用其configure()方法
+     * @param valueDeserializer 值的反序列化器，直接传入时不会调用其configure()方法
+     */
     public KafkaShareConsumer(Map<String, Object> configs,
                               Deserializer<K> keyDeserializer,
                               Deserializer<V> valueDeserializer) {
@@ -407,12 +417,35 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
                 keyDeserializer, valueDeserializer);
     }
 
+    /**
+     * 使用ConsumerConfig对象和指定的键值反序列化器创建共享消费者实例
+     * 这是一个包级私有构造函数，主要供内部使用
+     * 
+     * @param config 消费者配置对象
+     * @param keyDeserializer 键的反序列化器
+     * @param valueDeserializer 值的反序列化器
+     */
     KafkaShareConsumer(ConsumerConfig config,
                               Deserializer<K> keyDeserializer,
                               Deserializer<V> valueDeserializer) {
         delegate = CREATOR.create(config, keyDeserializer, valueDeserializer);
     }
 
+    /**
+     * 使用完整参数集创建共享消费者实例
+     * 这是一个包级私有构造函数，主要用于测试和内部使用，提供了最大的灵活性
+     * 
+     * @param logContext 日志上下文
+     * @param clientId 客户端ID
+     * @param groupId 消费者组ID
+     * @param config 消费者配置
+     * @param keyDeserializer 键的反序列化器
+     * @param valueDeserializer 值的反序列化器
+     * @param time 时间实例，用于时间相关操作
+     * @param client Kafka客户端实例
+     * @param subscriptions 订阅状态管理器
+     * @param metadata 消费者元数据
+     */
     KafkaShareConsumer(final LogContext logContext,
                        final String clientId,
                        final String groupId,
@@ -433,6 +466,13 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * {@link #subscribe(Collection)}, or an empty set if no such call has been made.
      *
      * @return The set of topics currently subscribed to
+     */
+    /**
+     * 获取当前的主题订阅集合
+     * 返回最近一次调用subscribe()方法时使用的主题列表
+     * 如果从未调用过subscribe()，则返回空集合
+     * 
+     * @return 当前订阅的主题集合
      */
     @Override
     public Set<String> subscription() {
@@ -459,6 +499,15 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * @throws IllegalArgumentException if topics is null or contains null or empty elements
      * @throws KafkaException for any other unrecoverable errors
      */
+    /**
+     * 订阅指定的主题列表
+     * 这会替换当前的订阅（如果有的话），而不是增量添加
+     * 如果提供的主题列表为空，效果等同于调用unsubscribe()
+     * 
+     * @param topics 要订阅的主题列表
+     * @throws IllegalArgumentException 如果topics为null或包含null或空元素
+     * @throws KafkaException 发生其他不可恢复的错误时
+     */
     @Override
     public void subscribe(Collection<String> topics) {
         delegate.subscribe(topics);
@@ -468,6 +517,11 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * Unsubscribe from topics currently subscribed with {@link #subscribe(Collection)}.
      *
      * @throws KafkaException for any other unrecoverable errors
+     */
+    /**
+     * 取消当前通过subscribe()方法订阅的所有主题
+     * 
+     * @throws KafkaException 发生不可恢复的错误时
      */
     @Override
     public void unsubscribe() {
@@ -498,6 +552,23 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * @throws InterruptException if the calling thread is interrupted before or while this method is called
      * @throws KafkaException for any other unrecoverable errors
      */
+    /**
+     * 获取已订阅主题的数据
+     * 如果有可用记录，立即返回；否则，等待指定的超时时间
+     * 如果超时时间到期仍无可用记录，则返回空记录集
+     * 
+     * @param timeout 最大阻塞时间（不能大于Long.MAX_VALUE毫秒）
+     * @return 自上次获取以来订阅主题的记录映射
+     * @throws AuthenticationException 认证失败时
+     * @throws AuthorizationException 缺少对订阅主题或共享组的读取权限时
+     * @throws IllegalArgumentException 超时值为负数时
+     * @throws IllegalStateException 消费者未订阅任何主题时
+     * @throws ArithmeticException 超时值大于Long.MAX_VALUE毫秒时
+     * @throws InvalidTopicException 当前订阅包含无效主题时
+     * @throws WakeupException 在调用此方法之前或期间调用了wakeup()
+     * @throws InterruptException 调用线程在调用此方法之前或期间被中断
+     * @throws KafkaException 发生其他不可恢复的错误时
+     */
     @Override
     public ConsumerRecords<K, V> poll(Duration timeout) {
         return delegate.poll(timeout);
@@ -512,6 +583,13 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      *
      * @throws IllegalStateException if the record is not waiting to be acknowledged, or the consumer has already
      *                               used implicit acknowledgement
+     */
+    /**
+     * 确认上一次poll()调用返回的记录已成功处理
+     * 确认会在下一次commitSync()、commitAsync()或poll()调用时提交
+     * 
+     * @param record 要确认的记录
+     * @throws IllegalStateException 如果记录不在等待确认状态，或消费者已使用了隐式确认
      */
     @Override
     public void acknowledge(ConsumerRecord<K, V> record) {
@@ -529,6 +607,15 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      *
      * @throws IllegalStateException if the record is not waiting to be acknowledged, or the consumer has already
      *                               used implicit acknowledgement
+     */
+    /**
+     * 确认上一次poll()调用返回的记录的处理结果
+     * 使用显式确认模式，可以指定记录的处理结果类型
+     * 确认会在下一次commitSync()、commitAsync()或poll()调用时提交
+     * 
+     * @param record 要确认的记录
+     * @param type 确认类型，表明记录是否处理成功
+     * @throws IllegalStateException 如果记录不在等待确认状态，或消费者已使用了隐式确认
      */
     @Override
     public void acknowledge(ConsumerRecord<K, V> record, AcknowledgeType type) {
@@ -552,6 +639,16 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * @throws WakeupException if {@link #wakeup()} is called before or while this method is called
      * @throws InterruptException if the thread is interrupted while blocked
      * @throws KafkaException for any other unrecoverable errors
+     */
+    /**
+     * 同步提交已确认的记录
+     * 对于显式确认模式，提交通过acknowledge()方法指定的确认
+     * 对于隐式确认模式，提交最近一次poll()返回的所有记录
+     * 
+     * @return 每个主题分区的确认结果映射，如果确认失败则包含异常
+     * @throws WakeupException 在调用此方法之前或期间调用了wakeup()
+     * @throws InterruptException 线程在阻塞时被中断
+     * @throws KafkaException 发生其他不可恢复的错误时
      */
     @Override
     public Map<TopicIdPartition, Optional<KafkaException>> commitSync() {
@@ -578,6 +675,16 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * @throws InterruptException if the thread is interrupted while blocked
      * @throws KafkaException for any other unrecoverable errors
      */
+    /**
+     * 在指定超时时间内同步提交已确认的记录
+     * 
+     * @param timeout 等待确认完成的最大时间
+     * @return 每个主题分区的确认结果映射，如果确认失败则包含异常
+     * @throws IllegalArgumentException 如果timeout为负数
+     * @throws WakeupException 在调用此方法之前或期间调用了wakeup()
+     * @throws InterruptException 线程在阻塞时被中断
+     * @throws KafkaException 发生其他不可恢复的错误时
+     */
     @Override
     public Map<TopicIdPartition, Optional<KafkaException>> commitSync(Duration timeout) {
         return delegate.commitSync(timeout);
@@ -591,6 +698,13 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      *
      * @throws KafkaException for any other unrecoverable errors
      */
+    /**
+     * 异步提交已确认的记录
+     * 对于显式确认模式，提交通过acknowledge()方法指定的确认
+     * 对于隐式确认模式，提交最近一次poll()返回的所有记录
+     * 
+     * @throws KafkaException 发生不可恢复的错误时
+     */
     @Override
     public void commitAsync() {
         delegate.commitAsync();
@@ -600,6 +714,12 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * Sets the acknowledgement commit callback which can be used to handle acknowledgement completion.
      *
      * @param callback The acknowledgement commit callback
+     */
+    /**
+     * 设置确认提交回调
+     * 可用于处理确认完成事件
+     * 
+     * @param callback 确认提交回调函数
      */
     @Override
     public void setAcknowledgementCommitCallback(AcknowledgementCommitCallback callback) {
@@ -633,6 +753,18 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      *                        instance ID, though this error does not necessarily imply the
      *                        consumer client is otherwise unusable
      */
+    /**
+     * 获取客户端的唯一实例ID
+     * 此ID用于遥测目的，在初始生成后不会改变
+     * 
+     * @param timeout 等待客户端确定实例ID的最大时间
+     * @return 客户端的实例ID
+     * @throws IllegalArgumentException 如果timeout为负数
+     * @throws IllegalStateException 如果遥测未启用
+     * @throws WakeupException 在调用此方法之前或期间调用了wakeup()
+     * @throws InterruptException 线程在阻塞时被中断
+     * @throws KafkaException 尝试确定客户端实例ID时发生意外错误
+     */
     @Override
     public Uuid clientInstanceId(Duration timeout) {
         return delegate.clientInstanceId(timeout);
@@ -640,6 +772,11 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
 
     /**
      * Get the metrics kept by the consumer
+     */
+    /**
+     * 获取消费者维护的度量指标
+     * 
+     * @return 度量指标的名称到度量值的映射
      */
     @Override
     public Map<MetricName, ? extends Metric> metrics() {
@@ -664,6 +801,12 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      *
      * @param metric The application metric to register
      */
+    /**
+     * 注册应用度量指标以进行订阅
+     * 该指标将添加到客户端的度量指标中，并作为遥测数据发送到broker
+     * 
+     * @param metric 要注册的应用度量指标
+     */
     @Override
     public void registerMetricForSubscription(KafkaMetric metric) {
         delegate.registerMetricForSubscription(metric);
@@ -675,6 +818,12 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * benign operation and does not result in any action taken (no-op).
      *
      * @param metric The application metric to remove
+     */
+    /**
+     * 取消注册应用度量指标
+     * 该指标将从客户端的度量指标中移除，不再可用于订阅
+     * 
+     * @param metric 要移除的应用度量指标
      */
     @Override
     public void unregisterMetricFromSubscription(KafkaMetric metric) {
@@ -689,6 +838,14 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * @throws WakeupException if {@link #wakeup()} is called before or while this method is called
      * @throws InterruptException if the thread is interrupted before or while this method is called
      * @throws KafkaException for any other error during close
+     */
+    /**
+     * 关闭消费者，等待最多30秒进行必要的清理
+     * 在默认超时时间内尽可能提交确认
+     * 
+     * @throws WakeupException 在调用此方法之前或期间调用了wakeup()
+     * @throws InterruptException 线程在调用此方法之前或期间被中断
+     * @throws KafkaException 关闭期间发生其他错误时
      */
     @Override
     public void close() {
@@ -710,6 +867,15 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * @throws InterruptException if the thread is interrupted before or while this method is called
      * @throws KafkaException for any other error during close
      */
+    /**
+     * 在指定超时时间内尝试清理地关闭消费者
+     * 
+     * @param timeout 等待消费者优雅关闭的最大时间
+     * @throws IllegalArgumentException 如果timeout为负数
+     * @throws WakeupException 在调用此方法之前或期间调用了wakeup()
+     * @throws InterruptException 线程在调用此方法之前或期间被中断
+     * @throws KafkaException 关闭期间发生其他错误时
+     */
     @Override
     public void close(Duration timeout) {
         delegate.close(timeout);
@@ -721,20 +887,38 @@ public class KafkaShareConsumer<K, V> implements ShareConsumer<K, V> {
      * If no thread is blocking in a method which can throw {@link WakeupException},
      * the next call to such a method will raise it instead.
      */
+    /**
+     * 唤醒消费者
+     * 这是一个线程安全的方法，特别适用于中止长时间的poll操作
+     * 被阻塞的线程将抛出WakeupException异常
+     */
     @Override
     public void wakeup() {
         delegate.wakeup();
     }
 
-    // Functions below are for testing only
+    // 以下方法仅用于测试目的
+    
+    /**
+     * 获取客户端ID
+     * 仅用于测试
+     */
     String clientId() {
         return delegate.clientId();
     }
 
+    /**
+     * 获取度量注册表
+     * 仅用于测试
+     */
     Metrics metricsRegistry() {
         return delegate.metricsRegistry();
     }
 
+    /**
+     * 获取共享消费者度量指标
+     * 仅用于测试
+     */
     KafkaShareConsumerMetrics kafkaShareConsumerMetrics() {
         return delegate.kafkaShareConsumerMetrics();
     }
