@@ -39,7 +39,6 @@ import org.apache.kafka.common.utils.Timer;
 
 import java.time.Duration;
 import java.util.Collection;
-import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
