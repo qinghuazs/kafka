@@ -57,22 +57,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * A nioSelector interface for doing non-blocking multi-connection network I/O.
+ * 一个用于执行非阻塞多连接网络I/O的nioSelector接口。
  * <p>
- * This class works with {@link NetworkSend} and {@link NetworkReceive} to transmit size-delimited network requests and
- * responses.
+ * 该类与{@link NetworkSend}和{@link NetworkReceive}配合使用，用于传输大小固定的网络请求和响应。
  * <p>
- * A connection can be added to the nioSelector associated with an integer id by doing
+ * 可以通过以下方式将连接添加到与整数ID关联的nioSelector：
  *
  * <pre>
  * nioSelector.connect(&quot;42&quot;, new InetSocketAddress(&quot;google.com&quot;, server.port), 64000, 64000);
  * </pre>
  *
- * The connect call does not block on the creation of the TCP connection, so the connect method only begins initiating
- * the connection. The successful invocation of this method does not mean a valid connection has been established.
+ * connect调用不会阻塞TCP连接的创建，因此connect方法仅开始初始化连接。
+ * 成功调用此方法并不意味着已建立有效连接。
  *
- * Sending requests, receiving responses, processing connection completions, and disconnections on the existing
- * connections are all done using the <code>poll()</code> call.
+ * 在现有连接上发送请求、接收响应、处理连接完成和断开连接都是通过<code>poll()</code>调用完成的。
  *
  * <pre>
  * nioSelector.send(new NetworkSend(myDestination, myBytes));
@@ -80,20 +78,39 @@ import java.util.concurrent.atomic.AtomicReference;
  * nioSelector.poll(TIMEOUT_MS);
  * </pre>
  *
- * The nioSelector maintains several lists that are reset by each call to <code>poll()</code> which are available via
- * various getters. These are reset by each call to <code>poll()</code>.
+ * nioSelector维护着几个列表，这些列表在每次调用<code>poll()</code>时都会重置，
+ * 可以通过各种getter方法获取。这些列表在每次调用<code>poll()</code>时都会重置。
  *
- * This class is not thread safe!
+ * 此类不是线程安全的！
  */
 public class Selector implements Selectable, AutoCloseable {
 
+    /**
+     * 表示禁用空闲超时的常量值
+     */
     public static final long NO_IDLE_TIMEOUT_MS = -1;
+
+    /**
+     * 表示禁用身份验证失败延迟的常量值
+     */
     public static final int NO_FAILED_AUTHENTICATION_DELAY = 0;
 
+    /**
+     * 定义了关闭连接的不同模式
+     */
     private enum CloseMode {
-        GRACEFUL(true),            // process outstanding buffered receives, notify disconnect
-        NOTIFY_ONLY(true),         // discard any outstanding receives, notify disconnect
-        DISCARD_NO_NOTIFY(false);  // discard any outstanding receives, no disconnect notification
+        /**
+         * 优雅关闭：处理未完成的缓冲接收，并通知断开连接
+         */
+        GRACEFUL(true),
+        /**
+         * 仅通知：丢弃所有未完成的接收，并通知断开连接
+         */
+        NOTIFY_ONLY(true),
+        /**
+         * 静默丢弃：丢弃所有未完成的接收，不通知断开连接
+         */
+        DISCARD_NO_NOTIFY(false);
 
         final boolean notifyDisconnect;
 
@@ -102,47 +119,76 @@ public class Selector implements Selectable, AutoCloseable {
         }
     }
 
+    // 日志记录器
     private final Logger log;
+    // Java NIO选择器，用于多路复用I/O操作
     private final java.nio.channels.Selector nioSelector;
+    // 维护所有活动的Kafka通道，key为连接ID
     private final Map<String, KafkaChannel> channels;
+    // 存储显式静音的通道集合
     private final Set<KafkaChannel> explicitlyMutedChannels;
+    // 标记是否处于内存不足状态
     private boolean outOfMemory;
+    // 存储已完成发送的网络请求列表
     private final List<NetworkSend> completedSends;
+    // 存储已完成接收的网络响应，按接收顺序保存
     private final LinkedHashMap<String, NetworkReceive> completedReceives;
+    // 存储立即连接成功的SelectionKey集合
     private final Set<SelectionKey> immediatelyConnectedKeys;
+    // 正在关闭的通道映射，key为连接ID
     private final Map<String, KafkaChannel> closingChannels;
+    // 具有缓冲读取数据的SelectionKey集合
     private Set<SelectionKey> keysWithBufferedRead;
+    // 已断开连接的通道状态映射，key为连接ID
     private final Map<String, ChannelState> disconnected;
+    // 已成功连接的连接ID列表
     private final List<String> connected;
+    // 发送失败的连接ID列表
     private final List<String> failedSends;
+    // 时间工具类实例
     private final Time time;
+    // 选择器相关的度量指标
     private final SelectorMetrics sensors;
+    // 用于创建新通道的构建器
     private final ChannelBuilder channelBuilder;
+    // 单个网络接收的最大字节数
     private final int maxReceiveSize;
+    // 是否记录每个连接的时间统计
     private final boolean recordTimePerConnection;
+    // 空闲连接过期管理器
     private final IdleExpiryManager idleExpiryManager;
+    // 延迟关闭的身份验证失败通道，按关闭顺序保存
     private final LinkedHashMap<String, DelayedAuthenticationFailureClose> delayedClosingChannels;
+    // 内存池，用于管理网络操作的内存分配
     private final MemoryPool memoryPool;
+    // 内存不足阈值
     private final long lowMemThreshold;
+    // 身份验证失败后的延迟关闭时间(毫秒)
     private final int failedAuthenticationDelayMs;
 
-    //indicates if the previous call to poll was able to make progress in reading already-buffered data.
-    //this is used to prevent tight loops when memory is not available to read any more data
+    // 标记上一次poll调用是否在读取已缓冲数据时取得进展
+    // 用于防止在没有可用内存读取更多数据时陷入紧密循环
     private boolean madeReadProgressLastPoll = true;
 
     /**
-     * Create a new nioSelector
-     * @param maxReceiveSize Max size in bytes of a single network receive (use {@link NetworkReceive#UNLIMITED} for no limit)
-     * @param connectionMaxIdleMs Max idle connection time (use {@link #NO_IDLE_TIMEOUT_MS} to disable idle timeout)
-     * @param failedAuthenticationDelayMs Minimum time by which failed authentication response and channel close should be delayed by.
-     *                                    Use {@link #NO_FAILED_AUTHENTICATION_DELAY} to disable this delay.
-     * @param metrics Registry for Selector metrics
-     * @param time Time implementation
-     * @param metricGrpPrefix Prefix for the group of metrics registered by Selector
-     * @param metricTags Additional tags to add to metrics registered by Selector
-     * @param metricsPerConnection Whether or not to enable per-connection metrics
-     * @param channelBuilder Channel builder for every new connection
-     * @param logContext Context for logging with additional info
+     * 创建一个新的NIO选择器
+     * 
+     * 这是Selector类的主要构造函数，用于初始化一个非阻塞I/O多路复用器。该选择器负责管理多个网络连接，
+     * 提供高效的网络I/O操作。它支持连接生命周期管理、内存管理、度量收集等核心功能。
+     *
+     * @param maxReceiveSize 单个网络接收的最大字节数 (使用 {@link NetworkReceive#UNLIMITED} 表示无限制)
+     * @param connectionMaxIdleMs 连接最大空闲时间 (使用 {@link #NO_IDLE_TIMEOUT_MS} 禁用空闲超时)
+     * @param failedAuthenticationDelayMs 身份验证失败后延迟关闭连接的最小时间
+     *                                    使用 {@link #NO_FAILED_AUTHENTICATION_DELAY} 可禁用此延迟
+     * @param metrics 用于注册选择器度量指标的注册表
+     * @param time 时间实现类，用于时间相关操作
+     * @param metricGrpPrefix 选择器注册的度量指标组前缀
+     * @param metricTags 添加到选择器注册的度量指标的额外标签
+     * @param metricsPerConnection 是否启用每个连接的度量指标
+     * @param recordTimePerConnection 是否记录每个连接的时间统计信息
+     * @param channelBuilder 用于创建新连接的通道构建器
+     * @param memoryPool 用于网络操作的内存池
+     * @param logContext 带有附加信息的日志上下文
      */
     public Selector(int maxReceiveSize,
             long connectionMaxIdleMs,
@@ -157,34 +203,75 @@ public class Selector implements Selectable, AutoCloseable {
             MemoryPool memoryPool,
             LogContext logContext) {
         try {
+            // 创建Java NIO选择器实例，用于多路复用I/O操作
             this.nioSelector = java.nio.channels.Selector.open();
         } catch (IOException e) {
             throw new KafkaException(e);
         }
+        // 设置单个网络接收的最大字节数限制
         this.maxReceiveSize = maxReceiveSize;
+        // 设置时间工具实例，用于时间相关操作
         this.time = time;
+        // 初始化用于存储活动通道的映射，key为连接ID
         this.channels = new HashMap<>();
+        // 初始化显式静音的通道集合
         this.explicitlyMutedChannels = new HashSet<>();
+        // 初始化内存不足状态标记
         this.outOfMemory = false;
+        // 初始化已完成发送的请求列表
         this.completedSends = new ArrayList<>();
+        // 初始化已完成接收的响应映射，使用LinkedHashMap保持接收顺序
         this.completedReceives = new LinkedHashMap<>();
+        // 初始化立即连接成功的SelectionKey集合
         this.immediatelyConnectedKeys = new HashSet<>();
+        // 初始化正在关闭的通道映射
         this.closingChannels = new HashMap<>();
+        // 初始化具有缓冲读取数据的SelectionKey集合
         this.keysWithBufferedRead = new HashSet<>();
+        // 初始化已成功连接的连接ID列表
         this.connected = new ArrayList<>();
+        // 初始化已断开连接的通道状态映射
         this.disconnected = new HashMap<>();
+        // 初始化发送失败的连接ID列表
         this.failedSends = new ArrayList<>();
+        // 设置日志记录器
         this.log = logContext.logger(Selector.class);
+        // 初始化选择器相关的度量指标
         this.sensors = new SelectorMetrics(metrics, metricGrpPrefix, metricTags, metricsPerConnection);
+        // 设置通道构建器，用于创建新的连接通道
         this.channelBuilder = channelBuilder;
+        // 设置是否记录每个连接的时间统计
         this.recordTimePerConnection = recordTimePerConnection;
+        // 如果设置了最大空闲时间，创建空闲连接过期管理器
         this.idleExpiryManager = connectionMaxIdleMs < 0 ? null : new IdleExpiryManager(time, connectionMaxIdleMs);
+        // 设置内存池，用于管理网络操作的内存分配
         this.memoryPool = memoryPool;
+        // 设置内存不足阈值为内存池大小的10%
         this.lowMemThreshold = (long) (0.1 * this.memoryPool.size());
+        // 设置身份验证失败后的延迟关闭时间
         this.failedAuthenticationDelayMs = failedAuthenticationDelayMs;
+        // 如果启用了身份验证失败延迟，初始化延迟关闭通道映射
         this.delayedClosingChannels = (failedAuthenticationDelayMs > NO_FAILED_AUTHENTICATION_DELAY) ? new LinkedHashMap<>() : null;
     }
 
+    /**
+     * 创建一个新的NIO选择器，不启用身份验证失败延迟
+     * 
+     * 这个构造函数是主构造函数的简化版本，它禁用了身份验证失败延迟机制。适用于不需要处理身份验证失败延迟的场景。
+     * 内部调用主构造函数，将failedAuthenticationDelayMs设置为NO_FAILED_AUTHENTICATION_DELAY。
+     *
+     * @param maxReceiveSize 单个网络接收的最大字节数
+     * @param connectionMaxIdleMs 连接最大空闲时间
+     * @param metrics 度量指标注册表
+     * @param time 时间实现类
+     * @param metricGrpPrefix 度量指标组前缀
+     * @param metricTags 度量指标额外标签
+     * @param metricsPerConnection 是否启用每个连接的度量指标
+     * @param recordTimePerConnection 是否记录每个连接的时间统计
+     * @param channelBuilder 通道构建器
+     * @param memoryPool 内存池
+     * @param logContext 日志上下文
+     */
     public Selector(int maxReceiveSize,
                     long connectionMaxIdleMs,
                     Metrics metrics,
@@ -200,6 +287,23 @@ public class Selector implements Selectable, AutoCloseable {
                 metricsPerConnection, recordTimePerConnection, channelBuilder, memoryPool, logContext);
     }
 
+    /**
+     * 创建一个新的NIO选择器，不启用连接时间统计
+     * 
+     * 这个构造函数适用于需要身份验证失败延迟但不需要记录连接时间统计的场景。
+     * 它将recordTimePerConnection设置为false，并使用MemoryPool.NONE作为内存池。
+     *
+     * @param maxReceiveSize 单个网络接收的最大字节数
+     * @param connectionMaxIdleMs 连接最大空闲时间
+     * @param failedAuthenticationDelayMs 身份验证失败延迟时间
+     * @param metrics 度量指标注册表
+     * @param time 时间实现类
+     * @param metricGrpPrefix 度量指标组前缀
+     * @param metricTags 度量指标额外标签
+     * @param metricsPerConnection 是否启用每个连接的度量指标
+     * @param channelBuilder 通道构建器
+     * @param logContext 日志上下文
+     */
     public Selector(int maxReceiveSize,
                     long connectionMaxIdleMs,
                     int failedAuthenticationDelayMs,
@@ -213,6 +317,22 @@ public class Selector implements Selectable, AutoCloseable {
         this(maxReceiveSize, connectionMaxIdleMs, failedAuthenticationDelayMs, metrics, time, metricGrpPrefix, metricTags, metricsPerConnection, false, channelBuilder, MemoryPool.NONE, logContext);
     }
 
+    /**
+     * 创建一个新的NIO选择器，不启用身份验证失败延迟和连接时间统计
+     * 
+     * 这个构造函数是更简化的版本，它同时禁用了身份验证失败延迟和连接时间统计功能。
+     * 适用于基本的网络I/O场景，不需要这些高级特性。
+     *
+     * @param maxReceiveSize 单个网络接收的最大字节数
+     * @param connectionMaxIdleMs 连接最大空闲时间
+     * @param metrics 度量指标注册表
+     * @param time 时间实现类
+     * @param metricGrpPrefix 度量指标组前缀
+     * @param metricTags 度量指标额外标签
+     * @param metricsPerConnection 是否启用每个连接的度量指标
+     * @param channelBuilder 通道构建器
+     * @param logContext 日志上下文
+     */
     public Selector(int maxReceiveSize,
                     long connectionMaxIdleMs,
                     Metrics metrics,
@@ -225,44 +345,90 @@ public class Selector implements Selectable, AutoCloseable {
         this(maxReceiveSize, connectionMaxIdleMs, NO_FAILED_AUTHENTICATION_DELAY, metrics, time, metricGrpPrefix, metricTags, metricsPerConnection, channelBuilder, logContext);
     }
 
+    /**
+     * 创建一个新的NIO选择器，使用最简配置
+     * 
+     * 这是最简化的构造函数版本，适用于只需要基本网络I/O功能的场景。它：
+     * - 不限制接收大小 (使用NetworkReceive.UNLIMITED)
+     * - 启用每个连接的度量指标
+     * - 使用空的度量标签集
+     * - 不启用身份验证失败延迟
+     *
+     * @param connectionMaxIdleMS 连接最大空闲时间
+     * @param metrics 度量指标注册表
+     * @param time 时间实现类
+     * @param metricGrpPrefix 度量指标组前缀
+     * @param channelBuilder 通道构建器
+     * @param logContext 日志上下文
+     */
     public Selector(long connectionMaxIdleMS, Metrics metrics, Time time, String metricGrpPrefix, ChannelBuilder channelBuilder, LogContext logContext) {
         this(NetworkReceive.UNLIMITED, connectionMaxIdleMS, metrics, time, metricGrpPrefix, Collections.emptyMap(), true, channelBuilder, logContext);
     }
 
+    /**
+     * 创建一个新的NIO选择器，使用最简配置但支持身份验证失败延迟
+     * 
+     * 这个构造函数在最简配置的基础上添加了身份验证失败延迟支持。它：
+     * - 不限制接收大小 (使用NetworkReceive.UNLIMITED)
+     * - 启用每个连接的度量指标
+     * - 使用空的度量标签集
+     * - 支持配置身份验证失败延迟时间
+     *
+     * @param connectionMaxIdleMS 连接最大空闲时间
+     * @param failedAuthenticationDelayMs 身份验证失败延迟时间
+     * @param metrics 度量指标注册表
+     * @param time 时间实现类
+     * @param metricGrpPrefix 度量指标组前缀
+     * @param channelBuilder 通道构建器
+     * @param logContext 日志上下文
+     */
     public Selector(long connectionMaxIdleMS, int failedAuthenticationDelayMs, Metrics metrics, Time time, String metricGrpPrefix, ChannelBuilder channelBuilder, LogContext logContext) {
         this(NetworkReceive.UNLIMITED, connectionMaxIdleMS, failedAuthenticationDelayMs, metrics, time, metricGrpPrefix, Collections.emptyMap(), true, channelBuilder, logContext);
     }
 
     /**
-     * Begin connecting to the given address and add the connection to this nioSelector associated with the given id
-     * number.
+     * 开始连接到指定地址，并将连接与给定ID关联添加到此nioSelector。
      * <p>
-     * Note that this call only initiates the connection, which will be completed on a future {@link #poll(long)}
-     * call. Check {@link #connected()} to see which (if any) connections have completed after a given poll call.
-     * @param id The id for the new connection
-     * @param address The address to connect to
-     * @param sendBufferSize The send buffer for the new connection
-     * @param receiveBufferSize The receive buffer for the new connection
-     * @throws IllegalStateException if there is already a connection for that id
-     * @throws IOException if DNS resolution fails on the hostname or if the broker is down
+     * 注意：此调用仅启动连接过程，连接的完成将在未来的{@link #poll(long)}调用中进行。
+     * 可以通过{@link #connected()}检查在给定的poll调用后哪些连接（如果有）已完成。
+     * <p>
+     * 此方法实现了非阻塞连接建立，主要步骤包括：
+     * 1. 创建并配置SocketChannel
+     * 2. 尝试建立连接
+     * 3. 注册通道到Selector
+     * 4. 处理立即连接成功的情况
+     *
+     * @param id 新连接的标识符
+     * @param address 要连接的目标地址
+     * @param sendBufferSize 新连接的发送缓冲区大小
+     * @param receiveBufferSize 新连接的接收缓冲区大小
+     * @throws IllegalStateException 如果指定ID的连接已存在
+     * @throws IOException 如果DNS解析失败或broker宕机
      */
     @Override
     public void connect(String id, InetSocketAddress address, int sendBufferSize, int receiveBufferSize) throws IOException {
+        // 确保该ID未被注册使用
         ensureNotRegistered(id);
+        // 创建新的SocketChannel
         SocketChannel socketChannel = SocketChannel.open();
         SelectionKey key = null;
         try {
+            // 配置SocketChannel的属性（非阻塞模式、TCP参数等）
             configureSocketChannel(socketChannel, sendBufferSize, receiveBufferSize);
+            // 尝试建立连接，对于本地连接可能立即成功
             boolean connected = doConnect(socketChannel, address);
+            // 将通道注册到选择器，关注连接事件
             key = registerChannel(id, socketChannel, SelectionKey.OP_CONNECT);
 
             if (connected) {
-                // OP_CONNECT won't trigger for immediately connected channels
+                // 对于立即连接成功的通道，不需要触发OP_CONNECT事件
                 log.debug("Immediately connected to node {}", id);
                 immediatelyConnectedKeys.add(key);
+                // 清除所有事件监听
                 key.interestOps(0);
             }
         } catch (IOException | RuntimeException e) {
+            // 发生异常时进行清理：移除key、关闭通道
             if (key != null)
                 immediatelyConnectedKeys.remove(key);
             channels.remove(id);
@@ -271,8 +437,12 @@ public class Selector implements Selectable, AutoCloseable {
         }
     }
 
-    // Visible to allow test cases to override. In particular, we use this to implement a blocking connect
-    // in order to simulate "immediately connected" sockets.
+    /**
+     * 执行实际的连接操作。
+     * <p>
+     * 此方法可见性为protected，允许测试用例重写以实现阻塞连接，
+     * 特别是用于模拟
+     */
     protected boolean doConnect(SocketChannel channel, InetSocketAddress address) throws IOException {
         try {
             return channel.connect(address);
@@ -281,81 +451,168 @@ public class Selector implements Selectable, AutoCloseable {
         }
     }
 
+    /**
+     * 配置SocketChannel的各项参数。
+     * <p>
+     * 此方法设置以下TCP连接属性：
+     * 1. 非阻塞模式 - 用于NIO操作
+     * 2. TCP Keep-Alive - 保持连接活跃
+     * 3. 发送和接收缓冲区大小 - 优化网络性能
+     * 4. TCP_NODELAY - 禁用Nagle算法，减少延迟
+     *
+     * @param socketChannel 要配置的SocketChannel
+     * @param sendBufferSize 发送缓冲区大小
+     * @param receiveBufferSize 接收缓冲区大小
+     * @throws IOException 如果配置过程中发生错误
+     */
     private void configureSocketChannel(SocketChannel socketChannel, int sendBufferSize, int receiveBufferSize)
             throws IOException {
+        // 设置为非阻塞模式，这是NIO操作的基础
         socketChannel.configureBlocking(false);
         Socket socket = socketChannel.socket();
+        // 启用TCP Keep-Alive，用于检测连接是否存活
         socket.setKeepAlive(true);
+        // 如果指定了自定义缓冲区大小，则设置它
         if (sendBufferSize != Selectable.USE_DEFAULT_BUFFER_SIZE)
             socket.setSendBufferSize(sendBufferSize);
         if (receiveBufferSize != Selectable.USE_DEFAULT_BUFFER_SIZE)
             socket.setReceiveBufferSize(receiveBufferSize);
+        // 禁用Nagle算法，提高小数据包的传输效率
         socket.setTcpNoDelay(true);
     }
 
     /**
-     * Register the nioSelector with an existing channel
-     * Use this on server-side, when a connection is accepted by a different thread but processed by the Selector
+     * 将已存在的通道注册到nioSelector。
      * <p>
-     * If a connection already exists with the same connection id in `channels` or `closingChannels`,
-     * an exception is thrown. Connection ids must be chosen to avoid conflict when remote ports are reused.
-     * Kafka brokers add an incrementing index to the connection id to avoid reuse in the timing window
-     * where an existing connection may not yet have been closed by the broker when a new connection with
-     * the same remote host:port is processed.
-     * </p><p>
-     * If a `KafkaChannel` cannot be created for this connection, the `socketChannel` is closed
-     * and its selection key cancelled.
-     * </p>
+     * 此方法主要用于服务器端，当连接被其他线程接受但需要由Selector处理时使用。
+     * <p>
+     * 注册过程的关键点：
+     * 1. 确保连接ID的唯一性，避免端口重用导致的冲突
+     * 2. 记录连接创建的度量指标
+     * 3. 初始化客户端元数据信息
+     * <p>
+     * 设计考虑：
+     * - Kafka broker通过在连接ID中添加递增索引来避免在同一远程主机:端口的新旧连接交替时发生ID重用
+     * - 即使在ApiVersionsRequest不是强制的情况下，也会记录连接信息
+     * - 如果无法为连接创建KafkaChannel，会关闭socketChannel并取消其选择键
+     *
+     * @param id 连接的唯一标识符
+     * @param socketChannel 要注册的SocketChannel
+     * @throws IOException 如果注册过程中发生错误
+     * @throws IllegalStateException 如果指定ID的连接已存在
      */
     public void register(String id, SocketChannel socketChannel) throws IOException {
+        // 确保连接ID未被使用
         ensureNotRegistered(id);
+        // 注册通道并设置为读取操作
         registerChannel(id, socketChannel, SelectionKey.OP_READ);
+        // 记录连接创建的度量指标
         this.sensors.connectionCreated.record();
-        // Default to empty client information as the ApiVersionsRequest is not
-        // mandatory. In this case, we still want to account for the connection.
+        // 设置默认的空客户端信息，因为ApiVersionsRequest不是强制的
+        // 但我们仍然需要记录该连接
         ChannelMetadataRegistry metadataRegistry = this.channel(id).channelMetadataRegistry();
         if (metadataRegistry.clientInformation() == null)
             metadataRegistry.registerClientInformation(ClientInformation.EMPTY);
     }
 
+    /**
+     * 确保指定的连接ID未被注册使用。
+     * <p>
+     * 此方法检查两个方面：
+     * 1. 活动连接集合中是否存在该ID
+     * 2. 正在关闭的连接集合中是否存在该ID
+     * <p>
+     * 这种双重检查确保了连接ID的唯一性，防止：
+     * - 重复注册相同ID的连接
+     * - 在旧连接完全关闭前重用ID
+     *
+     * @param id 要检查的连接ID
+     * @throws IllegalStateException 如果ID已被使用或正在关闭中
+     */
     private void ensureNotRegistered(String id) {
+        // 检查活动连接集合
         if (this.channels.containsKey(id))
             throw new IllegalStateException("There is already a connection for id " + id);
+        // 检查正在关闭的连接集合
         if (this.closingChannels.containsKey(id))
             throw new IllegalStateException("There is already a connection for id " + id + " that is still being closed");
     }
 
+    /**
+     * 将SocketChannel注册到选择器并创建对应的KafkaChannel。
+     * <p>
+     * 此方法完成以下任务：
+     * 1. 向选择器注册通道并设置感兴趣的操作
+     * 2. 创建并配置KafkaChannel
+     * 3. 将通道添加到活动连接集合
+     * 4. 更新空闲连接管理器
+     * <p>
+     * 设计考虑：
+     * - 使用KafkaChannel封装底层SocketChannel，提供更高级的功能
+     * - 支持空闲连接超时管理
+     * - 维护连接的生命周期
+     *
+     * @param id 连接ID
+     * @param socketChannel 要注册的SocketChannel
+     * @param interestedOps 感兴趣的操作（如OP_READ、OP_WRITE等）
+     * @return 注册后的SelectionKey
+     * @throws IOException 如果注册过程中发生错误
+     */
     protected SelectionKey registerChannel(String id, SocketChannel socketChannel, int interestedOps) throws IOException {
+        // 将通道注册到选择器，设置感兴趣的操作
         SelectionKey key = socketChannel.register(nioSelector, interestedOps);
+        // 创建并配置KafkaChannel
         KafkaChannel channel = buildAndAttachKafkaChannel(socketChannel, id, key);
+        // 将通道添加到活动连接集合
         this.channels.put(id, channel);
+        // 如果启用了空闲连接管理，更新最后活动时间
         if (idleExpiryManager != null)
             idleExpiryManager.update(channel.id(), time.nanoseconds());
         return key;
     }
 
+    /**
+     * 构建并附加一个新的KafkaChannel到给定的SocketChannel和SelectionKey
+     * 
+     * 此方法负责创建一个新的KafkaChannel实例，并将其与指定的SocketChannel和SelectionKey关联。
+     * 它处理通道创建过程中的所有资源管理和错误处理。
+     *
+     * @param socketChannel 要附加通道的底层SocketChannel
+     * @param id 新通道的唯一标识符
+     * @param key 与通道关联的SelectionKey
+     * @return 新创建的KafkaChannel实例
+     * @throws IOException 如果通道创建失败
+     */
     private KafkaChannel buildAndAttachKafkaChannel(SocketChannel socketChannel, String id, SelectionKey key) throws IOException {
         ChannelMetadataRegistry metadataRegistry = null;
         try {
+            // 创建新的通道元数据注册表
             metadataRegistry = new SelectorChannelMetadataRegistry();
+            // 使用通道构建器创建新的KafkaChannel实例
             KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize, memoryPool, metadataRegistry);
+            // 将新创建的通道附加到SelectionKey
             key.attach(channel);
             return channel;
         } catch (Exception e) {
             try {
+                // 发生异常时关闭SocketChannel
                 socketChannel.close();
             } finally {
+                // 取消SelectionKey的注册
                 key.cancel();
             }
-            // Ideally, these resources are closed by the KafkaChannel but if the KafkaChannel is not created to an
-            // error, this builder should close the resources it has created instead.
+            // 理想情况下，这些资源应该由KafkaChannel关闭，但如果KafkaChannel创建失败，
+            // 构建器应该负责关闭它已创建的资源
             Utils.closeQuietly(metadataRegistry, "metadataRegistry");
             throw new IOException("Channel could not be created for socket " + socketChannel, e);
         }
     }
 
     /**
-     * Interrupt the nioSelector if it is blocked waiting to do I/O.
+     * 唤醒正在等待I/O操作的nioSelector
+     * 
+     * 此方法用于中断nioSelector的阻塞状态，通常在需要立即处理新的I/O事件时调用。
+     * 例如，当新的连接请求或数据发送请求到达时，可以调用此方法来确保选择器及时响应。
      */
     @Override
     public void wakeup() {
@@ -363,21 +620,33 @@ public class Selector implements Selectable, AutoCloseable {
     }
 
     /**
-     * Close this selector and all associated connections
+     * 关闭此选择器和所有相关的连接
+     * 
+     * 此方法执行完整的清理过程，包括：
+     * 1. 关闭所有活动的网络连接
+     * 2. 关闭底层的NIO选择器
+     * 3. 清理度量收集器
+     * 4. 关闭通道构建器
+     * 
+     * 即使在关闭过程中发生异常，也会尽可能地继续清理其他资源。
+     * 特别是确保度量传感器被清理，因为保留旧的传感器可能导致ReplicaFetcherThread启动失败。
      */
     @Override
     public void close() {
+        // 获取所有活动连接的ID列表
         List<String> connections = new ArrayList<>(channels.keySet());
+        // 用于记录第一个发生的异常
         AtomicReference<Throwable> firstException = new AtomicReference<>();
+        // 安静地关闭所有连接，即使发生异常也继续处理
         Utils.closeAllQuietly(firstException, "release connections",
                 connections.stream().map(id -> (AutoCloseable) () -> close(id)).toArray(AutoCloseable[]::new));
-        // If there is any exception thrown in close(id), we should still be able
-        // to close the remaining objects, especially the sensors because keeping
-        // the sensors may lead to failure to start up the ReplicaFetcherThread if
-        // the old sensors with the same names has not yet been cleaned up.
+        // 如果在close(id)中抛出异常，我们仍然应该能够关闭剩余的对象，
+        // 特别是传感器，因为保留传感器可能导致ReplicaFetcherThread启动失败
+        // （如果具有相同名称的旧传感器尚未清理）
         Utils.closeQuietly(nioSelector, "nioSelector", firstException);
         Utils.closeQuietly(sensors, "sensors", firstException);
         Utils.closeQuietly(channelBuilder, "channelBuilder", firstException);
+        // 处理关闭过程中可能发生的异常
         Throwable exception = firstException.get();
         if (exception instanceof RuntimeException && !(exception instanceof SecurityException)) {
             throw (RuntimeException) exception;
@@ -385,22 +654,32 @@ public class Selector implements Selectable, AutoCloseable {
     }
 
     /**
-     * Queue the given request for sending in the subsequent {@link #poll(long)} calls
-     * @param send The request to send
+     * 将给定的请求加入发送队列，等待后续的{@link #poll(long)}调用处理
+     * 
+     * 此方法处理网络请求的发送过程，包括：
+     * 1. 验证目标连接的状态
+     * 2. 处理正在关闭的连接
+     * 3. 设置发送请求
+     * 4. 处理发送过程中的异常
+     *
+     * @param send 要发送的网络请求
      */
     public void send(NetworkSend send) {
+        // 获取目标连接ID
         String connectionId = send.destinationId();
+        // 获取打开或正在关闭的通道，如果不存在则抛出异常
         KafkaChannel channel = openOrClosingChannelOrFail(connectionId);
         if (closingChannels.containsKey(connectionId)) {
-            // ensure notification via `disconnected`, leave channel in the state in which closing was triggered
+            // 如果通道正在关闭，确保通过`disconnected`通知，保持通道处于触发关闭时的状态
             this.failedSends.add(connectionId);
         } else {
             try {
+                // 设置要发送的数据
                 channel.setSend(send);
             } catch (Exception e) {
-                // update the state for consistency, the channel will be discarded after `close`
+                // 更新状态以保持一致性，通道将在`close`后被丢弃
                 channel.state(ChannelState.FAILED_SEND);
-                // ensure notification via `disconnected` when `failedSends` are processed in the next poll
+                // 确保在下一次poll处理failedSends时通过`disconnected`通知
                 this.failedSends.add(connectionId);
                 close(channel, CloseMode.DISCARD_NO_NOTIFY);
                 if (!(e instanceof CancelledKeyException)) {
@@ -413,49 +692,61 @@ public class Selector implements Selectable, AutoCloseable {
     }
 
     /**
-     * Do whatever I/O can be done on each connection without blocking. This includes completing connections, completing
-     * disconnections, initiating new sends, or making progress on in-progress sends or receives.
+     * 在每个连接上执行所有可能的非阻塞I/O操作。这包括完成连接建立、断开连接、
+     * 启动新的发送操作，以及推进正在进行的发送或接收操作。
+     * 
+     * 当此方法调用完成后，用户可以通过以下方法检查已完成的操作：
+     * {@link #completedSends()} - 已完成的发送操作
+     * {@link #completedReceives()} - 已完成的接收操作
+     * {@link #connected()} - 已建立的连接
+     * {@link #disconnected()} - 已断开的连接
+     * 这些列表会在每次poll调用开始时清空，并在有完成的I/O操作时重新填充。
+     * 
+     * 数据传输模式说明：
+     * 1. 明文模式（Plaintext）：
+     *    - 直接使用socketChannel进行网络读写
+     *    - 数据无需加密解密处理
+     * 
+     * 2. SSL模式：
+     *    - 写入数据前先加密，读取响应后需解密
+     *    - 需要维护额外的缓冲区
+     *    - 由于数据加密，无法精确读取Kafka协议要求的字节数
+     *    - 每次读取最多可达SSLEngine的应用缓冲区大小
+     *    - 可能读取超过请求大小的数据
+     *    - 使用keysWithBufferedRead映射跟踪SSL缓冲区中有数据的通道
+     *    - 当有缓冲数据可处理时，将timeout设为0并处理数据
+     * 
+     * 请求处理顺序保证：
+     * - 每次poll调用中，每个通道最多只添加一个条目到completedReceives
+     * - 这确保了来自同一通道的请求按发送顺序在broker上处理
+     * - 因为SocketServer添加到请求队列的未完成请求可能被不同的请求处理线程处理
+     * - 必须一次处理一个通道的请求以保证顺序性
      *
-     * When this call is completed the user can check for completed sends, receives, connections or disconnects using
-     * {@link #completedSends()}, {@link #completedReceives()}, {@link #connected()}, {@link #disconnected()}. These
-     * lists will be cleared at the beginning of each `poll` call and repopulated by the call if there is
-     * any completed I/O.
-     *
-     * In the "Plaintext" setting, we are using socketChannel to read & write to the network. But for the "SSL" setting,
-     * we encrypt the data before we use socketChannel to write data to the network, and decrypt before we return the responses.
-     * This requires additional buffers to be maintained as we are reading from network, since the data on the wire is encrypted
-     * we won't be able to read exact no.of bytes as kafka protocol requires. We read as many bytes as we can, up to SSLEngine's
-     * application buffer size. This means we might be reading additional bytes than the requested size.
-     * If there is no further data to read from socketChannel selector won't invoke that channel and we have additional bytes
-     * in the buffer. To overcome this issue we added "keysWithBufferedRead" map which tracks channels which have data in the SSL
-     * buffers. If there are channels with buffered data that can by processed, we set "timeout" to 0 and process the data even
-     * if there is no more data to read from the socket.
-     *
-     * At most one entry is added to "completedReceives" for a channel in each poll. This is necessary to guarantee that
-     * requests from a channel are processed on the broker in the order they are sent. Since outstanding requests added
-     * by SocketServer to the request queue may be processed by different request handler threads, requests on each
-     * channel must be processed one-at-a-time to guarantee ordering.
-     *
-     * @param timeout The amount of time to wait, in milliseconds, which must be non-negative
-     * @throws IllegalArgumentException If `timeout` is negative
-     * @throws IllegalStateException If a send is given for which we have no existing connection or for which there is
-     *         already an in-progress send
+     * @param timeout 等待时间（毫秒），必须是非负数
+     * @throws IllegalArgumentException 如果timeout为负数
+     * @throws IllegalStateException 如果尝试发送数据但没有对应的连接，或者已有正在进行的发送操作
      */
     @Override
     public void poll(long timeout) throws IOException {
+        // 验证超时参数的有效性
         if (timeout < 0)
             throw new IllegalArgumentException("timeout should be >= 0");
 
+        // 记录上次poll是否成功读取了数据
         boolean madeReadProgressLastCall = madeReadProgressLastPoll;
+        // 清空所有完成的操作列表（发送、接收、连接、断开连接等）
         clear();
 
+        // 检查是否有通道的SSL缓冲区中存在待处理的数据
         boolean dataInBuffers = !keysWithBufferedRead.isEmpty();
 
+        // 如果有立即连接成功的通道，或者上次读取成功且还有缓冲数据，则立即处理（timeout=0）
         if (!immediatelyConnectedKeys.isEmpty() || (madeReadProgressLastCall && dataInBuffers))
             timeout = 0;
 
+        // 处理内存压力恢复的情况
         if (!memoryPool.isOutOfMemory() && outOfMemory) {
-            //we have recovered from memory pressure. unmute any channel not explicitly muted for other reasons
+            // 从内存压力中恢复，取消静音所有未显式静音的通道
             log.trace("Broker no longer low on memory - unmuting incoming sockets");
             for (KafkaChannel channel : channels.values()) {
                 if (channel.isInMutableState() && !explicitlyMutedChannels.contains(channel)) {
@@ -465,44 +756,55 @@ public class Selector implements Selectable, AutoCloseable {
             outOfMemory = false;
         }
 
-        /* check ready keys */
+        // 执行选择操作，检查就绪的通道
         long startSelect = time.nanoseconds();
         int numReadyKeys = select(timeout);
         long endSelect = time.nanoseconds();
+        // 记录选择操作的耗时
         this.sensors.selectTime.record(endSelect - startSelect, time.milliseconds(), false);
 
+        // 如果有就绪的通道、立即连接成功的通道或缓冲数据，则处理它们
         if (numReadyKeys > 0 || !immediatelyConnectedKeys.isEmpty() || dataInBuffers) {
+            // 获取所有就绪的SelectionKey
             Set<SelectionKey> readyKeys = this.nioSelector.selectedKeys();
 
-            // Poll from channels that have buffered data (but nothing more from the underlying socket)
+            // 处理具有缓冲数据的通道（SSL模式）
             if (dataInBuffers) {
-                keysWithBufferedRead.removeAll(readyKeys); //so no channel gets polled twice
+                // 移除已在readyKeys中的通道，避免重复处理
+                keysWithBufferedRead.removeAll(readyKeys);
                 Set<SelectionKey> toPoll = keysWithBufferedRead;
-                keysWithBufferedRead = new HashSet<>(); //poll() calls will repopulate if needed
+                // 重置缓冲读取集合，poll调用会根据需要重新填充
+                keysWithBufferedRead = new HashSet<>();
                 pollSelectionKeys(toPoll, false, endSelect);
             }
 
-            // Poll from channels where the underlying socket has more data
+            // 处理底层socket有更多数据的通道
             pollSelectionKeys(readyKeys, false, endSelect);
-            // Clear all selected keys so that they are excluded from the ready count for the next select
+            // 清空已处理的就绪键，为下次select做准备
             readyKeys.clear();
 
+            // 处理立即连接成功的通道
             pollSelectionKeys(immediatelyConnectedKeys, true, endSelect);
             immediatelyConnectedKeys.clear();
         } else {
-            madeReadProgressLastPoll = true; //no work is also "progress"
+            // 没有工作也视为"进展"，因为这意味着所有数据都已处理完成
+            madeReadProgressLastPoll = true;
         }
 
+        // 记录I/O操作的结束时间
         long endIo = time.nanoseconds();
+        // 记录本次I/O操作的总耗时（不包括选择操作的时间）
         this.sensors.ioTime.record(endIo - endSelect, time.milliseconds(), false);
 
-        // Close channels that were delayed and are now ready to be closed
+        // 处理延迟关闭的通道
+        // 某些通道（如认证失败的通道）会被延迟关闭，这里检查它们是否可以关闭了
         completeDelayedChannelClose(endIo);
 
-        // we use the time at the end of select to ensure that we don't close any connections that
-        // have just been processed in pollSelectionKeys
+        // 检查并可能关闭最旧的空闲连接
+        // 使用select结束时的时间戳，确保不会关闭刚刚在pollSelectionKeys中处理过的连接
         maybeCloseOldestConnection(endSelect);
     }
+        
 
     /**
      * handle any ready I/O on a set of selection keys
