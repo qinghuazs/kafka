@@ -265,36 +265,51 @@ public class RangeAssignor extends AbstractPartitionAssignor {
 
     /**
      * 为具有相同分区数的多个主题执行协同分区的机架感知分配
-     * @param consumers 消费者及其机架信息的映射
+     * 
+     * @param consumers 消费者及其机架信息的映射，使用LinkedHashMap保持消费者顺序
      * @param numPartitions 每个主题的分区数
      * @param assignmentStates 需要协同分配的主题状态集合
      * @param assignment 最终的分配结果映射
      * 
      * 实现细节：
-     * 1. 维护一个剩余可分配的消费者集合
-     * 2. 对每个分区号：
-     *    - 寻找第一个机架匹配且还能分配更多分区的消费者
-     *    - 将所有主题的该分区号分配给找到的消费者
-     *    - 如果消费者达到配额，从剩余集合中移除
+     * 1. 创建一个剩余可分配消费者集合，初始包含所有消费者
+     * 2. 按分区号顺序遍历（0到numPartitions-1）：
+     *    - 在剩余消费者中寻找符合条件的消费者（机架匹配且未达到分配上限）
+     *    - 如果找到匹配的消费者，将所有主题的当前分区号分配给该消费者
+     *    - 检查该消费者是否已达到分配上限，如果是则从剩余消费者集合中移除
+     * 3. 通过这种方式确保：
+     *    - 相同分区号的分区被分配给同一个消费者，实现协同分区
+     *    - 优先考虑机架位置匹配的消费者，提高数据本地性
+     *    - 在满足上述条件的同时保持分配的均衡性
      */
     private void assignCoPartitionedWithRackMatching(LinkedHashMap<String, Optional<String>> consumers,
                                                      int numPartitions,
                                                      Collection<TopicAssignmentState> assignmentStates,
                                                      Map<String, List<TopicPartition>> assignment) {
-
+        // 创建剩余可分配消费者集合，初始包含所有消费者
         Set<String> remainingConsumers = new LinkedHashSet<>(consumers.keySet());
+        
+        // 按分区号顺序遍历
         for (int i = 0; i < numPartitions; i++) {
             int p = i;
 
+            // 在剩余消费者中寻找第一个符合条件的消费者：
+            // 1. 机架位置与所有主题的当前分区号匹配
+            // 2. 在所有主题上都还能分配更多分区
             Optional<String> matchingConsumer = remainingConsumers.stream()
                     .filter(c -> assignmentStates.stream().allMatch(t -> t.racksMatch(c, new TopicPartition(t.topic, p)) && t.maxAssignable(c) > 0))
                     .findFirst();
+            
             if (matchingConsumer.isPresent()) {
                 String consumer = matchingConsumer.get();
+                // 将所有主题的当前分区号分配给找到的消费者
                 assignmentStates.forEach(t -> assign(consumer, Collections.singletonList(new TopicPartition(t.topic, p)), t, assignment));
 
+                // 检查消费者是否已达到所有主题的分配上限
                 if (assignmentStates.stream().noneMatch(t -> t.maxAssignable(consumer) > 0)) {
+                    // 如果达到上限，从剩余消费者集合中移除
                     remainingConsumers.remove(consumer);
+                    // 如果没有剩余消费者，提前结束分配
                     if (remainingConsumers.isEmpty())
                         break;
                 }
@@ -302,8 +317,25 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         }
     }
 
+    /**
+     * 执行具体的分区分配操作
+     * 
+     * @param consumer 目标消费者的ID
+     * @param partitions 要分配给消费者的分区列表
+     * @param assignmentState 主题的分配状态对象
+     * @param assignment 全局的分配结果映射
+     * 
+     * 实现细节：
+     * 1. 将指定的分区列表添加到消费者的已分配分区集合中
+     * 2. 更新主题分配状态，包括：
+     *    - 更新消费者已分配的分区数量
+     *    - 从未分配分区集合中移除已分配的分区
+     *    - 必要时更新剩余可获得额外分区的消费者数量
+     */
     private void assign(String consumer, List<TopicPartition> partitions, TopicAssignmentState assignmentState, Map<String, List<TopicPartition>> assignment) {
+        // 将分区添加到消费者的分配结果中
         assignment.get(consumer).addAll(partitions);
+        // 更新主题分配状态
         assignmentState.onAssigned(consumer, partitions);
     }
 
