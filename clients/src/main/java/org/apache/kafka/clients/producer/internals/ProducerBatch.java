@@ -152,6 +152,8 @@ public final class ProducerBatch {
 
     /**
      * 如果发现有更新的leader，则更新此批次将要发送到的leader的epoch
+     *
+     * epoch 时期，时代
      * 
      * @param latestLeaderEpoch 最新的leader epoch值
      */

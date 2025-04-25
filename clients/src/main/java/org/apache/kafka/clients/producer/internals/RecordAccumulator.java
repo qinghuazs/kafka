@@ -838,7 +838,7 @@ public class RecordAccumulator {
 
         // 队列大小数组的索引
         int queueSizesIndex = -1;
-        // 检查缓冲池是否有等待线程
+        // 检查缓冲池是否有等待线程  exhausted 精疲力尽 疲惫不堪。。。
         boolean exhausted = this.free.queued() > 0;
         
         // 遍历每个分区的批次队列
