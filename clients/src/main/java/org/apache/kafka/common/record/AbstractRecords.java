@@ -24,99 +24,186 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.Optional;
 
+/**
+ * Kafka记录集合的抽象基类，提供了对记录批次和单条记录的访问接口。
+ * 该类实现了Records接口，为不同格式版本的记录提供统一的访问方式。
+ * 主要功能包括：
+ * 1. 记录批次的遍历和访问
+ * 2. 单条记录的迭代
+ * 3. 记录大小的估算
+ * 4. 版本兼容性检查
+ */
 public abstract class AbstractRecords implements Records {
 
+    /**
+     * 用于遍历所有记录的迭代器
+     * 通过方法引用this::recordsIterator初始化，确保每次调用records()方法时都能获得一个新的迭代器
+     */
     private final Iterable<Record> records = this::recordsIterator;
 
+    /**
+     * 检查所有批次是否都匹配指定的魔数版本
+     * 
+     * @param magic 要检查的魔数版本
+     * @return 如果所有批次的魔数都匹配则返回true，否则返回false
+     */
     @Override
     public boolean hasMatchingMagic(byte magic) {
+        // 遍历所有批次，检查每个批次的魔数是否匹配
         for (RecordBatch batch : batches())
             if (batch.magic() != magic)
                 return false;
         return true;
     }
 
+    /**
+     * 获取第一个记录批次
+     * 
+     * @return 如果存在则返回第一个记录批次，否则返回null
+     */
     public RecordBatch firstBatch() {
+        // 获取批次迭代器
         Iterator<? extends RecordBatch> iterator = batches().iterator();
 
+        // 如果没有下一个批次，返回null
         if (!iterator.hasNext())
             return null;
 
+        // 返回第一个批次
         return iterator.next();
     }
 
+    /**
+     * 获取最后一个记录批次
+     * 
+     * @return 包含最后一个记录批次的Optional对象，如果没有批次则返回空Optional
+     */
     @Override
     public Optional<RecordBatch> lastBatch() {
+        // 获取批次迭代器
         Iterator<? extends RecordBatch> iterator = batches().iterator();
 
+        // 遍历所有批次，保存最后一个批次
         RecordBatch batch = null;
         while (iterator.hasNext())
             batch = iterator.next();
 
+        // 将最后一个批次包装成Optional返回
         return Optional.ofNullable(batch);
     }
 
     /**
-     * Get an iterator over the deep records.
-     * @return An iterator over the records
+     * 获取用于遍历所有记录的迭代器
+     * 这个方法会遍历所有批次，并返回其中所有记录的迭代器
+     * 
+     * @return 记录迭代器
      */
     @Override
     public Iterable<Record> records() {
         return records;
     }
 
+    /**
+     * 将记录集合转换为可发送的格式
+     * 
+     * @return 包装后的DefaultRecordsSend对象
+     */
     @Override
     public DefaultRecordsSend<Records> toSend() {
         return new DefaultRecordsSend<>(this);
     }
 
+    /**
+     * 创建一个用于遍历所有记录的迭代器
+     * 这个迭代器会遍历所有批次，并返回其中的所有记录
+     * 
+     * @return 记录迭代器
+     */
     private Iterator<Record> recordsIterator() {
         return new AbstractIterator<>() {
+            // 批次迭代器
             private final Iterator<? extends RecordBatch> batches = batches().iterator();
+            // 当前批次的记录迭代器
             private Iterator<Record> records;
 
             @Override
             protected Record makeNext() {
+                // 如果当前记录迭代器存在且还有下一个记录，返回下一个记录
                 if (records != null && records.hasNext())
                     return records.next();
 
+                // 如果还有下一个批次，获取该批次的记录迭代器，并递归调用makeNext
                 if (batches.hasNext()) {
                     records = batches.next().iterator();
                     return makeNext();
                 }
 
+                // 如果没有更多记录，返回结束标记
                 return allDone();
             }
         };
     }
 
+    /**
+     * 估算给定记录集合所需的字节数
+     * 
+     * @param magic 记录格式的魔数版本
+     * @param baseOffset 基础偏移量
+     * @param compressionType 压缩类型
+     * @param records 记录集合
+     * @return 估算的字节数
+     */
     public static int estimateSizeInBytes(byte magic,
                                           long baseOffset,
                                           CompressionType compressionType,
                                           Iterable<Record> records) {
         int size = 0;
+        // 对于V1及以下版本，累加每条记录的大小
         if (magic <= RecordBatch.MAGIC_VALUE_V1) {
             for (Record record : records)
                 size += Records.LOG_OVERHEAD + LegacyRecord.recordSize(magic, record.key(), record.value());
         } else {
+            // 对于V2及以上版本，使用DefaultRecordBatch的方法计算大小
             size = DefaultRecordBatch.sizeInBytes(baseOffset, records);
         }
+        // 根据压缩类型估算最终大小
         return estimateCompressedSizeInBytes(size, compressionType);
     }
 
+    /**
+     * 估算给定简单记录集合所需的字节数
+     * 
+     * @param magic 记录格式的魔数版本
+     * @param compressionType 压缩类型
+     * @param records 简单记录集合
+     * @return 估算的字节数
+     */
     public static int estimateSizeInBytes(byte magic,
                                           CompressionType compressionType,
                                           Iterable<SimpleRecord> records) {
         int size = 0;
+        // 对于V1及以下版本，累加每条记录的大小
         if (magic <= RecordBatch.MAGIC_VALUE_V1) {
             for (SimpleRecord record : records)
                 size += Records.LOG_OVERHEAD + LegacyRecord.recordSize(magic, record.key(), record.value());
         } else {
+            // 对于V2及以上版本，使用DefaultRecordBatch的方法计算大小
             size = DefaultRecordBatch.sizeInBytes(records);
         }
+        // 根据压缩类型估算最终大小
         return estimateCompressedSizeInBytes(size, compressionType);
     }
 
+    /**
+     * 根据压缩类型估算压缩后的字节数
+     * 
+     * @param size 原始大小
+     * @param compressionType 压缩类型
+     * @return 估算的压缩后字节数
+     * 
+     * 如果不使用压缩，直接返回原始大小
+     * 如果使用压缩，返回原始大小的一半到64KB之间的值，且不小于1KB
+     */
     private static int estimateCompressedSizeInBytes(int size, CompressionType compressionType) {
         return compressionType == CompressionType.NONE ? size : Math.min(Math.max(size / 2, 1024), 1 << 16);
     }
