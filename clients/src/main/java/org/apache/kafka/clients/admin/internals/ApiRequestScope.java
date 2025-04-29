@@ -26,6 +26,15 @@ import java.util.OptionalInt;
  * provides a way to group key lookups according to different batching
  * mechanics. See {@link AdminApiLookupStrategy#lookupScope(Object)} for
  * more detail.
+ *
+ * 该接口由{@link AdminApiDriver}使用，用于连接内部定义在{@link org.apache.kafka.clients.admin.KafkaAdminClient}
+ * 中的`NodeProvider`。然而，请求范围不仅仅是目标代理的规范，它还提供了一种根据不同批处理机制对键查找进行分组的方式。
+ * 更多详细信息请参见{@link AdminApiLookupStrategy#lookupScope(Object)}。
+ *
+ * 应用场景：
+ * 1. 在Kafka管理客户端中，用于确定请求应该发送到哪个broker
+ * 2. 支持批量处理请求，提高请求处理效率
+ * 3. 实现请求路由和负载均衡策略
  */
 public interface ApiRequestScope {
 
@@ -38,6 +47,18 @@ public interface ApiRequestScope {
      * then no lookup will be attempted.
      *
      * @return optional broker ID
+     *
+     * 获取请求目标broker的ID，如果请求可以发送到任意broker则返回空。
+     *
+     * 注意：如果在{@link AdminApiLookupStrategy#lookupScope(Object)}返回的{@link ApiRequestScope}中
+     * 存在目标broker ID，则不会尝试进行查找。
+     *
+     * 实现说明：
+     * 1. 默认实现返回OptionalInt.empty()，表示请求可以发送到任意broker
+     * 2. 子类可以重写此方法以指定特定的目标broker
+     * 3. 返回类型使用OptionalInt以优雅处理可能不存在目标broker的情况
+     *
+     * @return 可选的broker ID
      */
     default OptionalInt destinationBrokerId() {
         return OptionalInt.empty();
