@@ -25,46 +25,75 @@ import java.util.Collections;
 import java.util.Set;
 
 /**
- * Options for {@link Admin#listGroups()}.
+ * 用于Admin#listGroups()方法的选项类。
  * <p>
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详细信息请参见Admin接口的说明。
  */
 @InterfaceStability.Evolving
 public class ListGroupsOptions extends AbstractOptions<ListGroupsOptions> {
 
+    /**
+     * 要查询的组状态集合
+     * 默认为空集合，表示查询所有状态的组
+     */
     private Set<GroupState> groupStates = Collections.emptySet();
+
+    /**
+     * 要查询的组类型集合
+     * 默认为空集合，表示查询所有类型的组
+     */
     private Set<GroupType> types = Collections.emptySet();
 
     /**
-     * If groupStates is set, only groups in these states will be returned by listGroups().
-     * Otherwise, all groups are returned.
-     * This operation is supported by brokers with version 2.6.0 or later.
+     * 设置要查询的组状态集合
+     * 如果设置了groupStates，则只返回这些状态的组
+     * 否则返回所有组
+     * 此操作需要broker版本2.6.0或更高版本支持
+     *
+     * @param groupStates 要查询的组状态集合
+     * @return 返回当前对象以支持方法链式调用
      */
     public ListGroupsOptions inGroupStates(Set<GroupState> groupStates) {
+        // 如果参数为null或空集合，则使用空集合；否则创建参数集合的不可变副本
         this.groupStates = (groupStates == null || groupStates.isEmpty()) ? Collections.emptySet() : Set.copyOf(groupStates);
+        // 返回this以支持方法链式调用
         return this;
     }
 
     /**
-     * If types is set, only groups of these types will be returned by listGroups().
-     * Otherwise, all groups are returned.
+     * 设置要查询的组类型集合
+     * 如果设置了types，则只返回这些类型的组
+     * 否则返回所有组
+     *
+     * @param types 要查询的组类型集合
+     * @return 返回当前对象以支持方法链式调用
      */
     public ListGroupsOptions withTypes(Set<GroupType> types) {
+        // 如果参数为null或空集合，则使用空集合；否则创建参数集合的不可变副本
         this.types = (types == null || types.isEmpty()) ? Set.of() : Set.copyOf(types);
+        // 返回this以支持方法链式调用
         return this;
     }
 
     /**
-     * Returns the list of group states that are requested or empty if no states have been specified.
+     * 获取已请求的组状态集合
+     * 如果未指定任何状态，则返回空集合
+     *
+     * @return 返回组状态集合
      */
     public Set<GroupState> groupStates() {
+        // 返回组状态集合
         return groupStates;
     }
 
     /**
-     * Returns the list of group types that are requested or empty if no types have been specified.
+     * 获取已请求的组类型集合
+     * 如果未指定任何类型，则返回空集合
+     *
+     * @return 返回组类型集合
      */
     public Set<GroupType> types() {
+        // 返回组类型集合
         return types;
     }
 }

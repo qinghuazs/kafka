@@ -19,19 +19,34 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.KafkaFuture;
 
 /**
- * The result of the {@link Admin#describeFeatures(DescribeFeaturesOptions)} call.
+ * {@link Admin#describeFeatures(DescribeFeaturesOptions)} 调用的结果类。
+ * 该类用于获取Kafka集群中的特性元数据信息。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 public class DescribeFeaturesResult {
 
+    // 存储特性元数据的Future对象
+    // 使用KafkaFuture而不是CompletableFuture是为了提供更好的异常处理和类型安全
     private final KafkaFuture<FeatureMetadata> future;
 
+    /**
+     * 构造函数，初始化特性描述结果
+     * 
+     * @param future 包含特性元数据的Future对象
+     */
     DescribeFeaturesResult(KafkaFuture<FeatureMetadata> future) {
+        // 初始化future字段，存储异步获取的特性元数据
         this.future = future;
     }
 
+    /**
+     * 获取包含特性元数据的Future对象
+     * 
+     * @return 返回一个KafkaFuture，当完成时将产生特性元数据信息
+     */
     public KafkaFuture<FeatureMetadata> featureMetadata() {
+        // 返回存储的Future对象，允许调用者异步获取特性元数据
         return future;
     }
 }

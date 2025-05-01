@@ -20,49 +20,85 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
 /**
- * Options for {@link Admin#describeCluster()}.
+ * 用于配置{@link Admin#describeCluster()}操作的选项类。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 此类提供了查询Kafka集群信息时的配置选项，包括：
+ * - 是否包含授权操作信息
+ * - 是否包含已隔离（fenced）的broker信息
+ * - 超时设置
+ * 
+ * 应用场景：
+ * 1. 集群健康状态监控
+ * 2. 权限管理和审计
+ * 3. 运维故障排查
+ * 
+ * 注意：该API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeClusterOptions extends AbstractOptions<DescribeClusterOptions> {
 
+    /**
+     * 是否在响应中包含授权操作信息
+     */
     private boolean includeAuthorizedOperations;
 
+    /**
+     * 是否在响应中包含已隔离的broker信息
+     */
     private boolean includeFencedBrokers;
 
     /**
-     * Set the timeout in milliseconds for this operation or {@code null} if the default api timeout for the
-     * AdminClient should be used.
+     * 设置操作的超时时间（毫秒）。
+     * 如果设置为null，则使用AdminClient的默认API超时时间。
      *
+     * @param timeoutMs 超时时间，单位为毫秒
+     * @return 当前对象，支持链式调用
      */
-    // This method is retained to keep binary compatibility with 0.11
+    // 此方法保留是为了保持与0.11版本的二进制兼容性
     public DescribeClusterOptions timeoutMs(Integer timeoutMs) {
         this.timeoutMs = timeoutMs;
         return this;
     }
 
+    /**
+     * 设置是否在响应中包含授权操作信息。
+     *
+     * @param includeAuthorizedOperations 是否包含授权操作信息
+     * @return 当前对象，支持链式调用
+     */
     public DescribeClusterOptions includeAuthorizedOperations(boolean includeAuthorizedOperations) {
         this.includeAuthorizedOperations = includeAuthorizedOperations;
         return this;
     }
 
+    /**
+     * 设置是否在响应中包含已隔离的broker信息。
+     *
+     * @param includeFencedBrokers 是否包含已隔离的broker信息
+     * @return 当前对象，支持链式调用
+     */
     public DescribeClusterOptions includeFencedBrokers(boolean includeFencedBrokers) {
         this.includeFencedBrokers = includeFencedBrokers;
         return this;
     }
 
     /**
-     * Specify if authorized operations should be included in the response.  Note that some
-     * older brokers cannot not supply this information even if it is requested.
+     * 获取是否包含授权操作信息的设置。
+     * 
+     * 注意：某些较旧版本的broker即使请求了此信息也可能无法提供。
+     * 
+     * @return 如果为true，表示响应中将包含授权操作信息
      */
     public boolean includeAuthorizedOperations() {
         return includeAuthorizedOperations;
     }
 
     /**
-     * Specify if fenced brokers should be included in the response.  Note that some
-     * older brokers cannot not supply this information even if it is requested.
+     * 获取是否包含已隔离broker信息的设置。
+     * 
+     * 注意：某些较旧版本的broker即使请求了此信息也可能无法提供。
+     * 
+     * @return 如果为true，表示响应中将包含已隔离的broker信息
      */
     public boolean includeFencedBrokers() {
         return includeFencedBrokers;

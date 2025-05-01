@@ -27,42 +27,60 @@ import java.util.concurrent.ExecutionException;
 
 
 /**
- * The result of the {@link KafkaAdminClient#describeConsumerGroups(Collection, DescribeConsumerGroupsOptions)}} call.
- *
- * The API of this class is evolving, see {@link Admin} for details.
+ * {@link KafkaAdminClient#describeConsumerGroups(Collection, DescribeConsumerGroupsOptions)}} 调用的结果类。
+ * 
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeConsumerGroupsResult {
 
+    // 存储消费者组ID到其描述信息Future的映射
+    // 使用KafkaFuture而不是CompletableFuture是为了提供更好的异常处理和类型安全
     private final Map<String, KafkaFuture<ConsumerGroupDescription>> futures;
 
+    /**
+     * 构造函数，初始化消费者组描述结果
+     * 
+     * @param futures 包含每个消费者组ID对应的描述信息Future的映射
+     */
     public DescribeConsumerGroupsResult(final Map<String, KafkaFuture<ConsumerGroupDescription>> futures) {
+        // 初始化futures映射，存储每个消费者组的异步描述结果
         this.futures = futures;
     }
 
     /**
-     * Return a map from group id to futures which yield group descriptions.
+     * 返回从消费者组ID到其描述信息Future的映射
+     * 
+     * @return 返回一个新的HashMap，包含所有消费者组的描述信息Future
      */
     public Map<String, KafkaFuture<ConsumerGroupDescription>> describedGroups() {
+        // 返回futures的副本以防止外部修改
         return new HashMap<>(futures);
     }
 
     /**
-     * Return a future which yields all ConsumerGroupDescription objects, if all the describes succeed.
+     * 返回一个Future，当所有描述操作都成功完成时，该Future将包含所有ConsumerGroupDescription对象
+     * 
+     * @return 包含所有消费者组描述信息的Future
      */
     public KafkaFuture<Map<String, ConsumerGroupDescription>> all() {
+        // 使用KafkaFuture.allOf等待所有Future完成
         return KafkaFuture.allOf(futures.values().toArray(new KafkaFuture[0])).thenApply(
             nil -> {
+                // 创建一个新的HashMap来存储所有描述结果
                 Map<String, ConsumerGroupDescription> descriptions = new HashMap<>(futures.size());
+                // 遍历所有Future，获取结果并存入map
                 futures.forEach((key, future) -> {
                     try {
+                        // 获取Future的结果并放入descriptions map
                         descriptions.put(key, future.get());
                     } catch (InterruptedException | ExecutionException e) {
-                        // This should be unreachable, since the KafkaFuture#allOf already ensured
-                        // that all of the futures completed successfully.
+                        // 这种情况理论上不会发生，因为KafkaFuture.allOf已经确保所有Future都成功完成
+                        // 如果发生，说明是严重的内部错误
                         throw new RuntimeException(e);
                     }
                 });
+                // 返回包含所有消费者组描述信息的map
                 return descriptions;
             });
     }

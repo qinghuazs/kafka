@@ -22,10 +22,13 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.List;
 
 /**
- * Options for {@link AdminClient#describeUserScramCredentials(List, DescribeUserScramCredentialsOptions)}
+ * 用于 {@link AdminClient#describeUserScramCredentials(List, DescribeUserScramCredentialsOptions)} 的配置选项类。
+ * 该类用于描述Kafka用户的SCRAM（Salted Challenge Response Authentication Mechanism）凭证信息。
  *
- * The API of this class is evolving. See {@link AdminClient} for details.
+ * 该类的API仍在演进中，详情请参见 {@link AdminClient}。
  */
 @InterfaceStability.Evolving
 public class DescribeUserScramCredentialsOptions extends AbstractOptions<DescribeUserScramCredentialsOptions> {
+    // 继承自AbstractOptions以获取通用的选项处理功能
+    // 目前该类没有额外的配置选项，但未来可能会添加更多选项
 }

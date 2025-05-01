@@ -23,11 +23,14 @@ import java.util.Collection;
 
 
 /**
- * Options for {@link Admin#describeLogDirs(Collection)}
+ * 用于 {@link Admin#describeLogDirs(Collection)} 的配置选项类。
+ * 该类用于描述Kafka broker的日志目录信息，包括目录的位置、使用情况等。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeLogDirsOptions extends AbstractOptions<DescribeLogDirsOptions> {
-
+    // 目前该类没有额外的配置选项
+    // 继承自AbstractOptions以获取通用的选项处理功能
+    // 未来可能会添加更多的配置选项，如目录过滤、统计信息等
 }

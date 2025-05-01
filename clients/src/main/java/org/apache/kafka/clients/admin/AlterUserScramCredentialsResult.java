@@ -26,35 +26,54 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * The result of the {@link Admin#alterUserScramCredentials(List)} call.
- *
- * The API of this class is evolving, see {@link Admin} for details.
+ * {@link Admin#alterUserScramCredentials(List)}调用的结果类。
+ * 
+ * 该类用于处理修改用户SCRAM（Salted Challenge Response Authentication Mechanism）凭证的操作结果。
+ * SCRAM是一种基于密码的质询响应认证机制，用于安全地验证客户端身份。
+ * 
+ * 此API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class AlterUserScramCredentialsResult {
+    /**
+     * 存储每个用户的凭证修改操作结果的Future映射。
+     * key: 用户名
+     * value: 对应用户的凭证修改操作的Future结果
+     * Future<Void>表示操作成功时返回null，失败时抛出异常
+     */
     private final Map<String, KafkaFuture<Void>> futures;
 
     /**
+     * 构造函数，初始化修改SCRAM凭证操作的结果对象
      *
-     * @param futures the required map from user names to futures representing the results of the alteration(s)
-     *                for each user
+     * @param futures 包含用户名到对应操作结果Future的映射，每个Future代表该用户的凭证修改操作结果
+     *                使用Collections.unmodifiableMap确保返回的Map不可修改，提供线程安全保证
      */
     public AlterUserScramCredentialsResult(Map<String, KafkaFuture<Void>> futures) {
+        // 使用Objects.requireNonNull确保futures参数不为null
+        // 使用Collections.unmodifiableMap包装map，确保其不可修改
         this.futures = Collections.unmodifiableMap(Objects.requireNonNull(futures));
     }
 
     /**
-     * Return a map from user names to futures, which can be used to check the status of the alteration(s)
-     * for each user.
+     * 返回用户名到对应操作结果Future的映射
+     * 
+     * @return 不可修改的Map，包含每个用户的凭证修改操作结果
+     *         可用于分别检查每个用户的操作是否成功
      */
     public Map<String, KafkaFuture<Void>> values() {
         return this.futures;
     }
 
     /**
-     * Return a future which succeeds only if all the user SCRAM credential alterations succeed.
+     * 返回一个聚合的Future，仅当所有用户的SCRAM凭证修改操作都成功时才成功
+     * 
+     * @return 聚合的KafkaFuture
+     *         - 如果所有操作都成功，Future完成且返回null
+     *         - 如果任何操作失败，Future将抛出异常
      */
     public KafkaFuture<Void> all() {
+        // 将所有Future转换为数组并使用KafkaFuture.allOf等待所有操作完成
         return KafkaFuture.allOf(futures.values().toArray(new KafkaFuture[0]));
     }
 }

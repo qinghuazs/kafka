@@ -24,27 +24,73 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A class representing a configuration entry containing name, value and additional metadata.
+ * 表示一个包含名称、值和额外元数据的配置项。
+ * 这个类用于管理Kafka中的各种配置，包括主题配置、broker配置等。
+ * 每个配置项都可以有不同的来源、敏感性、只读性等属性。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 应用场景：
+ * 1. 用于管理Kafka集群中的各种配置项
+ * 2. 支持动态配置更新和查询
+ * 3. 处理敏感配置信息的保护
+ * 4. 维护配置的层次结构（通过同义词机制）
+ *
+ * 该类的API仍在演进中，详细信息请参考{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class ConfigEntry {
 
+    /**
+     * 配置项的名称
+     * 用于唯一标识一个配置项
+     */
     private final String name;
+
+    /**
+     * 配置项的值
+     * 如果配置项是敏感的，该值可能为null
+     */
     private final String value;
+
+    /**
+     * 配置项的来源
+     * 表示该配置是来自默认值、动态配置还是静态配置文件等
+     */
     private final ConfigSource source;
+
+    /**
+     * 是否是敏感配置
+     * 如果为true，broker在返回配置时会将值设置为null
+     */
     private final boolean isSensitive;
+
+    /**
+     * 是否是只读配置
+     * 如果为true，表示该配置不能被修改
+     */
     private final boolean isReadOnly;
+
+    /**
+     * 配置的同义词列表
+     * 按优先级排序，用于支持配置的层次结构
+     */
     private final List<ConfigSynonym> synonyms;
+
+    /**
+     * 配置值的数据类型
+     */
     private final ConfigType type;
+
+    /**
+     * 配置项的文档说明
+     */
     private final String documentation;
 
     /**
-     * Create a configuration entry with the provided values.
+     * 创建一个基本的配置项
+     * 使用默认值初始化其他属性：未知来源、非敏感、非只读、无同义词
      *
-     * @param name the non-null config name
-     * @param value the config value or null
+     * @param name 配置项名称，不能为null
+     * @param value 配置项的值，可以为null
      */
     public ConfigEntry(String name, String value) {
         this(name, value, ConfigSource.UNKNOWN, false, false,
@@ -52,14 +98,16 @@ public class ConfigEntry {
     }
 
     /**
-     * Create a configuration with the provided values.
+     * 创建一个完整的配置项，包含所有属性
      *
-     * @param name the non-null config name
-     * @param value the config value or null
-     * @param source the source of this config entry
-     * @param isSensitive whether the config value is sensitive, the broker never returns the value if it is sensitive
-     * @param isReadOnly whether the config is read-only and cannot be updated
-     * @param synonyms Synonym configs in order of precedence
+     * @param name 配置项名称，不能为null
+     * @param value 配置项的值，可以为null
+     * @param source 配置项的来源
+     * @param isSensitive 是否是敏感配置，如果为true，broker永远不会返回实际值
+     * @param isReadOnly 是否是只读配置，如果为true，则不能更新
+     * @param synonyms 按优先级排序的同义词配置列表
+     * @param type 配置值的数据类型
+     * @param documentation 配置的文档说明
      */
     public ConfigEntry(String name,
             String value,
@@ -69,6 +117,7 @@ public class ConfigEntry {
             List<ConfigSynonym> synonyms,
             ConfigType type,
             String documentation) {
+        // 确保name不为null，这是配置项的唯一标识
         Objects.requireNonNull(name, "name should not be null");
         this.name = name;
         this.value = value;
@@ -81,66 +130,84 @@ public class ConfigEntry {
     }
 
     /**
-     * Return the config name.
+     * 获取配置项的名称
+     * 
+     * @return 配置项的名称，永远不会为null
      */
     public String name() {
         return name;
     }
 
     /**
-     * Return the value or null. Null is returned if the config is unset or if isSensitive is true.
+     * 获取配置项的值
+     * 
+     * @return 配置项的值，如果配置未设置或者是敏感配置，则返回null
      */
     public String value() {
         return value;
     }
 
     /**
-     * Return the source of this configuration entry.
+     * 获取配置项的来源
+     * 
+     * @return 配置项的来源，表示配置的生效级别和方式
      */
     public ConfigSource source() {
         return source;
     }
 
     /**
-     * Return whether the config value is the default or if it's been explicitly set.
+     * 判断配置项是否使用默认值
+     * 
+     * @return 如果配置使用默认值返回true，否则返回false
      */
     public boolean isDefault() {
         return source == ConfigSource.DEFAULT_CONFIG;
     }
 
     /**
-     * Return whether the config value is sensitive. The value is always set to null by the broker if the config value
-     * is sensitive.
+     * 判断配置项是否敏感
+     * 敏感配置的值在broker返回时会被设置为null
+     * 
+     * @return 如果是敏感配置返回true，否则返回false
      */
     public boolean isSensitive() {
         return isSensitive;
     }
 
     /**
-     * Return whether the config is read-only and cannot be updated.
+     * 判断配置项是否只读
+     * 
+     * @return 如果是只读配置返回true，否则返回false
      */
     public boolean isReadOnly() {
         return isReadOnly;
     }
 
     /**
-     * Returns all config values that may be used as the value of this config along with their source,
-     * in the order of precedence. The list starts with the value returned in this ConfigEntry.
-     * The list is empty if synonyms were not requested using {@link DescribeConfigsOptions#includeSynonyms(boolean)}
+     * 获取配置项的同义词列表
+     * 同义词按优先级排序，列表中的第一个值就是当前ConfigEntry中的值
+     * 如果没有通过{@link DescribeConfigsOptions#includeSynonyms(boolean)}请求同义词，则返回空列表
+     * 
+     * @return 配置项的同义词列表
      */
     public List<ConfigSynonym> synonyms() {
         return  synonyms;
     }
 
     /**
-     * Return the config data type.
+     * 获取配置项的数据类型
+     * 
+     * @return 配置值的数据类型
      */
     public ConfigType type() {
         return type;
     }
 
     /**
-     * Return the config documentation.
+     * 获取配置项的文档说明
+     * 
+     * @return 配置的文档说明
      */
     public String documentation() {
         return documentation;
@@ -199,51 +266,87 @@ public class ConfigEntry {
     }
 
     /**
-     * Data type of configuration entry.
+     * 配置项的数据类型
+     * 用于标识配置值的具体类型，帮助进行类型检查和转换
      */
     public enum ConfigType {
+        /** 未知类型 */
         UNKNOWN,
+        /** 布尔类型 */
         BOOLEAN,
+        /** 字符串类型 */
         STRING,
+        /** 整数类型 */
         INT,
+        /** 短整数类型 */
         SHORT,
+        /** 长整数类型 */
         LONG,
+        /** 双精度浮点数类型 */
         DOUBLE,
+        /** 列表类型 */
         LIST,
+        /** 类类型，用于指定实现类 */
         CLASS,
+        /** 密码类型，通常作为敏感配置处理 */
         PASSWORD
     }
 
     /**
-     * Source of configuration entries.
+     * 配置项的来源
+     * 表示配置的生效范围和更新方式
      */
     public enum ConfigSource {
-        DYNAMIC_TOPIC_CONFIG,           // dynamic topic config that is configured for a specific topic
-        DYNAMIC_BROKER_LOGGER_CONFIG,   // dynamic broker logger config that is configured for a specific broker
-        DYNAMIC_BROKER_CONFIG,          // dynamic broker config that is configured for a specific broker
-        DYNAMIC_DEFAULT_BROKER_CONFIG,  // dynamic broker config that is configured as default for all brokers in the cluster
-        DYNAMIC_CLIENT_METRICS_CONFIG,  // dynamic client metrics subscription config that is configured for all clients
-        DYNAMIC_GROUP_CONFIG,           // dynamic group config that is configured for a specific group
-        STATIC_BROKER_CONFIG,           // static broker config provided as broker properties at start up (e.g. server.properties file)
-        DEFAULT_CONFIG,                 // built-in default configuration for configs that have a default value
-        UNKNOWN                         // source unknown e.g. in the ConfigEntry used for alter requests where source is not set
+        /** 动态主题配置：为特定主题配置的动态配置 */
+        DYNAMIC_TOPIC_CONFIG,
+        /** 动态Broker日志配置：为特定Broker配置的动态日志配置 */
+        DYNAMIC_BROKER_LOGGER_CONFIG,
+        /** 动态Broker配置：为特定Broker配置的动态配置 */
+        DYNAMIC_BROKER_CONFIG,
+        /** 动态默认Broker配置：为集群中所有Broker配置的默认动态配置 */
+        DYNAMIC_DEFAULT_BROKER_CONFIG,
+        /** 动态客户端度量配置：为所有客户端配置的动态度量订阅配置 */
+        DYNAMIC_CLIENT_METRICS_CONFIG,
+        /** 动态消费者组配置：为特定消费者组配置的动态配置 */
+        DYNAMIC_GROUP_CONFIG,
+        /** 静态Broker配置：在Broker启动时通过配置文件提供的静态配置（如server.properties文件） */
+        STATIC_BROKER_CONFIG,
+        /** 默认配置：具有默认值的内置配置 */
+        DEFAULT_CONFIG,
+        /** 未知来源：例如在用于修改请求的ConfigEntry中，未设置来源时使用 */
+        UNKNOWN
     }
 
     /**
-     * Class representing a configuration synonym of a {@link ConfigEntry}.
+     * 表示{@link ConfigEntry}的同义词配置
+     * 用于支持配置的层次结构和优先级机制
      */
     public static class ConfigSynonym {
 
+        /**
+         * 同义词配置的名称
+         * 可能与关联的{@link ConfigEntry}的名称不同
+         */
         private final String name;
+
+        /**
+         * 同义词配置的值
+         * 如果配置是敏感的，该值可能为null
+         */
         private final String value;
+
+        /**
+         * 同义词配置的来源
+         * 用于确定配置的优先级
+         */
         private final ConfigSource source;
 
         /**
-         * Create a configuration synonym with the provided values.
+         * 创建一个配置同义词
          *
-         * @param name Configuration name (this may be different from the name of the associated {@link ConfigEntry}
-         * @param value Configuration value
-         * @param source {@link ConfigSource} of this configuration
+         * @param name 配置名称（可能与关联的{@link ConfigEntry}的名称不同）
+         * @param value 配置值
+         * @param source 配置的来源{@link ConfigSource}
          */
         ConfigSynonym(String name, String value, ConfigSource source) {
             this.name = name;
@@ -252,21 +355,28 @@ public class ConfigEntry {
         }
 
         /**
-         * Returns the name of this configuration.
+         * 获取同义词配置的名称
+         * 
+         * @return 配置名称
          */
         public String name() {
             return name;
         }
 
         /**
-         * Returns the value of this configuration, which may be null if the configuration is sensitive.
+         * 获取同义词配置的值
+         * 如果配置是敏感的，可能返回null
+         * 
+         * @return 配置值
          */
         public String value() {
             return value;
         }
 
         /**
-         * Returns the source of this configuration.
+         * 获取同义词配置的来源
+         * 
+         * @return 配置来源
          */
         public ConfigSource source() {
             return source;

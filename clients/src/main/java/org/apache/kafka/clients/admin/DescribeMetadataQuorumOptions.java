@@ -17,8 +17,11 @@
 package org.apache.kafka.clients.admin;
 
 /**
- * Options for {@link Admin#describeMetadataQuorum(DescribeMetadataQuorumOptions)}
+ * 用于 {@link Admin#describeMetadataQuorum(DescribeMetadataQuorumOptions)} 的配置选项类。
+ * 该类用于描述Kafka集群中的元数据仲裁组信息，包括仲裁组成员、投票配置和状态等。
  */
 public class DescribeMetadataQuorumOptions extends AbstractOptions<DescribeMetadataQuorumOptions> {
-
+    // 目前该类没有额外的配置选项
+    // 继承自AbstractOptions以获取通用的选项处理功能
+    // 未来可能会添加更多的配置选项，如超时设置、成员过滤等
 }

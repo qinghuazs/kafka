@@ -24,48 +24,67 @@ import java.util.Optional;
 import static java.util.stream.Collectors.joining;
 
 /**
- * Encapsulates details about finalized as well as supported features. This is particularly useful
- * to hold the result returned by the {@link Admin#describeFeatures(DescribeFeaturesOptions)} API.
+ * 封装已完成确定（finalized）和支持的特性的详细信息。
+ * 这个类主要用于保存 {@link Admin#describeFeatures(DescribeFeaturesOptions)} API 返回的结果。
  */
 public class FeatureMetadata {
-
+    // 存储已确定的特性版本范围映射，键为特性名称，值为版本范围
     private final Map<String, FinalizedVersionRange> finalizedFeatures;
 
+    // 已确定特性的纪元（epoch）值，为空表示特性不可用
     private final Optional<Long> finalizedFeaturesEpoch;
 
+    // 存储支持的特性版本范围映射，键为特性名称，值为版本范围
     private final Map<String, SupportedVersionRange> supportedFeatures;
 
+    /**
+     * 构造函数，初始化特性元数据
+     * 
+     * @param finalizedFeatures 已确定的特性版本范围映射
+     * @param finalizedFeaturesEpoch 已确定特性的纪元值
+     * @param supportedFeatures 支持的特性版本范围映射
+     */
     FeatureMetadata(final Map<String, FinalizedVersionRange> finalizedFeatures,
-                           final Optional<Long> finalizedFeaturesEpoch,
-                           final Map<String, SupportedVersionRange> supportedFeatures) {
+                   final Optional<Long> finalizedFeaturesEpoch,
+                   final Map<String, SupportedVersionRange> supportedFeatures) {
+        // 创建新的HashMap以防止外部修改
         this.finalizedFeatures = new HashMap<>(finalizedFeatures);
+        // 直接赋值Optional对象，因为它是不可变的
         this.finalizedFeaturesEpoch = finalizedFeaturesEpoch;
+        // 创建新的HashMap以防止外部修改
         this.supportedFeatures = new HashMap<>(supportedFeatures);
     }
 
     /**
-     * Returns a map of finalized feature versions. Each entry in the map contains a key being a
-     * feature name and the value being a range of version levels supported by every broker in the
-     * cluster.
+     * 获取已确定的特性版本映射。
+     * 映射中的每个条目包含特性名称作为键，以及集群中所有broker支持的版本范围作为值。
+     * 
+     * @return 返回已确定特性版本的映射副本
      */
     public Map<String, FinalizedVersionRange> finalizedFeatures() {
+        // 返回映射的副本以防止外部修改
         return new HashMap<>(finalizedFeatures);
     }
 
     /**
-     * The epoch for the finalized features.
-     * If the returned value is empty, it means the finalized features are absent/unavailable.
+     * 获取已确定特性的纪元值。
+     * 如果返回值为空，表示已确定的特性不存在或不可用。
+     * 
+     * @return 返回已确定特性的纪元值
      */
     public Optional<Long> finalizedFeaturesEpoch() {
+        // 直接返回Optional对象，因为它是不可变的
         return finalizedFeaturesEpoch;
     }
 
     /**
-     * Returns a map of supported feature versions. Each entry in the map contains a key being a
-     * feature name and the value being a range of versions supported by a particular broker in the
-     * cluster.
+     * 获取支持的特性版本映射。
+     * 映射中的每个条目包含特性名称作为键，以及集群中特定broker支持的版本范围作为值。
+     * 
+     * @return 返回支持的特性版本的映射副本
      */
     public Map<String, SupportedVersionRange> supportedFeatures() {
+        // 返回映射的副本以防止外部修改
         return new HashMap<>(supportedFeatures);
     }
 

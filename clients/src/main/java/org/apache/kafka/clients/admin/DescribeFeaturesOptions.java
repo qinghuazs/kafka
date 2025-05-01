@@ -19,10 +19,14 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
 /**
- * Options for {@link AdminClient#describeFeatures(DescribeFeaturesOptions)}.
+ * 用于 {@link AdminClient#describeFeatures(DescribeFeaturesOptions)} 的配置选项类。
+ * 该类用于描述Kafka集群中的特性配置，包括特性版本、支持的特性等信息。
  *
- * The API of this class is evolving. See {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeFeaturesOptions extends AbstractOptions<DescribeFeaturesOptions> {
+    // 目前该类没有额外的配置选项
+    // 继承自AbstractOptions以获取通用的选项处理功能
+    // 未来可能会添加更多的配置选项，如超时设置、特性过滤等
 }

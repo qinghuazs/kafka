@@ -24,34 +24,51 @@ import org.apache.kafka.common.internals.KafkaFutureImpl;
 import java.util.Collection;
 
 /**
- * The result of the {@link Admin#listClientMetricsResources()} call.
+ * Admin#listClientMetricsResources()调用的结果类。
  * <p>
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详细信息请参见Admin接口的说明。
  */
 @InterfaceStability.Evolving
 public class ListClientMetricsResourcesResult {
+    /**
+     * 用于异步获取客户端指标资源列表的Future对象
+     * 包含了ClientMetricsResourceListing集合的异步结果
+     */
     private final KafkaFuture<Collection<ClientMetricsResourceListing>> future;
 
+    /**
+     * 构造函数，初始化结果对象
+     * 
+     * @param future 包含客户端指标资源列表的KafkaFuture对象
+     */
     ListClientMetricsResourcesResult(KafkaFuture<Collection<ClientMetricsResourceListing>> future) {
+        // 初始化future字段
         this.future = future;
     }
 
     /**
-     * Returns a future that yields either an exception, or the full set of client metrics
-     * listings.
-     *
-     * In the event of a failure, the future yields nothing but the first exception which
-     * occurred.
+     * 返回一个Future对象，该对象要么产生一个异常，要么产生完整的客户端指标列表。
+     * 
+     * 如果发生失败，Future将只返回首个发生的异常。
+     * 
+     * @return 返回包含客户端指标资源列表的KafkaFuture对象
      */
     public KafkaFuture<Collection<ClientMetricsResourceListing>> all() {
+        // 创建新的KafkaFutureImpl实例用于返回结果
         final KafkaFutureImpl<Collection<ClientMetricsResourceListing>> result = new KafkaFutureImpl<>();
+        
+        // 为原始future添加完成回调
         future.whenComplete((listings, throwable) -> {
+            // 如果存在异常，则使用该异常完成result
             if (throwable != null) {
                 result.completeExceptionally(throwable);
             } else {
+                // 否则，使用获取到的listings完成result
                 result.complete(listings);
             }
         });
+        
+        // 返回结果Future
         return result;
     }
 }

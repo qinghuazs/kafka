@@ -25,17 +25,37 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * A configuration object containing the configuration entries for a resource.
+ * 一个包含资源配置项的配置对象。
+ * 这个类用于管理Kafka资源（如Topic、Broker等）的配置信息，每个资源可以有多个配置项（ConfigEntry）。
  * <p>
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详细信息请参考{@link Admin}。
+ * 
+ * 应用场景：
+ * 1. 用于管理和查询Kafka资源的配置信息
+ * 2. 在Admin客户端中用于配置更新和检索操作
+ * 3. 支持配置项的批量操作和单个查询
  */
 @InterfaceStability.Evolving
 public class Config {
 
+    /**
+     * 存储配置项的Map集合
+     * - key: 配置项的名称
+     * - value: 对应的ConfigEntry对象
+     * 使用final修饰确保引用不可变
+     * 使用HashMap提供O(1)的查询性能
+     */
     private final Map<String, ConfigEntry> entries = new HashMap<>();
 
     /**
-     * Create a configuration instance with the provided entries.
+     * 创建一个包含指定配置项的配置实例
+     * 
+     * @param entries 配置项集合，每个元素都是一个ConfigEntry对象
+     * 
+     * 实现细节：
+     * 1. 遍历传入的配置项集合
+     * 2. 使用配置项的名称作为key，配置项本身作为value存入Map
+     * 3. 通过Map结构实现快速查找和去重
      */
     public Config(Collection<ConfigEntry> entries) {
         for (ConfigEntry entry : entries) {
@@ -44,14 +64,29 @@ public class Config {
     }
 
     /**
-     * Configuration entries for a resource.
+     * 获取所有配置项
+     * 
+     * @return 返回不可修改的配置项集合视图
+     * 
+     * 实现细节：
+     * 1. 返回Map中所有值的集合视图
+     * 2. 使用Collections.unmodifiableCollection确保返回的集合不可被修改
+     * 3. 通过不可变集合保证配置的安全性
      */
     public Collection<ConfigEntry> entries() {
         return Collections.unmodifiableCollection(entries.values());
     }
 
     /**
-     * Get the configuration entry with the provided name or null if there isn't one.
+     * 根据名称获取特定的配置项
+     * 
+     * @param name 配置项的名称
+     * @return 如果存在返回对应的ConfigEntry对象，否则返回null
+     * 
+     * 实现细节：
+     * 1. 直接通过Map的get方法获取配置项
+     * 2. 利用HashMap的O(1)查询性能
+     * 3. 当配置项不存在时返回null
      */
     public ConfigEntry get(String name) {
         return entries.get(name);

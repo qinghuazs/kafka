@@ -23,26 +23,36 @@ import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import java.util.List;
 
 /**
- * Options for {@link Admin#describeDelegationToken(DescribeDelegationTokenOptions)}.
- *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 用于 {@link Admin#describeDelegationToken(DescribeDelegationTokenOptions)} 的配置选项类。
+ * 
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeDelegationTokenOptions extends AbstractOptions<DescribeDelegationTokenOptions> {
+    // 存储要描述其委托令牌的所有者列表
     private List<KafkaPrincipal> owners;
 
     /**
-     * If owners is null, all the user owned tokens and tokens where user have Describe permission
-     * will be returned.
-     * @param owners The owners that we want to describe delegation tokens for
-     * @return this instance
+     * 设置要描述其委托令牌的所有者列表。
+     * 如果owners参数为null，将返回所有用户拥有的令牌以及用户具有Describe权限的令牌。
+     * 
+     * @param owners 要描述其委托令牌的所有者列表
+     * @return 当前DescribeDelegationTokenOptions实例，支持链式调用
      */
     public DescribeDelegationTokenOptions owners(List<KafkaPrincipal> owners) {
+        // 设置owners字段的值
         this.owners = owners;
+        // 返回当前实例以支持方法链式调用
         return this;
     }
 
+    /**
+     * 获取要描述其委托令牌的所有者列表
+     * 
+     * @return 返回配置的所有者列表，如果未配置则返回null
+     */
     public List<KafkaPrincipal> owners() {
+        // 返回owners字段的值
         return owners;
     }
 }

@@ -21,12 +21,15 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Collection;
 
 /**
- * Options for {@link Admin#describeTransactions(Collection)}.
+ * 用于 {@link Admin#describeTransactions(Collection)} 的配置选项类。
+ * 该类用于描述Kafka事务的信息，包括事务状态、协调器位置、生产者ID等。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeTransactionsOptions extends AbstractOptions<DescribeTransactionsOptions> {
+    // 继承自AbstractOptions以获取通用的选项处理功能，如超时设置
+    // 目前该类没有额外的配置选项，但未来可能会添加更多选项
 
     @Override
     public String toString() {

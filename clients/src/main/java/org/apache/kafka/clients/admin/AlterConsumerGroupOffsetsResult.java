@@ -27,21 +27,48 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * The result of the {@link AdminClient#alterConsumerGroupOffsets(String, Map)} call.
- *
- * The API of this class is evolving, see {@link AdminClient} for details.
+ * 修改消费者组偏移量操作的结果类，用于处理{@link AdminClient#alterConsumerGroupOffsets(String, Map)}调用的返回结果。
+ * 该类提供了检查单个分区修改结果和所有分区修改结果的方法。
+ * 
+ * 应用场景：
+ * 1. 手动调整消费者组的消费偏移量，比如重新消费某些消息或跳过某些消息
+ * 2. 在消费者组迁移或重组时，需要调整偏移量
+ * 3. 修复消费者组的偏移量问题
+ * 
+ * 注意：该类的API仍在演进中，详见{@link AdminClient}。
  */
 @InterfaceStability.Evolving
 public class AlterConsumerGroupOffsetsResult {
 
+    /**
+     * 存储修改偏移量操作的Future结果
+     * - Key: TopicPartition对象，表示主题分区
+     * - Value: Errors对象，表示操作的错误状态
+     */
     private final KafkaFuture<Map<TopicPartition, Errors>> future;
 
+    /**
+     * 构造函数，初始化修改偏移量操作的Future结果
+     *
+     * @param future 包含每个分区修改结果的Future对象
+     */
     AlterConsumerGroupOffsetsResult(KafkaFuture<Map<TopicPartition, Errors>> future) {
         this.future = future;
     }
 
     /**
-     * Return a future which can be used to check the result for a given partition.
+     * 获取指定分区的修改偏移量操作结果
+     * 
+     * 实现细节：
+     * 1. 创建一个新的KafkaFutureImpl对象来存储单个分区的结果
+     * 2. 当原始future完成时：
+     *    - 如果发生异常，则将异常传递给结果future
+     *    - 如果指定分区不在结果集中，抛出IllegalArgumentException
+     *    - 如果分区操作成功(Errors.NONE)，完成future
+     *    - 如果分区操作失败，使用对应的错误完成future
+     *
+     * @param partition 要检查结果的主题分区
+     * @return 表示操作结果的Future，如果成功则完成，如果失败则包含异常
      */
     public KafkaFuture<Void> partitionResult(final TopicPartition partition) {
         final KafkaFutureImpl<Void> result = new KafkaFutureImpl<>();
@@ -66,7 +93,16 @@ public class AlterConsumerGroupOffsetsResult {
     }
 
     /**
-     * Return a future which succeeds if all the alter offsets succeed.
+     * 获取所有分区的修改偏移量操作的聚合结果
+     * 
+     * 实现细节：
+     * 1. 使用thenApply转换原始future的结果
+     * 2. 收集所有失败的分区到列表中
+     * 3. 检查是否有任何错误：
+     *    - 如果有错误，抛出异常，包含所有失败分区的信息
+     *    - 如果全部成功，返回null表示操作完成
+     *
+     * @return 表示所有分区操作结果的Future，只有当所有分区都成功时才完成
      */
     public KafkaFuture<Void> all() {
         return this.future.thenApply(topicPartitionErrorsMap ->  {

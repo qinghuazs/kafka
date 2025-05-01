@@ -27,43 +27,63 @@ import java.util.concurrent.ExecutionException;
 
 
 /**
- * The result of the {@link Admin#describeLogDirs(Collection)} call.
+ * {@link Admin#describeLogDirs(Collection)} 调用的结果类。
+ * 该类用于获取Kafka broker的日志目录信息。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeLogDirsResult {
+    // 存储每个broker的日志目录描述信息的Future映射
+    // key: broker ID
+    // value: 该broker的日志目录描述信息Future，其结果是一个从目录路径到目录描述的映射
     private final Map<Integer, KafkaFuture<Map<String, LogDirDescription>>> futures;
 
+    /**
+     * 构造函数，初始化日志目录描述结果
+     * 
+     * @param futures broker ID到其日志目录描述信息Future的映射
+     */
     DescribeLogDirsResult(Map<Integer, KafkaFuture<Map<String, LogDirDescription>>> futures) {
+        // 初始化futures字段，存储每个broker的异步日志目录描述结果
         this.futures = futures;
     }
 
     /**
-     * Return a map from brokerId to future which can be used to check the information of partitions on each individual broker.
-     * The result of the future is a map from broker log directory path to a description of that log directory.
+     * 返回从broker ID到其日志目录描述信息Future的映射。
+     * Future的结果是一个从broker日志目录路径到该目录描述的映射。
+     * 
+     * @return broker ID到日志目录描述信息Future的映射
      */
     public Map<Integer, KafkaFuture<Map<String, LogDirDescription>>> descriptions() {
+        // 返回futures映射，允许调用者分别获取每个broker的日志目录信息
         return futures;
     }
 
     /**
-     * Return a future which succeeds only if all the brokers have responded without error.
-     * The result of the future is a map from brokerId to a map from broker log directory path
-     * to a description of that log directory.
+     * 返回一个Future，只有当所有broker都成功响应时才会完成。
+     * Future的结果是一个从broker ID到该broker的日志目录描述映射的映射，
+     * 其中日志目录描述是从目录路径到目录描述的映射。
+     * 
+     * @return 包含所有broker日志目录描述信息的Future
      */
     public KafkaFuture<Map<Integer, Map<String, LogDirDescription>>> allDescriptions() {
+        // 使用KafkaFuture.allOf等待所有Future完成
         return KafkaFuture.allOf(futures.values().toArray(new KafkaFuture[0])).
             thenApply(v -> {
+                // 创建一个新的HashMap来存储所有broker的日志目录描述
                 Map<Integer, Map<String, LogDirDescription>> descriptions = new HashMap<>(futures.size());
+                // 遍历所有Future条目
                 for (Map.Entry<Integer, KafkaFuture<Map<String, LogDirDescription>>> entry : futures.entrySet()) {
                     try {
+                        // 获取每个Future的结果并存入descriptions映射
                         descriptions.put(entry.getKey(), entry.getValue().get());
                     } catch (InterruptedException | ExecutionException e) {
-                        // This should be unreachable, because allOf ensured that all the futures completed successfully.
+                        // 这种情况理论上不会发生，因为KafkaFuture.allOf已经确保所有Future都成功完成
                         throw new RuntimeException(e);
                     }
                 }
+                // 返回包含所有broker日志目录描述的映射
                 return descriptions;
             });
     }

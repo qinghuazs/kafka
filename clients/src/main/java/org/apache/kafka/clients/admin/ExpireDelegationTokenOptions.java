@@ -20,27 +20,40 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
 /**
- * Options for {@link Admin#expireDelegationToken(byte[], ExpireDelegationTokenOptions)}.
+ * 用于 {@link Admin#expireDelegationToken(byte[], ExpireDelegationTokenOptions)} 的配置选项类。
+ * 该类用于配置Kafka委托令牌的过期时间和相关参数。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class ExpireDelegationTokenOptions extends AbstractOptions<ExpireDelegationTokenOptions> {
+    // 令牌的过期时间周期（毫秒），默认值-1表示立即过期
     private long expiryTimePeriodMs = -1L;
 
     /**
-     * @param expiryTimePeriodMs the time period until we should expire this token.
-     * {@code expiryTimePeriodMs} &gt;= 0: the token will update the expiration timestamp to min(now + expiryTimePeriodMs, maxTimestamp)
-     * {@code expiryTimePeriodMs} &lt; 0: token will be expired immediately.
+     * 设置令牌的过期时间周期
+     * 
+     * @param expiryTimePeriodMs 令牌应该过期的时间周期
+     * {@code expiryTimePeriodMs} >= 0: 令牌的过期时间戳将被更新为 min(当前时间 + expiryTimePeriodMs, 最大时间戳)
+     * {@code expiryTimePeriodMs} < 0: 令牌将立即过期
+     * @return 当前ExpireDelegationTokenOptions实例，支持链式调用
      */
     public ExpireDelegationTokenOptions expiryTimePeriodMs(
         long expiryTimePeriodMs
     ) {
+        // 设置过期时间周期
         this.expiryTimePeriodMs = expiryTimePeriodMs;
+        // 返回当前实例以支持方法链式调用
         return this;
     }
 
+    /**
+     * 获取令牌的过期时间周期
+     * 
+     * @return 返回设置的过期时间周期（毫秒）
+     */
     public long expiryTimePeriodMs() {
+        // 返回过期时间周期值
         return expiryTimePeriodMs;
     }
 }

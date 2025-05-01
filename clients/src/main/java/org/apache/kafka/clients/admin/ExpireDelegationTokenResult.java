@@ -21,22 +21,33 @@ import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
 /**
- * The result of the {@link KafkaAdminClient#expireDelegationToken(byte[], ExpireDelegationTokenOptions)} call.
+ * {@link KafkaAdminClient#expireDelegationToken(byte[], ExpireDelegationTokenOptions)} 调用的结果类。
+ * 该类用于获取Kafka委托令牌过期操作的结果信息。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class ExpireDelegationTokenResult {
+    // 存储令牌过期时间戳的Future
     private final KafkaFuture<Long> expiryTimestamp;
 
+    /**
+     * 构造函数，初始化令牌过期结果
+     * 
+     * @param expiryTimestamp 包含令牌过期时间戳的Future
+     */
     ExpireDelegationTokenResult(KafkaFuture<Long> expiryTimestamp) {
+        // 初始化expiryTimestamp字段，存储过期时间戳Future
         this.expiryTimestamp = expiryTimestamp;
     }
 
     /**
-     * Returns a future which yields expiry timestamp
+     * 获取包含令牌过期时间戳的Future
+     * 
+     * @return 返回包含令牌过期时间戳的Future
      */
     public KafkaFuture<Long> expiryTimestamp() {
+        // 返回过期时间戳Future
         return expiryTimestamp;
     }
 }

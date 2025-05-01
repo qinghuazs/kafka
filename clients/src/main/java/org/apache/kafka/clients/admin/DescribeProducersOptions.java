@@ -23,20 +23,36 @@ import java.util.Objects;
 import java.util.OptionalInt;
 
 /**
- * Options for {@link Admin#describeProducers(Collection)}.
+ * 用于 {@link Admin#describeProducers(Collection)} 的配置选项类。
+ * 该类用于描述Kafka生产者的信息，包括活跃的生产者会话、事务状态等。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeProducersOptions extends AbstractOptions<DescribeProducersOptions> {
+    // 存储要查询的broker ID，使用OptionalInt允许该值为空
     private OptionalInt brokerId = OptionalInt.empty();
 
+    /**
+     * 设置要查询的broker ID
+     * 
+     * @param brokerId 要查询的broker的ID
+     * @return 当前DescribeProducersOptions实例，支持链式调用
+     */
     public DescribeProducersOptions brokerId(int brokerId) {
+        // 将传入的broker ID包装为OptionalInt对象并存储
         this.brokerId = OptionalInt.of(brokerId);
+        // 返回当前实例以支持方法链式调用
         return this;
     }
 
+    /**
+     * 获取配置的broker ID
+     * 
+     * @return 返回配置的broker ID，如果未配置则返回空的OptionalInt
+     */
     public OptionalInt brokerId() {
+        // 返回存储的broker ID
         return brokerId;
     }
 

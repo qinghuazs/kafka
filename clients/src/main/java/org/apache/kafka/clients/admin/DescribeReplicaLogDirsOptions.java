@@ -22,11 +22,14 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Collection;
 
 /**
- * Options for {@link Admin#describeReplicaLogDirs(Collection)}.
+ * 用于 {@link Admin#describeReplicaLogDirs(Collection)} 的配置选项类。
+ * 该类用于描述Kafka主题分区副本的日志目录信息，包括目录位置、大小和状态等。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeReplicaLogDirsOptions extends AbstractOptions<DescribeReplicaLogDirsOptions> {
-
+    // 目前该类没有额外的配置选项
+    // 继承自AbstractOptions以获取通用的选项处理功能
+    // 未来可能会添加更多的配置选项，如目录过滤、统计信息等
 }

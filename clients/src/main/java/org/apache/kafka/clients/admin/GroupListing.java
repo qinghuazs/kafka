@@ -25,79 +25,97 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * A listing of a group in the cluster.
+ * 表示Kafka集群中的一个消费者组的列表项。
+ * 该类提供了消费者组的基本信息，包括组ID、类型、协议和状态。
  */
 @InterfaceStability.Evolving
 public class GroupListing {
+    // 消费者组的唯一标识符
     private final String groupId;
+    
+    // 消费者组的类型，使用Optional包装以处理不可用的情况
     private final Optional<GroupType> type;
+    
+    // 消费者组使用的协议
     private final String protocol;
+    
+    // 消费者组的当前状态，使用Optional包装以处理不可用的情况
     private final Optional<GroupState> groupState;
 
     /**
-     * Create an instance with the specified parameters.
+     * 使用指定参数创建GroupListing实例
      *
-     * @param groupId    Group Id
-     * @param type       Group type
-     * @param protocol   Protocol
-     * @param groupState Group state
+     * @param groupId    消费者组ID
+     * @param type       消费者组类型
+     * @param protocol   协议
+     * @param groupState 消费者组状态
      */
     public GroupListing(String groupId, Optional<GroupType> type, String protocol, Optional<GroupState> groupState) {
+        // 初始化组ID
         this.groupId = groupId;
+        // 确保type不为null，否则抛出NullPointerException
         this.type = Objects.requireNonNull(type);
+        // 初始化协议
         this.protocol = protocol;
+        // 初始化组状态
         this.groupState = groupState;
     }
 
     /**
-     * The group Id.
+     * 获取消费者组ID
      *
-     * @return Group Id
+     * @return 返回消费者组ID
      */
     public String groupId() {
+        // 返回组ID字段
         return groupId;
     }
 
     /**
-     * The type of the group.
+     * 获取消费者组类型
      * <p>
-     * If the broker returns a group type which is not recognised, as might
-     * happen when talking to a broker with a later version, the type will be
-     * <code>Optional.of(GroupType.UNKNOWN)</code>. If the broker is earlier than version 2.6.0,
-     * the group type will not be available, and the type will be <code>Optional.empty()</code>.
+     * 如果broker返回了一个无法识别的组类型（可能是因为与更高版本的broker通信），
+     * 类型将被设置为<code>Optional.of(GroupType.UNKNOWN)</code>。
+     * 如果broker版本早于2.6.0，组类型将不可用，此时返回<code>Optional.empty()</code>。
      *
-     * @return An Optional containing the type, if available
+     * @return 返回包含组类型的Optional对象（如果可用）
      */
     public Optional<GroupType> type() {
+        // 返回组类型字段
         return type;
     }
 
     /**
-     * The protocol of the group.
+     * 获取消费者组使用的协议
      *
-     * @return The protocol
+     * @return 返回协议名称
      */
     public String protocol() {
+        // 返回协议字段
         return protocol;
     }
 
     /**
-     * The group state.
+     * 获取消费者组状态
      * <p>
-     * If the broker returns a group state which is not recognised, as might
-     * happen when talking to a broker with a later version, the state will be
-     * <code>Optional.of(GroupState.UNKNOWN)</code>.
+     * 如果broker返回了一个无法识别的组状态（可能是因为与更高版本的broker通信），
+     * 状态将被设置为<code>Optional.of(GroupState.UNKNOWN)</code>。
      *
-     * @return An Optional containing the state, if available.
+     * @return 返回包含组状态的Optional对象（如果可用）
      */
     public Optional<GroupState> groupState() {
+        // 返回组状态字段
         return groupState;
     }
 
     /**
-     * If the group is a simple consumer group or not.
+     * 判断是否为简单消费者组
+     * 简单消费者组的特征是：类型为CLASSIC且协议为空
+     * 
+     * @return 如果是简单消费者组返回true，否则返回false
      */
     public boolean isSimpleConsumerGroup() {
+        // 检查组类型是否为CLASSIC且协议是否为空
         return type.filter(gt -> gt == GroupType.CLASSIC).isPresent() && protocol.isEmpty();
     }
 

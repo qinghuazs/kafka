@@ -22,9 +22,18 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Map;
 
 /**
- * Options for {@link AdminClient#alterPartitionReassignments(Map, AlterPartitionReassignmentsOptions)}
- *
- * The API of this class is evolving. See {@link AdminClient} for details.
+ * 用于Kafka分区重分配操作的配置选项类。
+ * 该类用于{@link AdminClient#alterPartitionReassignments(Map, AlterPartitionReassignmentsOptions)}方法，
+ * 支持管理员在以下场景下进行分区重分配：
+ * 
+ * 1. 负载均衡：当集群中的broker负载不均衡时，可以通过重分配将分区迁移到负载较轻的broker上
+ * 2. 扩容场景：向集群添加新的broker后，需要将现有分区重新分配到新broker上
+ * 3. 缩容场景：从集群移除broker前，需要将待移除broker上的分区重新分配到其他broker上
+ * 4. 故障恢复：当某个broker发生故障时，可以通过重分配将其上的分区迁移到健康的broker上
+ * 
+ * 该类继承自AbstractOptions，提供了一个通用的配置框架，允许在未来版本中添加更多的配置选项。
+ * 
+ * 注意：该API仍在演进中，详情请参考{@link AdminClient}。
  */
 @InterfaceStability.Evolving
 public class AlterPartitionReassignmentsOptions extends AbstractOptions<AlterPartitionReassignmentsOptions> {

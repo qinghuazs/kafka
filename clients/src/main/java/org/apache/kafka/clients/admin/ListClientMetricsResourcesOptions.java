@@ -20,9 +20,10 @@ package org.apache.kafka.clients.admin;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
 /**
- * Options for {@link Admin#listClientMetricsResources()}.
+ * 用于配置Admin#listClientMetricsResources()方法的选项类。
+ * 该类用于指定获取客户端指标资源列表时的各种参数和配置选项。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详细信息请参见Admin接口的说明。
  */
 @InterfaceStability.Evolving
 public class ListClientMetricsResourcesOptions extends AbstractOptions<ListClientMetricsResourcesOptions> {

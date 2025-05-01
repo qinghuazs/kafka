@@ -21,18 +21,33 @@ import org.apache.kafka.common.KafkaFuture;
 /**
  * The result of {@link Admin#describeMetadataQuorum(DescribeMetadataQuorumOptions)}
  */
+/**
+ * {@link Admin#describeMetadataQuorum(DescribeMetadataQuorumOptions)} 调用的结果类。
+ * 该类用于获取Kafka集群中元数据仲裁组的信息。
+ */
 public class DescribeMetadataQuorumResult {
 
+    // 存储仲裁组信息的Future对象
+    // 使用KafkaFuture而不是CompletableFuture是为了提供更好的异常处理和类型安全
     private final KafkaFuture<QuorumInfo> quorumInfo;
 
+    /**
+     * 构造函数，初始化元数据仲裁组描述结果
+     * 
+     * @param quorumInfo 包含仲裁组信息的Future对象
+     */
     DescribeMetadataQuorumResult(KafkaFuture<QuorumInfo> quorumInfo) {
+        // 初始化quorumInfo字段，存储异步获取的仲裁组信息
         this.quorumInfo = quorumInfo;
     }
 
     /**
-     * Returns a future containing the QuorumInfo
+     * 获取包含仲裁组信息的Future对象
+     * 
+     * @return 返回一个KafkaFuture，当完成时将产生仲裁组信息
      */
     public KafkaFuture<QuorumInfo> quorumInfo() {
+        // 返回存储的Future对象，允许调用者异步获取仲裁组信息
         return quorumInfo;
     }
 }

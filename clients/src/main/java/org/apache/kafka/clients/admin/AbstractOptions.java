@@ -18,30 +18,43 @@
 package org.apache.kafka.clients.admin;
 
 
-/*
- * This class implements the common APIs that are shared by Options classes for various AdminClient commands
+/**
+ * 这个类实现了AdminClient命令的各种Options类共享的通用API
+ * 
+ * 作为所有管理客户端操作选项的基类，提供了超时时间等基础配置项。
+ * 通过泛型参数T确保子类可以实现链式调用方法。
  */
 public abstract class AbstractOptions<T extends AbstractOptions> {
 
+    /**
+     * 操作的超时时间（毫秒）
+     * 如果为null，则使用AdminClient的默认API超时时间
+     */
     protected Integer timeoutMs = null;
 
     /**
-     * Set the timeout in milliseconds for this operation or {@code null} if the default api timeout for the
-     * AdminClient should be used.
+     * 设置此操作的超时时间（毫秒）
+     * 如果设置为null，将使用AdminClient的默认API超时时间
+     *
+     * @param timeoutMs 超时时间，单位为毫秒
+     * @return 返回当前对象实例，支持方法链式调用
      */
     @SuppressWarnings("unchecked")
     public T timeoutMs(Integer timeoutMs) {
+        // 设置超时时间字段
         this.timeoutMs = timeoutMs;
+        // 返回当前实例，支持链式调用
         return (T) this;
     }
 
     /**
-     * The timeout in milliseconds for this operation or {@code null} if the default api timeout for the
-     * AdminClient should be used.
+     * 获取此操作的超时时间（毫秒）
+     * 如果返回null，表示将使用AdminClient的默认API超时时间
+     *
+     * @return 超时时间，单位为毫秒
      */
     public Integer timeoutMs() {
         return timeoutMs;
     }
-
 
 }

@@ -21,9 +21,17 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import org.apache.kafka.common.quota.ClientQuotaFilter;
 
 /**
- * Options for {@link Admin#describeClientQuotas(ClientQuotaFilter, DescribeClientQuotasOptions)}.
- *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 用于配置{@link Admin#describeClientQuotas(ClientQuotaFilter, DescribeClientQuotasOptions)}操作的选项类。
+ * 
+ * 此类用于在查询Kafka客户端配额时设置相关参数。客户端配额是Kafka用来限制客户端资源使用的机制，
+ * 比如限制生产者的消息发送速率或消费者的消息获取速率。
+ * 
+ * 应用场景：
+ * 1. 监控客户端资源使用情况
+ * 2. 诊断性能问题
+ * 3. 验证配额设置是否生效
+ * 
+ * 注意：该API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeClientQuotasOptions extends AbstractOptions<DescribeClientQuotasOptions> {

@@ -22,15 +22,19 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Collection;
 
 /**
- * Options for {@link Admin#fenceProducers(Collection, FenceProducersOptions)}
+ * 用于 {@link Admin#fenceProducers(Collection, FenceProducersOptions)} 的配置选项类。
+ * 该类用于配置生产者隔离操作的参数，包括超时设置等。
  *
- * The API of this class is evolving. See {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public class FenceProducersOptions extends AbstractOptions<FenceProducersOptions> {
+    // 继承自AbstractOptions以获取通用的选项处理功能，如超时设置
+    // 目前该类没有额外的配置选项，但未来可能会添加更多选项
 
     @Override
     public String toString() {
+        // 返回包含超时时间的字符串表示
         return "FenceProducersOptions{" +
                 "timeoutMs=" + timeoutMs +
                 '}';

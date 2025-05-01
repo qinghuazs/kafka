@@ -22,9 +22,26 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.List;
 
 /**
- * Options for {@link AdminClient#alterUserScramCredentials(List, AlterUserScramCredentialsOptions)}
- *
- * The API of this class is evolving. See {@link AdminClient} for details.
+ * 用于修改用户SCRAM凭证的选项类。
+ * 
+ * SCRAM（Salted Challenge Response Authentication Mechanism）是Kafka支持的一种安全认证机制，
+ * 用于验证客户端身份。此类提供了修改用户SCRAM凭证时的配置选项，包括：
+ * 
+ * 1. 创建新的用户凭证
+ * 2. 更新现有用户的凭证
+ * 3. 删除用户的凭证
+ * 
+ * 该类继承自AbstractOptions，提供了通用的选项设置功能。通过AdminClient的alterUserScramCredentials方法使用，
+ * 可以批量修改多个用户的SCRAM凭证。
+ * 
+ * 使用场景：
+ * - 系统管理员需要批量创建新用户时
+ * - 定期更新用户密码以提高安全性时
+ * - 删除过期或不再使用的用户凭证时
+ * 
+ * 注意：此API仍在演进中，后续版本可能会有变更，详见{@link AdminClient}。
+ * 
+ * @see AdminClient#alterUserScramCredentials(List, AlterUserScramCredentialsOptions)
  */
 @InterfaceStability.Evolving
 public class AlterUserScramCredentialsOptions extends AbstractOptions<AlterUserScramCredentialsOptions> {

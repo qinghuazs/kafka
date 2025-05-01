@@ -29,48 +29,68 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * The result of {@link Admin#electLeaders(ElectionType, Set, ElectLeadersOptions)}
+ * {@link Admin#electLeaders(ElectionType, Set, ElectLeadersOptions)} 调用的结果类。
+ * 该类用于获取Kafka主题分区leader选举的结果信息。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public final class ElectLeadersResult {
+    // 存储选举结果的Future，映射包含每个主题分区的选举结果或错误信息
     private final KafkaFuture<Map<TopicPartition, Optional<Throwable>>> electionFuture;
 
+    /**
+     * 构造函数，初始化选举结果
+     * 
+     * @param electionFuture 包含主题分区选举结果的Future映射
+     */
     ElectLeadersResult(KafkaFuture<Map<TopicPartition, Optional<Throwable>>> electionFuture) {
+        // 初始化electionFuture字段，存储选举结果
         this.electionFuture = electionFuture;
     }
 
     /**
-     * <p>Get a future for the topic partitions for which a leader election was attempted.
-     * If the election succeeded then the value for a topic partition will be the empty Optional.
-     * Otherwise the election failed and the Optional will be set with the error.</p>
+     * 获取尝试进行leader选举的主题分区的Future结果
+     * 如果选举成功，对应主题分区的值将是空Optional
+     * 如果选举失败，Optional中将包含错误信息
+     * 
+     * @return 返回包含所有主题分区选举结果的Future映射
      */
     public KafkaFuture<Map<TopicPartition, Optional<Throwable>>> partitions() {
+        // 直接返回选举结果Future
         return electionFuture;
     }
 
     /**
-     * Return a future which succeeds if all the topic elections succeed.
+     * 返回一个Future，只有当所有主题分区的选举都成功时才会成功完成
+     * 
+     * @return 返回一个表示所有选举是否成功的Future
      */
     public KafkaFuture<Void> all() {
+        // 创建一个新的KafkaFutureImpl实例用于返回结果
         final KafkaFutureImpl<Void> result = new KafkaFutureImpl<>();
 
+        // 当分区选举结果Future完成时执行回调
         partitions().whenComplete(
                 (topicPartitions, throwable) -> {
                     if (throwable != null) {
+                        // 如果发生异常，使用该异常完成返回的Future
                         result.completeExceptionally(throwable);
                     } else {
+                        // 检查每个分区的选举结果
                         for (Optional<Throwable> exception : topicPartitions.values()) {
                             if (exception.isPresent()) {
+                                // 如果任何分区选举失败，使用第一个遇到的异常完成Future
                                 result.completeExceptionally(exception.get());
                                 return;
                             }
                         }
+                        // 所有分区选举都成功，完成Future
                         result.complete(null);
                     }
                 });
 
+        // 返回结果Future
         return result;
     }
 }

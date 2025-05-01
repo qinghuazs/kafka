@@ -23,22 +23,41 @@ import java.util.Map;
 
 /**
  * Options for {@link AdminClient#listOffsets(Map)}.
+ * 用于{@link AdminClient#listOffsets(Map)}方法的配置选项类。
  *
  * The API of this class is evolving, see {@link AdminClient} for details.
+ * 该类的API仍在演进中，详情请参见{@link AdminClient}。
  */
 @InterfaceStability.Evolving
 public class ListOffsetsOptions extends AbstractOptions<ListOffsetsOptions> {
 
+    /**
+     * 隔离级别配置，用于控制消费者在读取消息时是否可以看到未提交的事务消息
+     * - READ_UNCOMMITTED：允许读取未提交的事务消息，适用于对数据一致性要求不高的场景
+     * - READ_COMMITTED：只能读取已提交的事务消息，适用于需要强一致性的场景
+     */
     private final IsolationLevel isolationLevel;
 
+    /**
+     * 默认构造函数，使用READ_UNCOMMITTED作为默认的隔离级别
+     * 这意味着默认情况下可以读取未提交的事务消息
+     */
     public ListOffsetsOptions() {
         this(IsolationLevel.READ_UNCOMMITTED);
     }
 
+    /**
+     * 带隔离级别参数的构造函数
+     * @param isolationLevel 指定的隔离级别，可以是READ_UNCOMMITTED或READ_COMMITTED
+     */
     public ListOffsetsOptions(IsolationLevel isolationLevel) {
         this.isolationLevel = isolationLevel;
     }
 
+    /**
+     * 获取当前配置的隔离级别
+     * @return 返回当前配置的隔离级别，用于确定是否可以读取未提交的事务消息
+     */
     public IsolationLevel isolationLevel() {
         return isolationLevel;
     }

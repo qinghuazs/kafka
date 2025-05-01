@@ -22,19 +22,33 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Collection;
 
 /**
- * Options for the {@link Admin#deleteAcls(Collection)} call.
- *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 用于{@link Admin#deleteAcls(Collection)}调用的选项类。
+ * 
+ * 此类用于配置删除ACL（访问控制列表）操作的相关参数。ACL是Kafka中用于实现细粒度权限控制的机制，
+ * 可以控制用户对特定资源（如Topic、Group等）的访问权限。通过此类可以自定义删除ACL操作的行为。
+ * 
+ * 应用场景：
+ * 1. 当需要批量删除某些资源的访问控制规则时
+ * 2. 在权限清理或权限重组时使用
+ * 3. 用于撤销之前授予的访问权限
+ * 
+ * 注意：该类的API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DeleteAclsOptions extends AbstractOptions<DeleteAclsOptions> {
 
     /**
-     * Set the timeout in milliseconds for this operation or {@code null} if the default api timeout for the
-     * AdminClient should be used.
-     *
+     * 设置此操作的超时时间（以毫秒为单位）。
+     * 
+     * @param timeoutMs 操作超时时间，如果为{@code null}则使用AdminClient的默认API超时时间
+     * @return 当前DeleteAclsOptions实例，用于支持方法链式调用
+     * 
+     * 实现说明：
+     * 1. 将传入的超时时间值赋给timeoutMs字段
+     * 2. 返回this以支持链式调用
+     * 3. 超时时间决定了删除ACL操作的最长等待时间
      */
-    // This method is retained to keep binary compatibility with 0.11
+    // 此方法保留是为了保持与0.11版本的二进制兼容性
     public DeleteAclsOptions timeoutMs(Integer timeoutMs) {
         this.timeoutMs = timeoutMs;
         return this;

@@ -23,10 +23,13 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Set;
 
 /**
- * Options for {@link Admin#electLeaders(ElectionType, Set, ElectLeadersOptions)}.
+ * 用于 {@link Admin#electLeaders(ElectionType, Set, ElectLeadersOptions)} 的配置选项类。
+ * 该类用于配置Kafka分区leader选举的参数，支持不同类型的选举策略。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详情请参见 {@link Admin}。
  */
 @InterfaceStability.Evolving
 public final class ElectLeadersOptions extends AbstractOptions<ElectLeadersOptions> {
+    // 继承自AbstractOptions以获取通用的选项处理功能
+    // 目前该类没有额外的配置选项，但未来可能会添加更多选项
 }

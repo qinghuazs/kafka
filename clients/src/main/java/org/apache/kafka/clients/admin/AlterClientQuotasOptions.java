@@ -22,27 +22,42 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Collection;
 
 /**
- * Options for {@link Admin#alterClientQuotas(Collection, AlterClientQuotasOptions)}.
+ * {@link Admin#alterClientQuotas(Collection, AlterClientQuotasOptions)}方法的选项类
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类用于配置修改客户端配额操作的行为。继承自AbstractOptions，提供了基本的超时设置功能，
+ * 并增加了验证模式选项，允许在不实际修改配置的情况下验证修改请求的有效性。
+ *
+ * 注意：这个类的API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class AlterClientQuotasOptions extends AbstractOptions<AlterClientQuotasOptions> {
 
+    /**
+     * 是否仅验证请求而不实际修改配置
+     * 默认为false，表示会实际执行修改操作
+     */
     private boolean validateOnly = false;
 
     /**
-     * Returns whether the request should be validated without altering the configs.
+     * 获取是否仅验证请求而不修改配置
+     *
+     * @return 如果为true，表示仅验证请求；如果为false，表示会实际执行修改
      */
     public boolean validateOnly() {
         return this.validateOnly;
     }
 
     /**
-     * Sets whether the request should be validated without altering the configs.
+     * 设置是否仅验证请求而不修改配置
+     *
+     * @param validateOnly 如果设置为true，则只验证请求的有效性而不实际修改配置；
+     *                    如果设置为false，则会实际执行修改操作
+     * @return 返回当前对象实例，支持方法链式调用
      */
     public AlterClientQuotasOptions validateOnly(boolean validateOnly) {
+        // 设置验证模式标志
         this.validateOnly = validateOnly;
+        // 返回当前实例，支持链式调用
         return this;
     }
 }

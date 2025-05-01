@@ -25,27 +25,53 @@ import org.apache.kafka.common.quota.ClientQuotaFilter;
 import java.util.Map;
 
 /**
- * The result of the {@link Admin#describeClientQuotas(ClientQuotaFilter, DescribeClientQuotasOptions)} call.
+ * {@link Admin#describeClientQuotas(ClientQuotaFilter, DescribeClientQuotasOptions)}调用的结果类。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 此类封装了客户端配额查询的异步操作结果。它使用KafkaFuture来处理异步操作，
+ * 允许用户在查询完成后获取配额信息。
+ * 
+ * 应用场景：
+ * 1. 异步获取客户端配额设置
+ * 2. 批量检查多个客户端的资源限制
+ * 3. 监控和管理系统中的资源使用限制
+ * 
+ * 注意：该API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class DescribeClientQuotasResult {
 
+    /**
+     * 存储查询结果的Future对象。Map的结构为：
+     * - 键：ClientQuotaEntity（表示客户端实体，如用户、客户端ID等）
+     * - 值：配额设置的Map，其中：
+     *   - 键：配额类型（如生产速率、消费速率等）
+     *   - 值：配额值（数值类型）
+     */
     private final KafkaFuture<Map<ClientQuotaEntity, Map<String, Double>>> entities;
 
     /**
-     * Maps an entity to its configured quota value(s). Note if no value is defined for a quota
-     * type for that entity's config, then it is not included in the resulting value map.
+     * 构造函数，初始化查询结果。
+     * 
+     * 将实体映射到其配置的配额值。注意：如果某个实体的某种配额类型没有定义值，
+     * 则该配额类型不会包含在结果Map中。
      *
-     * @param entities future for the collection of entities that matched the filter
+     * @param entities 匹配过滤条件的实体集合的Future对象
      */
     public DescribeClientQuotasResult(KafkaFuture<Map<ClientQuotaEntity, Map<String, Double>>> entities) {
         this.entities = entities;
     }
 
     /**
-     * Returns a map from quota entity to a future which can be used to check the status of the operation.
+     * 获取查询结果的Future对象。
+     * 
+     * 返回一个Map，其中：
+     * - 键是配额实体（ClientQuotaEntity）
+     * - 值是该实体的配额设置Map
+     * 
+     * 使用示例：
+     * Map<ClientQuotaEntity, Map<String, Double>> quotas = result.entities().get();
+     * 
+     * @return 包含配额信息的Future对象
      */
     public KafkaFuture<Map<ClientQuotaEntity, Map<String, Double>>> entities() {
         return entities;

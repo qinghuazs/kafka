@@ -23,26 +23,42 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Map;
 
 /**
- * The result of {@link Admin#abortTransaction(AbortTransactionSpec, AbortTransactionOptions)}.
+ * {@link Admin#abortTransaction(AbortTransactionSpec, AbortTransactionOptions)}方法的结果类
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类用于表示事务中止操作的执行结果。对于每个主题分区，都会返回一个Future对象，
+ * 用于异步地获取该分区上的事务中止操作的完成状态。
+ *
+ * 注意：这个类的API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class AbortTransactionResult {
+    /**
+     * 存储每个主题分区对应的事务中止操作Future结果
+     * Key为主题分区，Value为对应的操作Future
+     */
     private final Map<TopicPartition, KafkaFuture<Void>> futures;
 
+    /**
+     * 构造函数
+     *
+     * @param futures 主题分区到其事务中止操作Future的映射
+     */
     AbortTransactionResult(Map<TopicPartition, KafkaFuture<Void>> futures) {
+        // 初始化futures映射
         this.futures = futures;
     }
 
     /**
-     * Get a future which completes when the transaction specified by {@link AbortTransactionSpec}
-     * in the respective call to {@link Admin#abortTransaction(AbortTransactionSpec, AbortTransactionOptions)}
-     * returns successfully or fails due to an error or timeout.
+     * 获取一个Future，该Future在指定的事务中止操作完成时（无论成功还是失败）完成
+     * 
+     * 当调用{@link Admin#abortTransaction(AbortTransactionSpec, AbortTransactionOptions)}后，
+     * 可以通过这个方法获取的Future来监控操作的完成状态。如果操作成功完成，Future将正常完成；
+     * 如果发生错误或超时，Future将抛出异常。
      *
-     * @return the future
+     * @return 返回一个组合了所有分区操作结果的Future
      */
     public KafkaFuture<Void> all() {
+        // 使用KafkaFuture.allOf组合所有分区的Future，只有全部成功才返回成功
         return KafkaFuture.allOf(futures.values().toArray(new KafkaFuture[0]));
     }
 

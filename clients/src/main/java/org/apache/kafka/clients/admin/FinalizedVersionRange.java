@@ -19,23 +19,30 @@ package org.apache.kafka.clients.admin;
 import java.util.Objects;
 
 /**
- * Represents a range of version levels supported by every broker in a cluster for some feature.
+ * 表示集群中每个broker对某个特性支持的版本范围。
+ * 该类用于管理和验证Kafka特性的版本兼容性。
  */
 public class FinalizedVersionRange {
+    // 特性支持的最小版本级别
     private final short minVersionLevel;
 
+    // 特性支持的最大版本级别
     private final short maxVersionLevel;
 
     /**
-     * Raises an exception unless the following condition is met:
-     * {@code minVersionLevel >= 1} and {@code maxVersionLevel >= 1} and {@code maxVersionLevel >= minVersionLevel}.
+     * 构造函数，创建版本范围实例。
+     * 除非满足以下条件，否则会抛出异常：
+     * {@code minVersionLevel >= 1} 且 {@code maxVersionLevel >= 1} 且 {@code maxVersionLevel >= minVersionLevel}
      *
-     * @param minVersionLevel   The minimum version level value.
-     * @param maxVersionLevel   The maximum version level value.
-     *
-     * @throws IllegalArgumentException   Raised when the condition described above is not met.
+     * @param minVersionLevel 最小版本级别值
+     * @param maxVersionLevel 最大版本级别值
+     * @throws IllegalArgumentException 当上述条件不满足时抛出
      */
     public FinalizedVersionRange(final short minVersionLevel, final short maxVersionLevel) {
+        // 验证版本范围的有效性：
+        // 1. 最小版本不能为负数
+        // 2. 最大版本不能为负数
+        // 3. 最大版本必须大于或等于最小版本
         if (minVersionLevel < 0 || maxVersionLevel < 0 || maxVersionLevel < minVersionLevel) {
             throw new IllegalArgumentException(
                 String.format(
@@ -43,15 +50,28 @@ public class FinalizedVersionRange {
                     " maxVersionLevel >= minVersionLevel, but received" +
                     " minVersionLevel: %d, maxVersionLevel: %d", minVersionLevel, maxVersionLevel));
         }
+        // 初始化字段
         this.minVersionLevel = minVersionLevel;
         this.maxVersionLevel = maxVersionLevel;
     }
 
+    /**
+     * 获取特性支持的最小版本级别
+     * 
+     * @return 返回最小版本级别
+     */
     public short minVersionLevel() {
+        // 返回最小版本级别值
         return minVersionLevel;
     }
 
+    /**
+     * 获取特性支持的最大版本级别
+     * 
+     * @return 返回最大版本级别
+     */
     public short maxVersionLevel() {
+        // 返回最大版本级别值
         return maxVersionLevel;
     }
 

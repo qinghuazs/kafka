@@ -25,20 +25,42 @@ import org.apache.kafka.common.annotation.InterfaceStability;
 import java.util.Collection;
 
 /**
- * The result of the {@link KafkaAdminClient#describeAcls(AclBindingFilter)} call.
+ * {@link KafkaAdminClient#describeAcls(AclBindingFilter)}调用的结果类。
+ * 用于异步获取Kafka集群中的ACL（访问控制列表）配置信息。
  *
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详见{@link Admin}。
+ *
+ * 应用场景：
+ * 1. 权限查询：异步获取指定资源的ACL配置
+ * 2. 安全审计：批量检查多个资源的访问控制规则
+ * 3. 配置验证：验证ACL变更是否生效
  */
 @InterfaceStability.Evolving
 public class DescribeAclsResult {
+    /**
+     * 存储ACL查询结果的Future对象
+     * 包含了一个AclBinding集合，每个AclBinding代表一条访问控制规则
+     */
     private final KafkaFuture<Collection<AclBinding>> future;
 
+    /**
+     * 构造函数，初始化包含ACL查询结果的Future对象
+     * 
+     * @param future 异步操作的Future对象，完成时将返回ACL绑定集合
+     */
     DescribeAclsResult(KafkaFuture<Collection<AclBinding>> future) {
         this.future = future;
     }
 
     /**
-     * Return a future containing the ACLs requested.
+     * 返回包含请求的ACL信息的Future对象
+     * 
+     * 实现说明：
+     * - 返回原始的Future对象，允许调用者以异步方式处理结果
+     * - 可以通过Future的get()方法获取ACL绑定集合
+     * - 支持超时和异常处理机制
+     * 
+     * @return 返回KafkaFuture对象，其结果为AclBinding集合
      */
     public KafkaFuture<Collection<AclBinding>> values() {
         return future;

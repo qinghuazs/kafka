@@ -21,31 +21,35 @@ import java.util.Map;
 import java.util.Properties;
 
 /**
- * The base class for in-built admin clients.
+ * Kafka内置管理客户端的基类
  *
- * Client code should use the newer {@link Admin} interface in preference to this class.
+ * 客户端代码应优先使用新的{@link Admin}接口，而不是这个类。
+ * 这个类在未来的版本中可能会被移除，但为了避免不必要的警告，暂未标记为过时。
  *
- * This class may be removed in a later release, but has not been marked as deprecated to avoid unnecessary noise.
+ * 该类提供了创建管理客户端实例的工厂方法，支持通过Properties或Map形式的配置来创建实例。
+ * 实现了Admin接口，提供了管理Kafka集群的各种操作能力。
  */
 public abstract class AdminClient implements Admin {
 
     /**
-     * Create a new Admin with the given configuration.
+     * 使用给定的配置创建一个新的Admin实例
      *
-     * @param props The configuration.
-     * @return The new KafkaAdminClient.
+     * @param props 配置属性，包含连接Kafka集群所需的各种参数
+     * @return 返回一个新的KafkaAdminClient实例
      */
     public static AdminClient create(Properties props) {
+        // 调用Admin接口的工厂方法创建实例，并转换为AdminClient类型
         return (AdminClient) Admin.create(props);
     }
 
     /**
-     * Create a new Admin with the given configuration.
+     * 使用给定的配置创建一个新的Admin实例
      *
-     * @param conf The configuration.
-     * @return The new KafkaAdminClient.
+     * @param conf 配置映射，包含连接Kafka集群所需的各种参数
+     * @return 返回一个新的KafkaAdminClient实例
      */
     public static AdminClient create(Map<String, Object> conf) {
+        // 调用Admin接口的工厂方法创建实例，并转换为AdminClient类型
         return (AdminClient) Admin.create(conf);
     }
 }
