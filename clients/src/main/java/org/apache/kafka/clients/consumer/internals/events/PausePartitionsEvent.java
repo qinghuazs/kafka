@@ -22,19 +22,49 @@ import org.apache.kafka.common.TopicPartition;
 import java.util.Collection;
 import java.util.Collections;
 
+/**
+ * 暂停分区消费事件类
+ * 该事件用于通知Kafka消费者暂停指定分区的消费操作
+ * 继承自CompletableApplicationEvent，支持异步完成通知机制
+ */
 public class PausePartitionsEvent extends CompletableApplicationEvent<Void> {
 
+    /**
+     * 需要暂停消费的主题分区集合
+     * 使用不可变集合确保线程安全，防止外部修改
+     */
     private final Collection<TopicPartition> partitions;
 
+    /**
+     * 构造函数，创建一个新的暂停分区消费事件
+     * 
+     * 实现细节：
+     * 1. 调用父类构造函数，设置事件类型为PAUSE_PARTITIONS
+     * 2. 使用Collections.unmodifiableCollection创建不可变分区集合，确保线程安全
+     *
+     * @param partitions 需要暂停消费的主题分区集合
+     * @param deadlineMs 事件处理的截止时间（毫秒）
+     */
     public PausePartitionsEvent(final Collection<TopicPartition> partitions, final long deadlineMs) {
         super(Type.PAUSE_PARTITIONS, deadlineMs);
         this.partitions = Collections.unmodifiableCollection(partitions);
     }
 
+    /**
+     * 获取需要暂停消费的主题分区集合
+     * 
+     * @return 不可变的主题分区集合
+     */
     public Collection<TopicPartition> partitions() {
         return partitions;
     }
 
+    /**
+     * 重写toString方法的基础部分
+     * 添加分区信息到字符串表示中
+     * 
+     * @return 包含事件详细信息的字符串
+     */
     @Override
     public String toStringBase() {
         return super.toStringBase() + ", partitions=" + partitions;

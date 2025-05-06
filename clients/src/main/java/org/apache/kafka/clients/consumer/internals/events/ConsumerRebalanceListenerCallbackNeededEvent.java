@@ -27,16 +27,45 @@ import java.util.Objects;
 import java.util.SortedSet;
 
 /**
- * Event that signifies that the network I/O thread wants to invoke one of the callback methods on the
- * {@link ConsumerRebalanceListener}. This event will be processed by the application thread when the next
- * {@link Consumer#poll(Duration)} call is performed by the user. When processed, the application thread should
- * invoke the appropriate callback method (based on {@link #methodName()}) with the given partitions.
+ * 该事件表示网络I/O线程需要调用{@link ConsumerRebalanceListener}上的回调方法之一。
+ * 当用户执行下一次{@link Consumer#poll(Duration)}调用时，该事件将由应用线程处理。
+ * 处理时，应用线程应根据{@link #methodName()}调用适当的回调方法，并传入给定的分区集合。
+ *
+ * 应用场景：
+ * 1. 在消费者组再平衡过程中，当分区分配发生变化时触发
+ * 2. 用于在网络I/O线程和应用线程之间进行事件通信
+ * 3. 确保再平衡回调在正确的线程上下文中执行
+ *
+ * 设计考虑：
+ * 1. 继承自CompletableBackgroundEvent，支持异步操作完成状态跟踪
+ * 2. 使用不可变集合存储分区信息，保证线程安全
+ * 3. 通过methodName字段区分不同类型的回调（如分区分配、撤销等）
  */
 public class ConsumerRebalanceListenerCallbackNeededEvent extends CompletableBackgroundEvent<Void> {
 
+    /**
+     * 需要调用的ConsumerRebalanceListener回调方法名称
+     * 可能是onPartitionsAssigned、onPartitionsRevoked或onPartitionsLost
+     */
     private final ConsumerRebalanceListenerMethodName methodName;
+
+    /**
+     * 与回调方法相关的主题分区集合
+     * 使用SortedSet保证分区顺序一致性，通过Collections.unmodifiableSortedSet确保不可变
+     */
     private final SortedSet<TopicPartition> partitions;
 
+    /**
+     * 创建一个新的ConsumerRebalanceListenerCallbackNeededEvent实例
+     *
+     * 实现细节：
+     * 1. 调用父类构造函数，设置事件类型和超时时间（使用Long.MAX_VALUE表示永不超时）
+     * 2. 确保methodName参数不为null
+     * 3. 创建分区集合的不可变副本
+     *
+     * @param methodName 要调用的回调方法名称，不能为null
+     * @param partitions 相关的主题分区集合
+     */
     public ConsumerRebalanceListenerCallbackNeededEvent(final ConsumerRebalanceListenerMethodName methodName,
                                                         final SortedSet<TopicPartition> partitions) {
         super(Type.CONSUMER_REBALANCE_LISTENER_CALLBACK_NEEDED, Long.MAX_VALUE);
@@ -44,10 +73,18 @@ public class ConsumerRebalanceListenerCallbackNeededEvent extends CompletableBac
         this.partitions = Collections.unmodifiableSortedSet(partitions);
     }
 
+    /**
+     * 获取需要调用的回调方法名称
+     * @return 回调方法名称
+     */
     public ConsumerRebalanceListenerMethodName methodName() {
         return methodName;
     }
 
+    /**
+     * 获取与回调相关的主题分区集合
+     * @return 不可变的已排序主题分区集合
+     */
     public SortedSet<TopicPartition> partitions() {
         return partitions;
     }

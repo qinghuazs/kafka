@@ -21,16 +21,39 @@ import org.apache.kafka.common.TopicIdPartition;
 
 import java.util.Map;
 
+/**
+ * 共享确认异步事件类
+ * 该类用于在Kafka消费者内部处理分区消息确认的异步共享操作
+ * 继承自ApplicationEvent基类，表示这是一个应用层级的事件
+ */
 public class ShareAcknowledgeAsyncEvent extends ApplicationEvent {
 
+    /**
+     * 存储主题分区ID到其对应确认信息的映射
+     * 使用TopicIdPartition作为键，确保能够精确定位到具体的分区
+     * 使用Acknowledgements作为值，包含该分区的确认详情
+     */
     private final Map<TopicIdPartition, Acknowledgements> acknowledgementsMap;
 
+    /**
+     * 构造函数，初始化共享确认异步事件
+     *
+     * @param acknowledgementsMap 包含主题分区ID到确认信息的映射关系
+     */
     public ShareAcknowledgeAsyncEvent(final Map<TopicIdPartition, Acknowledgements> acknowledgementsMap) {
+        // 调用父类构造函数，指定事件类型为SHARE_ACKNOWLEDGE_ASYNC
         super(Type.SHARE_ACKNOWLEDGE_ASYNC);
+        // 初始化确认信息映射
         this.acknowledgementsMap = acknowledgementsMap;
     }
 
+    /**
+     * 获取确认信息映射
+     *
+     * @return 返回主题分区ID到确认信息的映射
+     */
     public Map<TopicIdPartition, Acknowledgements> acknowledgementsMap() {
+        // 返回确认信息映射
         return acknowledgementsMap;
     }
 }

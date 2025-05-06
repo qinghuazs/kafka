@@ -27,62 +27,90 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * {@code CompletableEventReaper} is responsible for tracking {@link CompletableEvent time-bound events} and removing
- * any that exceed their {@link CompletableEvent#deadlineMs() deadline} (unless they've already completed). This
- * mechanism is used by the {@link AsyncKafkaConsumer} to enforce the timeout provided by the user in its API
- * calls (e.g. {@link AsyncKafkaConsumer#commitSync(Duration)}).
+ * {@code CompletableEventReaper} 负责跟踪带有时间限制的事件（{@link CompletableEvent time-bound events}），
+ * 并移除那些超过其截止时间（{@link CompletableEvent#deadlineMs() deadline}）的事件（除非它们已经完成）。
+ * 这个机制被 {@link AsyncKafkaConsumer} 用来强制执行用户在其API调用中提供的超时时间
+ * （例如 {@link AsyncKafkaConsumer#commitSync(Duration)}）。
+ *
+ * 应用场景：
+ * 1. 管理Kafka消费者客户端中的异步操作超时，如提交偏移量、加入消费者组等
+ * 2. 清理已完成或超时的事件，避免资源泄露
+ * 3. 提供统一的事件完成状态跟踪机制
+ *
+ * 设计考虑：
+ * 1. 使用ArrayList存储待跟踪的事件，支持快速遍历和删除操作
+ * 2. 通过定期检查机制及时处理超时事件
+ * 3. 在消费者关闭时确保所有未完成事件得到适当处理
  */
 public class CompletableEventReaper {
 
+    /**
+     * 日志记录器，用于记录事件处理过程中的重要信息
+     */
     private final Logger log;
 
     /**
-     * List of tracked events that are candidates for expiration.
+     * 跟踪的事件列表，这些事件都是可能过期的候选事件
+     * 使用ArrayList实现，支持快速遍历和按条件删除操作
      */
     private final List<CompletableEvent<?>> tracked;
 
+    /**
+     * 构造函数，初始化事件清理器
+     * 
+     * 实现细节：
+     * 1. 使用提供的LogContext创建特定于此类的日志记录器
+     * 2. 初始化空的事件跟踪列表
+     *
+     * @param logContext 日志上下文对象，用于创建日志记录器
+     */
     public CompletableEventReaper(LogContext logContext) {
         this.log = logContext.logger(CompletableEventReaper.class);
         this.tracked = new ArrayList<>();
     }
 
     /**
-     * Adds a new {@link CompletableEvent event} to track for later completion/expiration.
+     * 添加新的事件到跟踪列表中，以便后续完成或过期处理
+     * 
+     * 实现细节：
+     * 1. 使用Objects.requireNonNull确保事件不为null
+     * 2. 将事件添加到跟踪列表中
      *
-     * @param event Event to track
+     * @param event 要跟踪的事件，不能为null
      */
     public void add(CompletableEvent<?> event) {
         tracked.add(Objects.requireNonNull(event, "Event to track must be non-null"));
     }
 
     /**
-     * This method performs a two-step process to "complete" {@link CompletableEvent events} that have either expired
-     * or completed normally:
+     * 执行两步处理过程来"完成"已过期或正常完成的事件：
      *
      * <ol>
      *     <li>
-     *         For each tracked event which has exceeded its {@link CompletableEvent#deadlineMs() deadline}, an
-     *         instance of {@link TimeoutException} is created and passed to
-     *         {@link CompletableFuture#completeExceptionally(Throwable)}.
+     *         对于每个超过其截止时间的事件，创建一个TimeoutException实例，
+     *         并通过CompletableFuture.completeExceptionally方法传递异常。
      *     </li>
      *     <li>
-     *         For each tracked event of which its {@link CompletableEvent#future() future} is already in the
-     *         {@link CompletableFuture#isDone() done} state, it will be removed from the list of tracked events.
+     *         对于每个已经处于完成状态的事件，将其从跟踪列表中移除。
      *     </li>
      * </ol>
      *
-     * <p/>
+     * 应用场景：
+     * 1. 定期检查和处理超时事件
+     * 2. 清理已完成的事件，释放资源
+     * 3. 确保异步操作不会无限期挂起
      *
-     * This method should be called at regular intervals, based upon the needs of the resource that owns the reaper.
+     * 设计考虑：
+     * 1. 使用函数式编程方式处理事件流
+     * 2. 分两步处理以确保正确的状态转换
+     * 3. 通过日志记录关键操作信息
      *
-     * @param currentTimeMs <em>Current</em> time with which to compare against the
-     *                      <em>{@link CompletableEvent#deadlineMs() expiration time}</em>
-     * @return The number of events that were expired
+     * @param currentTimeMs 当前时间（毫秒），用于与事件的过期时间进行比较
+     * @return 过期的事件数量
      */
     public long reap(long currentTimeMs) {
         Consumer<CompletableEvent<?>> expireEvent = event -> {
@@ -110,23 +138,25 @@ public class CompletableEventReaper {
     }
 
     /**
-     * It is possible for the {@link AsyncKafkaConsumer#close() consumer to close} before completing the processing of
-     * all the events in the queue. In this case, we need to
-     * {@link CompletableFuture#completeExceptionally(Throwable) expire} any remaining events.
+     * 在消费者关闭时处理所有未完成的事件
+     * 
+     * 应用场景：
+     * 1. 消费者关闭时的清理工作
+     * 2. 确保所有事件得到适当处理，避免资源泄露
+     * 3. 处理已跟踪和未跟踪的事件
      *
-     * <p/>
+     * 实现细节：
+     * 1. 不考虑事件的截止时间，直接将所有未完成事件标记为异常完成
+     * 2. 分别处理已跟踪的事件和新提供的事件队列
+     * 3. 清空所有事件列表
      *
-     * Check each of the {@link #add(CompletableEvent) previously-added} {@link CompletableEvent completable events},
-     * and for any that are incomplete, expire them. Also check the core event queue for any incomplete events and
-     * likewise expire them.
+     * 设计考虑：
+     * 1. 使用Stream API进行高效的事件处理
+     * 2. 通过日志记录重要的状态变化
+     * 3. 确保资源的完全释放
      *
-     * <p/>
-     *
-     * <em>Note</em>: because this is called in the context of {@link AsyncKafkaConsumer#close() closing consumer},
-     * don't take the deadline into consideration, just close it regardless.
-     *
-     * @param events Events from a queue that have not yet been tracked that also need to be reviewed
-     * @return The number of events that were expired
+     * @param events 需要处理的事件队列，这些事件尚未被跟踪
+     * @return 处理的事件总数（已跟踪的过期事件数 + 队列中的过期事件数）
      */
     public long reap(Collection<?> events) {
         Objects.requireNonNull(events, "Event queue to reap must be non-null");
@@ -157,14 +187,38 @@ public class CompletableEventReaper {
         return trackedExpiredCount + eventExpiredCount;
     }
 
+    /**
+     * 获取当前跟踪的事件数量
+     * 
+     * @return 跟踪列表中的事件数量
+     */
     public int size() {
         return tracked.size();
     }
 
+    /**
+     * 检查指定事件是否在跟踪列表中
+     * 
+     * 实现细节：
+     * 1. 首先检查事件是否为null
+     * 2. 使用List.contains方法检查事件是否在跟踪列表中
+     *
+     * @param event 要检查的事件
+     * @return 如果事件在跟踪列表中返回true，否则返回false
+     */
     public boolean contains(CompletableEvent<?> event) {
         return event != null && tracked.contains(event);
     }
 
+    /**
+     * 获取所有未完成的事件列表
+     * 
+     * 实现细节：
+     * 1. 使用Stream API过滤未完成的事件
+     * 2. 将结果收集到新的List中
+     *
+     * @return 包含所有未完成事件的新列表
+     */
     public List<CompletableEvent<?>> uncompletedEvents() {
         return tracked.stream()
                 .filter(e -> !e.future().isDone())

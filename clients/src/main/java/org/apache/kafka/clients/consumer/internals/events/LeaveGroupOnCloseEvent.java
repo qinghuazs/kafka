@@ -23,14 +23,33 @@ import org.apache.kafka.clients.consumer.internals.ConsumerUtils;
 import java.time.Duration;
 
 /**
- * When the user calls {@link Consumer#close()}, this event is sent to signal the {@link ConsumerMembershipManager}
- * to perform the necessary steps to leave the consumer group cleanly, if possible. The event's timeout is based on
- * either the user-provided value to {@link Consumer#close(Duration)} or
- * {@link ConsumerUtils#DEFAULT_CLOSE_TIMEOUT_MS} if {@link Consumer#close()} was called. The event is considered
- * complete when the membership manager receives the heartbeat response that it has left the group.
+ * 当用户调用 {@link Consumer#close()} 方法时，系统会发送此事件来通知 {@link ConsumerMembershipManager}
+ * 执行必要的步骤以尝试清理地退出消费者组。事件的超时时间基于以下两种情况：
+ * 1. 用户调用 {@link Consumer#close(Duration)} 时提供的超时值
+ * 2. 用户调用 {@link Consumer#close()} 时使用 {@link ConsumerUtils#DEFAULT_CLOSE_TIMEOUT_MS} 默认超时值
+ * 
+ * 应用场景：
+ * - 消费者优雅关闭：确保消费者在关闭前能够正常退出消费者组，避免造成消费者组的重平衡
+ * - 资源清理：通过有序的关闭流程，确保所有资源得到适当释放
+ * 
+ * 设计考虑：
+ * - 继承自 CompletableApplicationEvent<Void>，支持异步完成通知
+ * - 使用超时机制确保关闭操作不会无限期等待
+ * - 通过心跳响应确认退出状态，提供可靠的退出机制
+ * 
+ * 当成员管理器收到确认已离开消费者组的心跳响应时，该事件被视为完成。
  */
 public class LeaveGroupOnCloseEvent extends CompletableApplicationEvent<Void> {
 
+    /**
+     * 构造函数，创建一个新的LeaveGroupOnCloseEvent实例
+     * 
+     * 实现细节：
+     * 1. 调用父类构造函数，传入事件类型LEAVE_GROUP_ON_CLOSE
+     * 2. 设置事件的截止时间deadlineMs
+     * 
+     * @param deadlineMs 事件的绝对截止时间（毫秒），超过此时间事件将被视为超时
+     */
     public LeaveGroupOnCloseEvent(final long deadlineMs) {
         super(Type.LEAVE_GROUP_ON_CLOSE, deadlineMs);
     }
