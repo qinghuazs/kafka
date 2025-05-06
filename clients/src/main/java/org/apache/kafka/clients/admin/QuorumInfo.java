@@ -24,14 +24,25 @@ import java.util.Objects;
 import java.util.OptionalLong;
 
 /**
- * This class is used to describe the state of the quorum received in DescribeQuorumResponse.
+ * 该类用于描述从DescribeQuorumResponse中接收到的仲裁组（Quorum）状态信息。
+ * 在Kafka的Raft实现中，仲裁组负责维护集群的一致性和高可用性。
+ * 应用场景：
+ * 1. 监控集群健康状态：通过查看leader、voters和observers的状态
+ * 2. 故障诊断：检查副本同步状态和延迟情况
+ * 3. 集群管理：了解当前的leader选举状态和各节点角色
  */
 public class QuorumInfo {
+    // 当前leader节点的ID
     private final int leaderId;
+    // 当前的leader纪元，用于标识leader的任期
     private final long leaderEpoch;
+    // 高水位标记，表示所有副本都已经复制的最大偏移量
     private final long highWatermark;
+    // 参与投票的副本列表，这些副本可以参与leader选举
     private final List<ReplicaState> voters;
+    // 观察者副本列表，这些副本只接收数据但不参与投票
     private final List<ReplicaState> observers;
+    // Raft集群中的节点信息映射，key为节点ID，value为节点详细信息
     private final Map<Integer, Node> nodes;
 
     QuorumInfo(
@@ -107,11 +118,23 @@ public class QuorumInfo {
             ')';
     }
 
+    /**
+     * 副本状态类，用于描述Kafka集群中每个副本的详细状态信息
+     * 应用场景：
+     * 1. 监控副本同步进度
+     * 2. 检测副本延迟情况
+     * 3. 识别潜在的问题副本
+     */
     public static class ReplicaState {
+        // 副本的唯一标识ID
         private final int replicaId;
+        // 副本的目录ID，用于在存储层面唯一标识副本
         private final Uuid replicaDirectoryId;
+        // 副本的日志末端偏移量，表示副本当前的数据量
         private final long logEndOffset;
+        // 最后一次从leader获取数据的时间戳
         private final OptionalLong lastFetchTimestamp;
+        // 最后一次与leader完全同步的时间戳
         private final OptionalLong lastCaughtUpTimestamp;
 
         ReplicaState() {
@@ -202,10 +225,24 @@ public class QuorumInfo {
         }
     }
 
+    /**
+     * 节点类，描述Raft集群中每个节点的信息
+     * 应用场景：
+     * 1. 集群成员管理
+     * 2. 节点通信配置
+     * 3. 集群扩缩容操作
+     */
     public static class Node {
+        // 节点的唯一标识ID
         private final int nodeId;
+        // 节点的Raft投票端点列表，包含通信地址等信息
         private final List<RaftVoterEndpoint> endpoints;
 
+        /**
+         * 创建一个新的Node实例
+         * @param nodeId 节点ID
+         * @param endpoints Raft投票端点列表
+         */
         Node(int nodeId, List<RaftVoterEndpoint> endpoints) {
             this.nodeId = nodeId;
             this.endpoints = endpoints;

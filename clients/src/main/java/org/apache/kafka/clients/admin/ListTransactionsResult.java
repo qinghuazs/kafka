@@ -29,28 +29,50 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The result of the {@link Admin#listTransactions()} call.
+ * {@link Admin#listTransactions()} 调用的结果类。
  * <p>
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该类的API仍在演进中，详细信息请参见{@link Admin}。
+ *
+ * 该类用于处理Kafka集群中事务的查询结果。它提供了多种方式来获取事务列表：
+ * 1. 获取所有事务的完整列表
+ * 2. 按broker ID分组获取事务列表
+ * 3. 获取每个broker的独立Future以支持细粒度的错误处理
  */
 @InterfaceStability.Evolving
 public class ListTransactionsResult {
+    /**
+     * 存储事务查询结果的Future对象
+     * Map的键为broker ID，值为包含该broker上事务列表的Future
+     * 使用KafkaFutureImpl确保异步操作的可靠性和线程安全性
+     */
     private final KafkaFuture<Map<Integer, KafkaFutureImpl<Collection<TransactionListing>>>> future;
 
+    /**
+     * 构造函数，初始化事务查询结果对象
+     *
+     * @param future 包含所有broker事务信息的Future对象
+     */
     ListTransactionsResult(KafkaFuture<Map<Integer, KafkaFutureImpl<Collection<TransactionListing>>>> future) {
         this.future = future;
     }
 
     /**
-     * Get all transaction listings. If any of the underlying requests fail, then the future
-     * returned from this method will also fail with the first encountered error.
+     * 获取所有事务的列表。如果任何底层请求失败，该方法返回的Future将携带第一个遇到的错误失败。
+     * 
+     * 实现细节：
+     * 1. 调用allByBrokerId()方法获取按broker分组的事务列表
+     * 2. 使用thenApply转换结果，将所有broker的事务列表合并成一个列表
+     * 3. 创建一个新的ArrayList来存储所有事务
+     * 4. 遍历每个broker的事务列表并添加到结果列表中
      *
-     * @return A future containing the collection of transaction listings. The future completes
-     *         when all transaction listings are available and fails after any non-retriable error.
+     * @return 返回包含所有事务列表的Future。当所有事务列表都可用时Future完成，
+     *         如果遇到不可重试的错误则失败
      */
     public KafkaFuture<Collection<TransactionListing>> all() {
         return allByBrokerId().thenApply(map -> {
+            // 创建一个新的列表来存储所有事务
             List<TransactionListing> allListings = new ArrayList<>();
+            // 遍历每个broker的事务列表并添加到结果列表中
             for (Collection<TransactionListing> listings : map.values()) {
                 allListings.addAll(listings);
             }
@@ -59,24 +81,34 @@ public class ListTransactionsResult {
     }
 
     /**
-     * Get a future which returns a map containing the underlying listing future for each broker
-     * in the cluster. This is useful, for example, if a partial listing of transactions is
-     * sufficient, or if you want more granular error details.
+     * 获取一个Future，该Future返回一个Map，包含集群中每个broker的事务列表Future。
+     * 这在以下场景特别有用：
+     * 1. 只需要部分事务列表时
+     * 2. 需要更细粒度的错误详情时
+     * 
+     * 实现细节：
+     * 1. 创建一个新的KafkaFutureImpl来存储结果
+     * 2. 为原始future添加完成回调
+     * 3. 如果成功，创建一个新的Map复制broker futures
+     * 4. 如果失败，使用异常完成结果Future
      *
-     * @return A future containing a map of futures by broker which complete individually when
-     *         their respective transaction listings are available. The top-level future returned
-     *         from this method may fail if the admin client is unable to lookup the available
-     *         brokers in the cluster.
+     * @return 返回一个Future，其中包含按broker分组的Future Map。每个broker的Future在其对应的
+     *         事务列表可用时独立完成。如果admin客户端无法查找集群中可用的broker，
+     *         该方法返回的顶层Future可能会失败。
      */
     public KafkaFuture<Map<Integer, KafkaFuture<Collection<TransactionListing>>>> byBrokerId() {
+        // 创建结果Future
         KafkaFutureImpl<Map<Integer, KafkaFuture<Collection<TransactionListing>>>> result = new KafkaFutureImpl<>();
+        // 添加完成回调处理
         future.whenComplete((brokerFutures, exception) -> {
             if (brokerFutures != null) {
+                // 创建一个新的Map来存储broker futures的副本
                 Map<Integer, KafkaFuture<Collection<TransactionListing>>> brokerFuturesCopy =
                     new HashMap<>(brokerFutures.size());
                 brokerFuturesCopy.putAll(brokerFutures);
                 result.complete(brokerFuturesCopy);
             } else {
+                // 如果发生异常，完成结果Future并携带异常
                 result.completeExceptionally(exception);
             }
         });
@@ -84,33 +116,48 @@ public class ListTransactionsResult {
     }
 
     /**
-     * Get all transaction listings in a map which is keyed by the ID of respective broker
-     * that is currently managing them. If any of the underlying requests fail, then the future
-     * returned from this method will also fail with the first encountered error.
+     * 获取一个按broker ID分组的事务列表Map。如果任何底层请求失败，
+     * 该方法返回的Future将携带第一个遇到的错误失败。
+     * 
+     * 实现细节：
+     * 1. 创建结果Future和存储最终结果的Map
+     * 2. 处理顶层异常，如果存在则直接失败
+     * 3. 创建待处理响应集合，用于追踪未完成的broker响应
+     * 4. 为每个broker的Future添加完成回调：
+     *    - 如果发生异常，使用该异常完成结果Future
+     *    - 如果成功，将结果添加到Map并更新待处理响应
+     *    - 当所有响应都处理完成时，完成结果Future
      *
-     * @return A future containing a map from the broker ID to the transactions hosted by that
-     *         broker respectively. This future completes when all transaction listings are
-     *         available and fails after any non-retriable error.
+     * @return 返回一个Future，其中包含从broker ID到该broker管理的事务列表的映射。
+     *         当所有事务列表都可用时Future完成，如果遇到不可重试的错误则失败。
      */
     public KafkaFuture<Map<Integer, Collection<TransactionListing>>> allByBrokerId() {
+        // 创建结果Future和存储最终结果的Map
         KafkaFutureImpl<Map<Integer, Collection<TransactionListing>>> allFuture = new KafkaFutureImpl<>();
         Map<Integer, Collection<TransactionListing>> allListingsMap = new HashMap<>();
 
+        // 添加完成回调处理
         future.whenComplete((map, topLevelException) -> {
+            // 处理顶层异常
             if (topLevelException != null) {
                 allFuture.completeExceptionally(topLevelException);
                 return;
             }
 
+            // 创建待处理响应集合
             Set<Integer> remainingResponses = new HashSet<>(map.keySet());
+            // 处理每个broker的Future
             map.forEach((brokerId, future) ->
                 future.whenComplete((listings, brokerException) -> {
                     if (brokerException != null) {
+                        // 如果broker发生异常，完成结果Future并携带异常
                         allFuture.completeExceptionally(brokerException);
                     } else if (!allFuture.isDone()) {
+                        // 将成功的结果添加到Map
                         allListingsMap.put(brokerId, listings);
                         remainingResponses.remove(brokerId);
 
+                        // 当所有响应都处理完成时，完成结果Future
                         if (remainingResponses.isEmpty()) {
                             allFuture.complete(allListingsMap);
                         }

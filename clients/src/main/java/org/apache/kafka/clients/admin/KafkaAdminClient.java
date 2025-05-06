@@ -5855,52 +5855,96 @@ public class KafkaAdminClient extends AdminClient {
         return new RemoveMembersFromConsumerGroupResult(adminFuture.get(CoordinatorKey.byGroupId(groupId)), options.members());
     }
 
+    /**
+     * 修改消费者组的偏移量
+     * 
+     * 该方法用于修改指定消费者组在特定主题分区上的消费偏移量。这对于手动调整消费位置、恢复数据或故障处理非常有用。
+     * 
+     * @param groupId 要修改偏移量的消费者组ID
+     * @param offsets 需要修改的主题分区及其对应的新偏移量和元数据的映射
+     * @param options 操作的配置选项，如超时时间等
+     * @return 返回AlterConsumerGroupOffsetsResult对象，包含每个分区的修改结果
+     */
     @Override
     public AlterConsumerGroupOffsetsResult alterConsumerGroupOffsets(
         String groupId,
         Map<TopicPartition, OffsetAndMetadata> offsets,
         AlterConsumerGroupOffsetsOptions options
     ) {
+        // 创建一个Future对象来处理异步操作结果
         SimpleAdminApiFuture<CoordinatorKey, Map<TopicPartition, Errors>> future =
                 AlterConsumerGroupOffsetsHandler.newFuture(groupId);
+        // 创建处理器实例来执行实际的偏移量修改操作
         AlterConsumerGroupOffsetsHandler handler = new AlterConsumerGroupOffsetsHandler(groupId, offsets, logContext);
+        // 调用驱动程序执行请求
         invokeDriver(handler, future, options.timeoutMs);
+        // 返回结果对象，其中包含了每个分区的修改操作状态
         return new AlterConsumerGroupOffsetsResult(future.get(CoordinatorKey.byGroupId(groupId)));
     }
 
+    /**
+     * 获取主题分区的偏移量信息
+     * 
+     * 该方法用于查询指定主题分区的偏移量信息。可以查询最早、最新或特定时间点的偏移量。
+     * 常用于监控、数据审计或故障恢复场景。
+     * 
+     * @param topicPartitionOffsets 主题分区和对应的偏移量规范(最早、最新、时间戳等)的映射
+     * @param options 查询选项，包含超时时间等配置
+     * @return 返回ListOffsetsResult对象，包含每个分区的偏移量查询结果
+     */
     @Override
     public ListOffsetsResult listOffsets(Map<TopicPartition, OffsetSpec> topicPartitionOffsets,
                                          ListOffsetsOptions options) {
+        // 创建一个Future对象来处理异步查询结果，使用分区leader缓存优化性能
         PartitionLeaderStrategy.PartitionLeaderFuture<ListOffsetsResultInfo> future =
             ListOffsetsHandler.newFuture(topicPartitionOffsets.keySet(), partitionLeaderCache);
+        // 将偏移量规范转换为具体的偏移量查询值
         Map<TopicPartition, Long> offsetQueriesByPartition = topicPartitionOffsets.entrySet().stream()
             .collect(Collectors.toMap(Map.Entry::getKey, e -> getOffsetFromSpec(e.getValue())));
+        // 创建处理器来执行实际的偏移量查询操作
         ListOffsetsHandler handler = new ListOffsetsHandler(offsetQueriesByPartition, options, logContext, defaultApiTimeoutMs);
+        // 调用驱动程序执行请求
         invokeDriver(handler, future, options.timeoutMs);
+        // 返回包含所有分区查询结果的对象
         return new ListOffsetsResult(future.all());
     }
 
+    /**
+     * 查询客户端配额信息
+     * 
+     * 该方法用于获取Kafka集群中设置的客户端配额信息。配额可以限制客户端的资源使用，
+     * 如网络带宽、请求速率等。通过配额过滤器可以精确查询特定类型客户端的配额设置。
+     * 
+     * @param filter 配额过滤器，用于指定要查询的客户端类型和配额类型
+     * @param options 查询选项，包含超时时间等配置
+     * @return 返回DescribeClientQuotasResult对象，包含匹配的客户端配额信息
+     */
     @Override
     public DescribeClientQuotasResult describeClientQuotas(ClientQuotaFilter filter, DescribeClientQuotasOptions options) {
+        // 创建Future对象来处理异步查询结果
         KafkaFutureImpl<Map<ClientQuotaEntity, Map<String, Double>>> future = new KafkaFutureImpl<>();
 
         final long now = time.milliseconds();
+        // 创建并执行查询请求，使用最小负载节点策略选择目标broker
         runnable.call(new Call("describeClientQuotas", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedNodeProvider()) {
 
                 @Override
                 DescribeClientQuotasRequest.Builder createRequest(int timeoutMs) {
+                    // 创建查询请求，包含配额过滤条件
                     return new DescribeClientQuotasRequest.Builder(filter);
                 }
 
                 @Override
                 void handleResponse(AbstractResponse abstractResponse) {
+                    // 处理响应，将结果存入Future对象
                     DescribeClientQuotasResponse response = (DescribeClientQuotasResponse) abstractResponse;
                     response.complete(future);
                 }
 
                 @Override
                 void handleFailure(Throwable throwable) {
+                    // 处理异常情况，将异常信息存入Future对象
                     future.completeExceptionally(throwable);
                 }
             }, now);
@@ -5908,30 +5952,45 @@ public class KafkaAdminClient extends AdminClient {
         return new DescribeClientQuotasResult(future);
     }
 
+    /**
+     * 修改客户端配额设置
+     * 
+     * 该方法用于修改Kafka集群中的客户端配额设置。可以同时修改多个客户端的多种配额类型，
+     * 如网络带宽限制、请求速率等。支持验证模式，可以在实际修改前检查修改是否有效。
+     * 
+     * @param entries 要修改的配额条目集合，每个条目包含客户端实体和配额值
+     * @param options 修改选项，包含是否仅验证、超时时间等配置
+     * @return 返回AlterClientQuotasResult对象，包含每个修改操作的执行结果
+     */
     @Override
     public AlterClientQuotasResult alterClientQuotas(Collection<ClientQuotaAlteration> entries, AlterClientQuotasOptions options) {
+        // 为每个待修改的配额条目创建对应的Future对象
         Map<ClientQuotaEntity, KafkaFutureImpl<Void>> futures = new HashMap<>(entries.size());
         for (ClientQuotaAlteration entry : entries) {
             futures.put(entry.entity(), new KafkaFutureImpl<>());
         }
 
         final long now = time.milliseconds();
+        // 创建并执行修改请求，使用最小负载节点策略选择目标broker
         runnable.call(new Call("alterClientQuotas", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedNodeProvider()) {
 
                 @Override
                 AlterClientQuotasRequest.Builder createRequest(int timeoutMs) {
+                    // 创建修改请求，指定是否仅验证模式
                     return new AlterClientQuotasRequest.Builder(entries, options.validateOnly());
                 }
 
                 @Override
                 void handleResponse(AbstractResponse abstractResponse) {
+                    // 处理响应，更新每个修改操作的执行结果
                     AlterClientQuotasResponse response = (AlterClientQuotasResponse) abstractResponse;
                     response.complete(futures);
                 }
 
                 @Override
                 void handleFailure(Throwable throwable) {
+                    // 处理异常情况，将异常信息传播给所有Future对象
                     completeAllExceptionally(futures.values(), throwable);
                 }
             }, now);
@@ -5939,16 +5998,30 @@ public class KafkaAdminClient extends AdminClient {
         return new AlterClientQuotasResult(Collections.unmodifiableMap(futures));
     }
 
+    /**
+     * 查询用户的SCRAM凭证信息
+     * 
+     * 该方法用于获取指定用户的SCRAM（Salted Challenge Response Authentication Mechanism）凭证信息。
+     * SCRAM是Kafka支持的一种安全认证机制，用于验证客户端身份。
+     * 
+     * @param users 要查询SCRAM凭证的用户列表，如果为null或空则查询所有用户
+     * @param options 查询选项，包含超时时间等配置
+     * @return 返回DescribeUserScramCredentialsResult对象，包含用户的SCRAM凭证信息
+     */
     @Override
     public DescribeUserScramCredentialsResult describeUserScramCredentials(List<String> users, DescribeUserScramCredentialsOptions options) {
+        // 创建Future对象来处理异步查询结果
         final KafkaFutureImpl<DescribeUserScramCredentialsResponseData> dataFuture = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
+        // 创建查询请求，使用最小负载节点策略选择目标broker
         Call call = new Call("describeUserScramCredentials", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedNodeProvider()) {
             @Override
             public DescribeUserScramCredentialsRequest.Builder createRequest(final int timeoutMs) {
+                // 创建请求数据对象
                 final DescribeUserScramCredentialsRequestData requestData = new DescribeUserScramCredentialsRequestData();
 
+                // 如果指定了用户列表，则添加到请求中
                 if (users != null && !users.isEmpty()) {
                     final List<UserName> userNames = new ArrayList<>(users.size());
 
@@ -5966,35 +6039,52 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             public void handleResponse(AbstractResponse abstractResponse) {
+                // 处理响应数据
                 DescribeUserScramCredentialsResponse response = (DescribeUserScramCredentialsResponse) abstractResponse;
                 DescribeUserScramCredentialsResponseData data = response.data();
                 short messageLevelErrorCode = data.errorCode();
+                // 检查是否有错误发生
                 if (messageLevelErrorCode != Errors.NONE.code()) {
+                    // 如果有错误，将异常信息存入Future对象
                     dataFuture.completeExceptionally(Errors.forCode(messageLevelErrorCode).exception(data.errorMessage()));
                 } else {
+                    // 如果成功，将结果数据存入Future对象
                     dataFuture.complete(data);
                 }
             }
 
             @Override
             void handleFailure(Throwable throwable) {
+                // 处理请求失败的情况
                 dataFuture.completeExceptionally(throwable);
             }
         };
+        // 执行请求
         runnable.call(call, now);
         return new DescribeUserScramCredentialsResult(dataFuture);
     }
 
+    /**
+     * 修改用户的SCRAM凭证信息，包括添加、更新和删除操作
+     * SCRAM(Salted Challenge Response Authentication Mechanism)是一种基于密码的身份验证机制
+     * 
+     * @param alterations 要执行的凭证变更操作列表，可以包含添加/更新(UserScramCredentialUpsertion)和删除(UserScramCredentialDeletion)操作
+     * @param options 操作的配置选项，如超时时间等
+     * @return AlterUserScramCredentialsResult 包含每个用户操作的Future结果
+     */
     @Override
     public AlterUserScramCredentialsResult alterUserScramCredentials(List<UserScramCredentialAlteration> alterations,
                                                                      AlterUserScramCredentialsOptions options) {
+        // 获取当前时间戳，用于计算操作超时
         final long now = time.milliseconds();
+        // 为每个用户创建一个Future，用于异步返回操作结果
         final Map<String, KafkaFutureImpl<Void>> futures = new HashMap<>();
         for (UserScramCredentialAlteration alteration: alterations) {
             futures.put(alteration.user(), new KafkaFutureImpl<>());
         }
+        // 用于存储非法操作的异常信息，key为用户名
         final Map<String, Exception> userIllegalAlterationExceptions = new HashMap<>();
-        // We need to keep track of users with deletions of an unknown SCRAM mechanism
+        // 需要跟踪使用未知SCRAM机制进行删除操作的用户
         final String usernameMustNotBeEmptyMsg = "Username must not be empty";
         String passwordMustNotBeEmptyMsg = "Password must not be empty";
         final String unknownScramMechanismMsg = "Unknown SCRAM mechanism";
@@ -6010,8 +6100,9 @@ public class KafkaAdminClient extends AdminClient {
                 }
             }
         });
-        // Creating an upsertion may throw InvalidKeyException or NoSuchAlgorithmException,
-        // so keep track of which users are affected by such a failure so we can fail all their alterations later
+        // 创建或更新凭证可能会抛出InvalidKeyException或NoSuchAlgorithmException异常
+        // 需要跟踪受这些异常影响的用户，以便后续统一处理失败情况
+        // 使用嵌套Map存储用户的凭证更新信息：外层key为用户名，内层key为SCRAM机制类型
         final Map<String, Map<ScramMechanism, AlterUserScramCredentialsRequestData.ScramCredentialUpsertion>> userInsertions = new HashMap<>();
         alterations.stream().filter(a -> a instanceof UserScramCredentialUpsertion)
                 .filter(alteration -> !userIllegalAlterationExceptions.containsKey(alteration.user()))
@@ -6047,7 +6138,8 @@ public class KafkaAdminClient extends AdminClient {
                     }
                 });
 
-        // submit alterations only for users that do not have an illegal alteration as identified above
+        // 只为没有非法操作的用户提交凭证变更请求
+        // 创建一个新的Call对象处理请求，设置超时时间和Controller节点提供者
         Call call = new Call("alterUserScramCredentials", calcDeadlineMs(now, options.timeoutMs()),
                 new ControllerNodeProvider()) {
             @Override
@@ -6109,8 +6201,18 @@ public class KafkaAdminClient extends AdminClient {
         return new AlterUserScramCredentialsResult(new HashMap<>(futures));
     }
 
+    /**
+     * 将用户的SCRAM凭证更新操作转换为请求数据对象
+     * 
+     * @param u 用户SCRAM凭证更新操作对象
+     * @return 转换后的请求数据对象
+     * @throws InvalidKeyException 当密码无效时抛出
+     * @throws NoSuchAlgorithmException 当指定的加密算法不可用时抛出
+     */
     private static AlterUserScramCredentialsRequestData.ScramCredentialUpsertion getScramCredentialUpsertion(UserScramCredentialUpsertion u) throws InvalidKeyException, NoSuchAlgorithmException {
+        // 创建新的凭证更新请求数据对象
         AlterUserScramCredentialsRequestData.ScramCredentialUpsertion retval = new AlterUserScramCredentialsRequestData.ScramCredentialUpsertion();
+        // 设置用户名、SCRAM机制类型、迭代次数、盐值和加密后的密码
         return retval.setName(u.user())
                 .setMechanism(u.credentialInfo().mechanism().type())
                 .setIterations(u.credentialInfo().iterations())
@@ -6118,28 +6220,66 @@ public class KafkaAdminClient extends AdminClient {
                 .setSaltedPassword(getSaltedPassword(u.credentialInfo().mechanism(), u.password(), u.salt(), u.credentialInfo().iterations()));
     }
 
+    /**
+     * 将用户的SCRAM凭证删除操作转换为请求数据对象
+     * 
+     * @param d 用户SCRAM凭证删除操作对象
+     * @return 转换后的请求数据对象
+     */
     private static AlterUserScramCredentialsRequestData.ScramCredentialDeletion getScramCredentialDeletion(UserScramCredentialDeletion d) {
+        // 创建新的凭证删除请求数据对象，设置用户名和SCRAM机制类型
         return new AlterUserScramCredentialsRequestData.ScramCredentialDeletion().setName(d.user()).setMechanism(d.mechanism().type());
     }
 
+    /**
+     * 使用SCRAM算法计算加盐密码
+     * 
+     * @param publicScramMechanism SCRAM机制类型(如SCRAM-SHA-256)
+     * @param password 原始密码字节数组
+     * @param salt 盐值字节数组
+     * @param iterations PBKDF2算法的迭代次数
+     * @return 经过SCRAM算法处理的加盐密码字节数组
+     * @throws NoSuchAlgorithmException 当指定的加密算法不可用时抛出
+     * @throws InvalidKeyException 当密码无效时抛出
+     */
     private static byte[] getSaltedPassword(ScramMechanism publicScramMechanism, byte[] password, byte[] salt, int iterations) throws NoSuchAlgorithmException, InvalidKeyException {
+        // 创建SCRAM格式化器并计算加盐密码
         return new ScramFormatter(org.apache.kafka.common.security.scram.internals.ScramMechanism.forMechanismName(publicScramMechanism.mechanismName()))
                 .hi(password, salt, iterations);
     }
 
+    /**
+     * 描述Kafka集群中的功能特性配置信息
+     * 该方法通过发送ApiVersionsRequest请求来获取集群中的功能特性元数据，包括已完成版本范围和支持的版本范围
+     *
+     * @param options 描述功能特性的选项，包含超时时间等配置
+     * @return DescribeFeaturesResult 包含功能特性元数据的异步结果
+     */
     @Override
     public DescribeFeaturesResult describeFeatures(final DescribeFeaturesOptions options) {
+        // 创建一个Future对象用于存储功能特性元数据的异步结果
         final KafkaFutureImpl<FeatureMetadata> future = new KafkaFutureImpl<>();
+        // 获取当前时间戳
         final long now = time.milliseconds();
+        // 创建一个Call对象，用于发送请求到负载最小的broker或活跃的KRaft控制器
         final Call call = new Call(
             "describeFeatures", calcDeadlineMs(now, options.timeoutMs()), new LeastLoadedBrokerOrActiveKController()) {
 
+            /**
+             * 从ApiVersions响应中创建功能特性元数据
+             * 
+             * @param response ApiVersions响应对象
+             * @return FeatureMetadata 包含已完成和支持的功能特性版本范围信息
+             */
             private FeatureMetadata createFeatureMetadata(final ApiVersionsResponse response) {
+                // 创建已完成功能特性的版本范围映射
                 final Map<String, FinalizedVersionRange> finalizedFeatures = new HashMap<>();
                 for (final FinalizedFeatureKey key : response.data().finalizedFeatures().valuesSet()) {
+                    // 将每个已完成功能特性的名称和版本范围添加到映射中
                     finalizedFeatures.put(key.name(), new FinalizedVersionRange(key.minVersionLevel(), key.maxVersionLevel()));
                 }
 
+                // 获取已完成功能特性的纪元（epoch）
                 Optional<Long> finalizedFeaturesEpoch;
                 if (response.data().finalizedFeaturesEpoch() >= 0L) {
                     finalizedFeaturesEpoch = Optional.of(response.data().finalizedFeaturesEpoch());
@@ -6147,31 +6287,56 @@ public class KafkaAdminClient extends AdminClient {
                     finalizedFeaturesEpoch = Optional.empty();
                 }
 
+                // 创建支持的功能特性的版本范围映射
                 final Map<String, SupportedVersionRange> supportedFeatures = new HashMap<>();
                 for (final SupportedFeatureKey key : response.data().supportedFeatures().valuesSet()) {
+                    // 将每个支持的功能特性的名称和版本范围添加到映射中
                     supportedFeatures.put(key.name(), new SupportedVersionRange(key.minVersion(), key.maxVersion()));
                 }
 
+                // 创建并返回功能特性元数据对象
                 return new FeatureMetadata(finalizedFeatures, finalizedFeaturesEpoch, supportedFeatures);
             }
 
+            /**
+             * 创建ApiVersions请求构建器
+             * 
+             * @param timeoutMs 请求超时时间（毫秒）
+             * @return ApiVersionsRequest.Builder 请求构建器实例
+             */
             @Override
             ApiVersionsRequest.Builder createRequest(int timeoutMs) {
+                // 创建一个新的ApiVersions请求构建器
                 return new ApiVersionsRequest.Builder();
             }
 
+            /**
+             * 处理ApiVersions响应
+             * 
+             * @param response 服务器返回的响应
+             */
             @Override
             void handleResponse(AbstractResponse response) {
+                // 将响应转换为ApiVersions响应类型
                 final ApiVersionsResponse apiVersionsResponse = (ApiVersionsResponse) response;
+                // 检查响应中的错误码
                 if (apiVersionsResponse.data().errorCode() == Errors.NONE.code()) {
+                    // 如果没有错误，创建功能特性元数据并完成Future
                     future.complete(createFeatureMetadata(apiVersionsResponse));
                 } else {
+                    // 如果有错误，使用相应的异常完成Future
                     future.completeExceptionally(Errors.forCode(apiVersionsResponse.data().errorCode()).exception());
                 }
             }
 
+            /**
+             * 处理请求失败的情况
+             * 
+             * @param throwable 失败原因的异常
+             */
             @Override
             void handleFailure(Throwable throwable) {
+                // 使用异常完成Future
                 completeAllExceptionally(Collections.singletonList(future), throwable);
             }
         };
@@ -6180,19 +6345,32 @@ public class KafkaAdminClient extends AdminClient {
         return new DescribeFeaturesResult(future);
     }
 
+    /**
+     * 更新Kafka集群中的功能特性配置
+     * 该方法用于更新功能特性的版本级别和升级类型，支持批量更新多个功能特性
+     *
+     * @param featureUpdates 要更新的功能特性映射，键为功能特性名称，值为更新信息
+     * @param options 更新功能特性的选项，包含超时时间和验证模式等配置
+     * @return UpdateFeaturesResult 包含更新结果的异步结果
+     * @throws IllegalArgumentException 当功能特性更新列表为空或包含空名称时
+     */
     @Override
     public UpdateFeaturesResult updateFeatures(final Map<String, FeatureUpdate> featureUpdates,
                                                final UpdateFeaturesOptions options) {
+        // 检查更新列表是否为空
         if (featureUpdates.isEmpty()) {
             throw new IllegalArgumentException("Feature updates can not be null or empty.");
         }
 
+        // 为每个功能特性创建对应的Future对象
         final Map<String, KafkaFutureImpl<Void>> updateFutures = new HashMap<>();
         for (final Map.Entry<String, FeatureUpdate> entry : featureUpdates.entrySet()) {
             final String feature = entry.getKey();
+            // 检查功能特性名称是否为空
             if (Utils.isBlank(feature)) {
                 throw new IllegalArgumentException("Provided feature can not be empty.");
             }
+            // 为每个功能特性创建一个Future对象
             updateFutures.put(entry.getKey(), new KafkaFutureImpl<>());
         }
 
@@ -6200,20 +6378,31 @@ public class KafkaAdminClient extends AdminClient {
         final Call call = new Call("updateFeatures", calcDeadlineMs(now, options.timeoutMs()),
             new ControllerNodeProvider(true)) {
 
+            /**
+             * 创建更新功能特性的请求构建器
+             * 
+             * @param timeoutMs 请求超时时间（毫秒）
+             * @return UpdateFeaturesRequest.Builder 请求构建器实例
+             */
             @Override
             UpdateFeaturesRequest.Builder createRequest(int timeoutMs) {
+                // 创建功能特性更新集合
                 final UpdateFeaturesRequestData.FeatureUpdateKeyCollection featureUpdatesRequestData
                     = new UpdateFeaturesRequestData.FeatureUpdateKeyCollection();
+                // 遍历所有需要更新的功能特性
                 for (Map.Entry<String, FeatureUpdate> entry : featureUpdates.entrySet()) {
                     final String feature = entry.getKey();
                     final FeatureUpdate update = entry.getValue();
+                    // 创建功能特性更新请求项
                     final UpdateFeaturesRequestData.FeatureUpdateKey requestItem =
                         new UpdateFeaturesRequestData.FeatureUpdateKey();
                     requestItem.setFeature(feature);
                     requestItem.setMaxVersionLevel(update.maxVersionLevel());
                     requestItem.setUpgradeType(update.upgradeType().code());
+                    // 将请求项添加到更新集合中
                     featureUpdatesRequestData.add(requestItem);
                 }
+                // 创建并返回请求构建器
                 return new UpdateFeaturesRequest.Builder(
                     new UpdateFeaturesRequestData()
                         .setTimeoutMs(timeoutMs)
@@ -6221,25 +6410,36 @@ public class KafkaAdminClient extends AdminClient {
                         .setFeatureUpdates(featureUpdatesRequestData));
             }
 
+            /**
+             * 处理更新功能特性的响应
+             * 
+             * @param abstractResponse 服务器返回的响应
+             */
             @Override
             void handleResponse(AbstractResponse abstractResponse) {
+                // 将响应转换为UpdateFeatures响应类型
                 final UpdateFeaturesResponse response =
                     (UpdateFeaturesResponse) abstractResponse;
 
+                // 获取顶层错误信息
                 ApiError topLevelError = response.topLevelError();
                 switch (topLevelError.error()) {
                     case NONE:
-                        // For V2 and above, None responses will just have a top level NONE error -- mark all the futures as completed.
+                        // 对于V2及以上版本，无错误响应只会有一个顶层NONE错误 - 标记所有Future为完成
                         if (response.data().results().isEmpty()) {
+                            // 如果结果为空，完成所有Future
                             for (final KafkaFutureImpl<Void> future : updateFutures.values()) {
                                 future.complete(null);
                             }
                         } else {
+                            // 处理每个功能特性的更新结果
                             for (final UpdatableFeatureResult result : response.data().results()) {
                                 final KafkaFutureImpl<Void> future = updateFutures.get(result.feature());
                                 if (future == null) {
+                                    // 如果发现未知的功能特性，记录警告日志
                                     log.warn("Server response mentioned unknown feature {}", result.feature());
                                 } else {
+                                    // 检查每个功能特性的错误码
                                     final Errors error = Errors.forCode(result.errorCode());
                                     if (error == Errors.NONE) {
                                         future.complete(null);
@@ -6248,15 +6448,17 @@ public class KafkaAdminClient extends AdminClient {
                                     }
                                 }
                             }
-                            // The server should send back a response for every feature, but we do a sanity check anyway.
+                            // 服务器应该为每个功能特性返回结果，这里进行完整性检查
                             completeUnrealizedFutures(updateFutures.entrySet().stream(),
                                     feature -> "The controller response did not contain a result for feature " + feature);
                         }
                         break;
                     case NOT_CONTROLLER:
+                        // 如果不是控制器节点，处理相应错误
                         handleNotControllerError(topLevelError.error());
                         break;
                     default:
+                        // 处理其他错误情况，使所有Future异常完成
                         for (final Map.Entry<String, KafkaFutureImpl<Void>> entry : updateFutures.entrySet()) {
                             entry.getValue().completeExceptionally(topLevelError.exception());
                         }
@@ -6264,8 +6466,14 @@ public class KafkaAdminClient extends AdminClient {
                 }
             }
 
+            /**
+             * 处理请求失败的情况
+             * 
+             * @param throwable 失败原因的异常
+             */
             @Override
             void handleFailure(Throwable throwable) {
+                // 使用异常完成所有Future
                 completeAllExceptionally(updateFutures.values(), throwable);
             }
         };
@@ -6274,33 +6482,59 @@ public class KafkaAdminClient extends AdminClient {
         return new UpdateFeaturesResult(new HashMap<>(updateFutures));
     }
 
+    /**
+     * 描述Kafka集群的元数据仲裁信息
+     * 此方法用于获取Kafka集群中元数据主题的仲裁状态信息，包括leader、投票者和观察者等信息
+     *
+     * @param options 描述元数据仲裁的选项，包含超时时间等配置
+     * @return DescribeMetadataQuorumResult 包含仲裁信息的异步结果
+     */
     @Override
     public DescribeMetadataQuorumResult describeMetadataQuorum(DescribeMetadataQuorumOptions options) {
+        // 创建节点提供者，用于选择负载最小的broker或活跃的KRaft控制器
         NodeProvider provider = new LeastLoadedBrokerOrActiveKController();
 
+        // 创建用于存储异步操作结果的Future对象
         final KafkaFutureImpl<QuorumInfo> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
+        // 创建RPC调用对象
         final Call call = new Call(
                 "describeMetadataQuorum", calcDeadlineMs(now, options.timeoutMs()), provider) {
 
+            /**
+             * 将服务器响应中的副本状态转换为客户端使用的QuorumInfo.ReplicaState对象
+             * 
+             * @param replica 服务器返回的副本状态数据
+             * @return 转换后的副本状态对象
+             */
             private QuorumInfo.ReplicaState translateReplicaState(DescribeQuorumResponseData.ReplicaState replica) {
                 return new QuorumInfo.ReplicaState(
-                        replica.replicaId(),
-                        replica.replicaDirectoryId() == null ? Uuid.ZERO_UUID : replica.replicaDirectoryId(),
-                        replica.logEndOffset(),
-                        replica.lastFetchTimestamp() == -1 ? OptionalLong.empty() : OptionalLong.of(replica.lastFetchTimestamp()),
-                        replica.lastCaughtUpTimestamp() == -1 ? OptionalLong.empty() : OptionalLong.of(replica.lastCaughtUpTimestamp()));
+                        replica.replicaId(), // 副本ID
+                        replica.replicaDirectoryId() == null ? Uuid.ZERO_UUID : replica.replicaDirectoryId(), // 副本目录ID，如果为空则使用ZERO_UUID
+                        replica.logEndOffset(), // 日志末端偏移量
+                        replica.lastFetchTimestamp() == -1 ? OptionalLong.empty() : OptionalLong.of(replica.lastFetchTimestamp()), // 最后一次拉取时间戳
+                        replica.lastCaughtUpTimestamp() == -1 ? OptionalLong.empty() : OptionalLong.of(replica.lastCaughtUpTimestamp())); // 最后一次追赶上的时间戳
             }
 
+            /**
+             * 根据服务器响应创建仲裁信息结果对象
+             * 
+             * @param partition 分区数据，包含leader、epoch和投票者等信息
+             * @param nodeCollection 节点集合，包含所有参与仲裁的节点信息
+             * @return 封装后的仲裁信息对象
+             */
             private QuorumInfo createQuorumResult(final DescribeQuorumResponseData.PartitionData partition, DescribeQuorumResponseData.NodeCollection nodeCollection) {
+                // 转换当前的投票者列表
                 List<QuorumInfo.ReplicaState> voters = partition.currentVoters().stream()
                     .map(this::translateReplicaState)
                     .collect(Collectors.toList());
 
+                // 转换观察者列表
                 List<QuorumInfo.ReplicaState> observers = partition.observers().stream()
                     .map(this::translateReplicaState)
                     .collect(Collectors.toList());
 
+                // 转换节点信息，包括节点ID和监听器端点
                 Map<Integer, QuorumInfo.Node> nodes = nodeCollection.stream().map(n -> {
                     List<RaftVoterEndpoint> endpoints = n.listeners().stream()
                         .map(l -> new RaftVoterEndpoint(l.name(), l.host(), l.port()))
@@ -6309,13 +6543,14 @@ public class KafkaAdminClient extends AdminClient {
                     return new QuorumInfo.Node(n.nodeId(), endpoints);
                 }).collect(Collectors.toMap(QuorumInfo.Node::nodeId, Function.identity()));
 
+                // 创建并返回仲裁信息对象
                 return new QuorumInfo(
-                    partition.leaderId(),
-                    partition.leaderEpoch(),
-                    partition.highWatermark(),
-                    voters,
-                    observers,
-                    nodes
+                    partition.leaderId(), // leader节点ID
+                    partition.leaderEpoch(), // leader的任期号
+                    partition.highWatermark(), // 高水位线
+                    voters, // 投票者列表
+                    observers, // 观察者列表
+                    nodes // 节点信息映射
                 );
             }
 
@@ -6374,10 +6609,20 @@ public class KafkaAdminClient extends AdminClient {
         return new DescribeMetadataQuorumResult(future);
     }
 
+    /**
+     * 注销指定的Broker
+     * 此方法用于从Kafka集群中注销一个Broker，使其不再参与集群的工作
+     *
+     * @param brokerId 要注销的Broker的ID
+     * @param options 注销操作的选项，包含超时时间等配置
+     * @return UnregisterBrokerResult 注销操作的异步结果
+     */
     @Override
     public UnregisterBrokerResult unregisterBroker(int brokerId, UnregisterBrokerOptions options) {
+        // 创建用于存储异步操作结果的Future对象
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
+        // 创建RPC调用对象，使用负载最小的节点处理请求
         final Call call = new Call("unregisterBroker", calcDeadlineMs(now, options.timeoutMs()),
                 new LeastLoadedNodeProvider()) {
 
@@ -6416,81 +6661,175 @@ public class KafkaAdminClient extends AdminClient {
         return new UnregisterBrokerResult(future);
     }
 
+    /**
+     * 描述指定主题分区上的生产者信息
+     * 此方法用于获取当前活跃的生产者的详细信息，包括生产者ID、事务状态等
+     *
+     * @param topicPartitions 要查询的主题分区集合
+     * @param options 描述生产者的选项，包含超时时间等配置
+     * @return DescribeProducersResult 包含生产者信息的异步结果
+     */
     @Override
     public DescribeProducersResult describeProducers(Collection<TopicPartition> topicPartitions, DescribeProducersOptions options) {
+        // 创建分区leader策略的Future对象，用于存储每个分区的生产者状态
         PartitionLeaderStrategy.PartitionLeaderFuture<DescribeProducersResult.PartitionProducerState> future =
             DescribeProducersHandler.newFuture(topicPartitions, partitionLeaderCache);
+        // 创建处理器对象
         DescribeProducersHandler handler = new DescribeProducersHandler(options, logContext);
+        // 调用驱动程序执行请求
         invokeDriver(handler, future, options.timeoutMs);
+        // 返回包含所有分区生产者信息的结果
         return new DescribeProducersResult(future.all());
     }
 
+    /**
+     * 描述指定事务ID的事务状态信息
+     * 此方法用于获取事务的详细信息，包括事务状态、生产者ID、超时时间等
+     *
+     * @param transactionalIds 要查询的事务ID集合
+     * @param options 描述事务的选项，包含超时时间等配置
+     * @return DescribeTransactionsResult 包含事务信息的异步结果
+     */
     @Override
     public DescribeTransactionsResult describeTransactions(Collection<String> transactionalIds, DescribeTransactionsOptions options) {
+        // 创建管理API的Future对象，用于存储事务描述信息
         AdminApiFuture.SimpleAdminApiFuture<CoordinatorKey, TransactionDescription> future =
             DescribeTransactionsHandler.newFuture(transactionalIds);
+        // 创建事务描述处理器
         DescribeTransactionsHandler handler = new DescribeTransactionsHandler(logContext);
+        // 调用驱动程序执行请求
         invokeDriver(handler, future, options.timeoutMs);
+        // 返回包含所有事务信息的结果
         return new DescribeTransactionsResult(future.all());
     }
 
+    /**
+     * 中止(回滚)指定事务的操作
+     * 
+     * @param spec 事务中止规范,包含要中止的事务的主题分区和事务ID等信息
+     * @param options 中止事务的选项配置,如超时时间等
+     * @return AbortTransactionResult 中止事务的结果
+     */
     @Override
     public AbortTransactionResult abortTransaction(AbortTransactionSpec spec, AbortTransactionOptions options) {
+        // 创建一个分区leader策略的Future,用于跟踪事务中止操作的完成状态
+        // 这里只处理单个主题分区的事务中止
         PartitionLeaderStrategy.PartitionLeaderFuture<Void> future =
             AbortTransactionHandler.newFuture(Collections.singleton(spec.topicPartition()), partitionLeaderCache);
+        
+        // 创建事务中止处理器,负责具体的事务中止逻辑
         AbortTransactionHandler handler = new AbortTransactionHandler(spec, logContext);
+        
+        // 调用驱动程序执行事务中止操作
         invokeDriver(handler, future, options.timeoutMs);
+        
+        // 返回事务中止结果
         return new AbortTransactionResult(future.all());
     }
 
+    /**
+     * 列出集群中所有正在进行的事务
+     * 
+     * @param options 列出事务的选项配置,如超时时间等
+     * @return ListTransactionsResult 包含所有正在进行的事务列表的结果
+     */
     @Override
     public ListTransactionsResult listTransactions(ListTransactionsOptions options) {
+        // 创建一个面向所有broker的Future,用于收集所有broker上的事务信息
         AllBrokersStrategy.AllBrokersFuture<Collection<TransactionListing>> future =
             ListTransactionsHandler.newFuture();
+        
+        // 创建列出事务的处理器
         ListTransactionsHandler handler = new ListTransactionsHandler(options, logContext);
+        
+        // 调用驱动程序执行列出事务的操作
         invokeDriver(handler, future, options.timeoutMs);
+        
+        // 返回事务列表结果
         return new ListTransactionsResult(future.all());
     }
 
+    /**
+     * 将指定事务ID的生产者设置为已中止状态(fence),防止这些生产者继续进行事务操作
+     * 
+     * @param transactionalIds 要设置fence状态的事务ID集合
+     * @param options fence操作的选项配置
+     * @return FenceProducersResult fence操作的结果
+     */
     @Override
     public FenceProducersResult fenceProducers(Collection<String> transactionalIds, FenceProducersOptions options) {
+        // 创建一个简单的AdminAPI Future,用于跟踪fence操作的完成状态
+        // 每个事务ID都会映射到对应的ProducerId和Epoch
         AdminApiFuture.SimpleAdminApiFuture<CoordinatorKey, ProducerIdAndEpoch> future =
             FenceProducersHandler.newFuture(transactionalIds);
+        
+        // 创建fence处理器,负责执行具体的fence逻辑
         FenceProducersHandler handler = new FenceProducersHandler(options, logContext, requestTimeoutMs);
+        
+        // 调用驱动程序执行fence操作
         invokeDriver(handler, future, options.timeoutMs);
+        
+        // 返回fence操作结果
         return new FenceProducersResult(future.all());
     }
 
+    /**
+     * 列出集群中所有客户端的度量资源信息
+     * 
+     * @param options 列出客户端度量资源的选项配置
+     * @return ListClientMetricsResourcesResult 包含所有客户端度量资源列表的结果
+     */
     @Override
     public ListClientMetricsResourcesResult listClientMetricsResources(ListClientMetricsResourcesOptions options) {
+        // 获取当前时间戳
         final long now = time.milliseconds();
+        
+        // 创建一个Future用于异步获取结果
         final KafkaFutureImpl<Collection<ClientMetricsResourceListing>> future = new KafkaFutureImpl<>();
+        
+        // 创建并执行一个异步调用
         runnable.call(new Call("listClientMetricsResources", calcDeadlineMs(now, options.timeoutMs()),
             new LeastLoadedNodeProvider()) {
 
+            // 创建列出客户端度量资源的请求
             @Override
             ListClientMetricsResourcesRequest.Builder createRequest(int timeoutMs) {
                 return new ListClientMetricsResourcesRequest.Builder(new ListClientMetricsResourcesRequestData());
             }
 
+            // 处理服务器的响应
             @Override
             void handleResponse(AbstractResponse abstractResponse) {
                 ListClientMetricsResourcesResponse response = (ListClientMetricsResourcesResponse) abstractResponse;
                 if (response.error().isFailure()) {
+                    // 如果响应包含错误,则完成Future并附带异常
                     future.completeExceptionally(response.error().exception());
                 } else {
+                    // 成功获取度量资源列表,完成Future
                     future.complete(response.clientMetricsResources());
                 }
             }
 
+            // 处理请求失败的情况
             @Override
             void handleFailure(Throwable throwable) {
                 future.completeExceptionally(throwable);
             }
         }, now);
+        
+        // 返回包含Future的结果对象
         return new ListClientMetricsResourcesResult(future);
     }
 
+    /**
+     * 向Kafka集群添加一个新的Raft投票者节点
+     * 
+     * @param voterId 新投票者的唯一标识ID
+     * @param voterDirectoryId 投票者的目录ID，用于标识投票者在集群中的位置
+     * @param endpoints 投票者节点的网络端点集合，包含名称、主机地址和端口信息
+     * @param options 添加投票者的配置选项，如超时时间和集群ID等
+     * @return AddRaftVoterResult 异步操作结果，包含操作是否成功的Future对象
+     */
     @Override
     public AddRaftVoterResult addRaftVoter(
         int voterId,
@@ -6498,22 +6837,28 @@ public class KafkaAdminClient extends AdminClient {
         Set<RaftVoterEndpoint> endpoints,
         AddRaftVoterOptions options
     ) {
+        // 创建节点提供者，使用负载最小的broker或活跃的KRaft控制器
         NodeProvider provider = new LeastLoadedBrokerOrActiveKController();
 
+        // 创建异步操作的Future对象
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
+        // 创建RPC调用对象
         final Call call = new Call(
                 "addRaftVoter", calcDeadlineMs(now, options.timeoutMs()), provider) {
 
             @Override
             AddRaftVoterRequest.Builder createRequest(int timeoutMs) {
+                // 构建投票者的监听器集合
                 AddRaftVoterRequestData.ListenerCollection listeners =
                     new AddRaftVoterRequestData.ListenerCollection();
+                // 将每个端点信息添加到监听器集合中
                 endpoints.forEach(endpoint ->
                     listeners.add(new AddRaftVoterRequestData.Listener().
                         setName(endpoint.name()).
                         setHost(endpoint.host()).
                         setPort(endpoint.port())));
+                // 创建添加投票者请求
                 return new AddRaftVoterRequest.Builder(
                         new AddRaftVoterRequestData().
                             setClusterId(options.clusterId().orElse(null)).
@@ -6525,42 +6870,60 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             void handleResponse(AbstractResponse response) {
+                // 处理非控制器错误
                 handleNotControllerError(response);
                 AddRaftVoterResponse addResponse = (AddRaftVoterResponse) response;
+                // 检查响应中的错误码
                 if (addResponse.data().errorCode() != Errors.NONE.code()) {
+                    // 如果存在错误，将Future标记为异常完成
                     ApiError error = new ApiError(
                         addResponse.data().errorCode(),
                         addResponse.data().errorMessage());
                     future.completeExceptionally(error.exception());
                 } else {
+                    // 操作成功，完成Future
                     future.complete(null);
                 }
             }
 
             @Override
             void handleFailure(Throwable throwable) {
+                // 处理调用失败的情况
                 future.completeExceptionally(throwable);
             }
         };
+        // 执行RPC调用
         runnable.call(call, now);
         return new AddRaftVoterResult(future);
     }
 
+    /**
+     * 从Kafka集群中移除一个Raft投票者节点
+     * 
+     * @param voterId 要移除的投票者的唯一标识ID
+     * @param voterDirectoryId 投票者的目录ID
+     * @param options 移除投票者的配置选项
+     * @return RemoveRaftVoterResult 异步操作结果
+     */
     @Override
     public RemoveRaftVoterResult removeRaftVoter(
         int voterId,
         Uuid voterDirectoryId,
         RemoveRaftVoterOptions options
     ) {
+        // 创建节点提供者，使用负载最小的broker或活跃的KRaft控制器
         NodeProvider provider = new LeastLoadedBrokerOrActiveKController();
 
+        // 创建异步操作的Future对象
         final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
+        // 创建RPC调用对象
         final Call call = new Call(
                 "removeRaftVoter", calcDeadlineMs(now, options.timeoutMs()), provider) {
 
             @Override
             RemoveRaftVoterRequest.Builder createRequest(int timeoutMs) {
+                // 创建移除投票者请求
                 return new RemoveRaftVoterRequest.Builder(
                     new RemoveRaftVoterRequestData().
                         setClusterId(options.clusterId().orElse(null)).
@@ -6570,136 +6933,220 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             void handleResponse(AbstractResponse response) {
+                // 处理非控制器错误
                 handleNotControllerError(response);
                 RemoveRaftVoterResponse addResponse = (RemoveRaftVoterResponse) response;
+                // 检查响应中的错误码
                 if (addResponse.data().errorCode() != Errors.NONE.code()) {
+                    // 如果存在错误，将Future标记为异常完成
                     ApiError error = new ApiError(
                             addResponse.data().errorCode(),
                             addResponse.data().errorMessage());
                     future.completeExceptionally(error.exception());
                 } else {
+                    // 操作成功，完成Future
                     future.complete(null);
                 }
             }
 
             @Override
             void handleFailure(Throwable throwable) {
+                // 处理调用失败的情况
                 future.completeExceptionally(throwable);
             }
         };
+        // 执行RPC调用
         runnable.call(call, now);
         return new RemoveRaftVoterResult(future);
     }
 
+    /**
+     * 获取客户端实例的唯一标识ID
+     * 
+     * @param timeout 获取实例ID的超时时间
+     * @return Uuid 客户端实例的唯一标识ID
+     * @throws IllegalArgumentException 如果超时时间为负数
+     * @throws IllegalStateException 如果遥测功能未启用
+     */
     @Override
     public Uuid clientInstanceId(Duration timeout) {
+        // 检查超时时间是否为负数
         if (timeout.isNegative()) {
             throw new IllegalArgumentException("The timeout cannot be negative.");
         }
 
+        // 检查遥测报告器是否可用
         if (clientTelemetryReporter.isEmpty()) {
             throw new IllegalStateException("Telemetry is not enabled. Set config `" + AdminClientConfig.ENABLE_METRICS_PUSH_CONFIG + "` to `true`.");
 
         }
 
+        // 如果已经有实例ID，直接返回
         if (clientInstanceId != null) {
             return clientInstanceId;
         }
 
+        // 通过遥测工具获取客户端实例ID
         clientInstanceId = ClientTelemetryUtils.fetchClientInstanceId(clientTelemetryReporter.get(), timeout);
         return clientInstanceId;
     }
 
+    /**
+     * 调用AdminApiDriver来处理管理API请求
+     * 
+     * @param handler 处理具体API请求的处理器
+     * @param future 用于获取API调用结果的Future对象
+     * @param timeoutMs 请求超时时间(毫秒)
+     * @param <K> 请求键的类型
+     * @param <V> 响应值的类型
+     */
     private <K, V> void invokeDriver(
         AdminApiHandler<K, V> handler,
         AdminApiFuture<K, V> future,
         Integer timeoutMs
     ) {
+        // 获取当前时间戳
         long currentTimeMs = time.milliseconds();
+        // 计算请求的截止时间
         long deadlineMs = calcDeadlineMs(currentTimeMs, timeoutMs);
 
+        // 创建AdminApiDriver实例来处理请求
         AdminApiDriver<K, V> driver = new AdminApiDriver<>(
-            handler,
-            future,
-            deadlineMs,
-            retryBackoffMs,
-            retryBackoffMaxMs,
-            logContext
+            handler,            // API请求处理器
+            future,             // 用于获取结果的Future
+            deadlineMs,         // 请求截止时间
+            retryBackoffMs,     // 重试等待时间
+            retryBackoffMaxMs,  // 最大重试等待时间
+            logContext          // 日志上下文
         );
 
+        // 尝试发送请求
         maybeSendRequests(driver, currentTimeMs);
     }
 
+    /**
+     * 尝试发送管理API请求
+     * 
+     * @param driver 管理API请求的驱动器
+     * @param currentTimeMs 当前时间戳
+     * @param <K> 请求键的类型
+     * @param <V> 响应值的类型
+     */
     private <K, V> void maybeSendRequests(AdminApiDriver<K, V> driver, long currentTimeMs) {
+        // 轮询获取所有待发送的请求
         for (AdminApiDriver.RequestSpec<K> spec : driver.poll()) {
+            // 为每个请求创建新的Call对象并执行
             runnable.call(newCall(driver, spec), currentTimeMs);
         }
     }
 
+    /**
+     * 创建新的Call对象来处理具体的请求
+     * 
+     * @param driver 管理API请求的驱动器
+     * @param spec 请求的具体规格说明
+     * @param <K> 请求键的类型
+     * @param <V> 响应值的类型
+     * @return 新创建的Call对象
+     */
     private <K, V> Call newCall(AdminApiDriver<K, V> driver, AdminApiDriver.RequestSpec<K> spec) {
+        // 根据请求规格选择节点提供器
+        // 如果指定了目标broker ID，使用固定节点提供器
+        // 否则使用负载最小的节点提供器
         NodeProvider nodeProvider = spec.scope.destinationBrokerId().isPresent() ?
             new ConstantNodeIdProvider(spec.scope.destinationBrokerId().getAsInt()) :
             new LeastLoadedNodeProvider();
+            
+        // 创建新的Call对象
         return new Call(spec.name, spec.nextAllowedTryMs, spec.tries, spec.deadlineMs, nodeProvider) {
             @Override
             AbstractRequest.Builder<?> createRequest(int timeoutMs) {
+                // 返回请求构建器
                 return spec.request;
             }
 
             @Override
             void handleResponse(AbstractResponse response) {
+                // 获取当前时间戳
                 long currentTimeMs = time.milliseconds();
+                // 处理响应
                 driver.onResponse(currentTimeMs, spec, response, this.curNode());
+                // 继续发送其他待处理的请求
                 maybeSendRequests(driver, currentTimeMs);
             }
 
             @Override
             void handleFailure(Throwable throwable) {
+                // 获取当前时间戳
                 long currentTimeMs = time.milliseconds();
+                // 处理失败情况
                 driver.onFailure(currentTimeMs, spec, throwable);
+                // 继续发送其他待处理的请求
                 maybeSendRequests(driver, currentTimeMs);
             }
 
             @Override
             void maybeRetry(long currentTimeMs, Throwable throwable) {
                 if (throwable instanceof DisconnectException) {
-                    // Disconnects are a special case. We want to give the driver a chance
-                    // to retry lookup rather than getting stuck on a node which is down.
-                    // For example, if a partition leader shuts down after our metadata query,
-                    // then we might get a disconnect. We want to try to find the new partition
-                    // leader rather than retrying on the same node.
+                    // 断开连接是特殊情况，我们希望给驱动器一个重试查找的机会
+                    // 而不是停留在已经宕机的节点上
+                    // 例如，如果分区leader在我们的元数据查询之后关闭
+                    // 那么我们可能会遇到断开连接的情况
+                    // 我们希望尝试找到新的分区leader而不是在同一个节点上重试
                     driver.onFailure(currentTimeMs, spec, throwable);
                     maybeSendRequests(driver, currentTimeMs);
                 } else {
+                    // 对于其他异常，使用父类的重试逻辑
                     super.maybeRetry(currentTimeMs, throwable);
                 }
             }
         };
     }
 
+    /**
+     * 从OffsetSpec对象获取对应的时间戳值
+     * 
+     * @param offsetSpec 偏移量规格说明对象
+     * @return 对应的时间戳值
+     */
     private static long getOffsetFromSpec(OffsetSpec offsetSpec) {
+        // 根据不同的OffsetSpec类型返回相应的时间戳
         if (offsetSpec instanceof TimestampSpec) {
+            // 如果是指定时间戳，直接返回该时间戳
             return ((TimestampSpec) offsetSpec).timestamp();
         } else if (offsetSpec instanceof OffsetSpec.EarliestSpec) {
+            // 如果是最早偏移量，返回最早时间戳
             return ListOffsetsRequest.EARLIEST_TIMESTAMP;
         } else if (offsetSpec instanceof OffsetSpec.MaxTimestampSpec) {
+            // 如果是最大时间戳，返回最大时间戳
             return ListOffsetsRequest.MAX_TIMESTAMP;
         } else if (offsetSpec instanceof OffsetSpec.EarliestLocalSpec) {
+            // 如果是最早本地偏移量，返回最早本地时间戳
             return ListOffsetsRequest.EARLIEST_LOCAL_TIMESTAMP;
         } else if (offsetSpec instanceof OffsetSpec.LatestTieredSpec) {
+            // 如果是最新分层偏移量，返回最新分层时间戳
             return ListOffsetsRequest.LATEST_TIERED_TIMESTAMP;
         }
+        // 默认返回最新时间戳
         return ListOffsetsRequest.LATEST_TIMESTAMP;
     }
 
     /**
-     * Get a sub level error when the request is in batch. If given key was not found,
-     * return an {@link IllegalArgumentException}.
+     * 获取批量请求中的子级错误
+     * 
+     * @param subLevelErrors 子级错误映射
+     * @param subKey 子级键
+     * @param keyNotFoundMsg 键未找到时的错误消息
+     * @param <K> 键的类型
+     * @return 如果找到对应的错误则返回该错误，否则返回IllegalArgumentException
      */
     static <K> Throwable getSubLevelError(Map<K, Errors> subLevelErrors, K subKey, String keyNotFoundMsg) {
+        // 检查子级错误映射中是否包含指定的键
         if (!subLevelErrors.containsKey(subKey)) {
+            // 如果键不存在，返回IllegalArgumentException
             return new IllegalArgumentException(keyNotFoundMsg);
         } else {
+            // 如果键存在，返回对应的错误
             return subLevelErrors.get(subKey).exception();
         }
     }

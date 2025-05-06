@@ -31,84 +31,119 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * A new topic to be created via {@link Admin#createTopics(Collection)}.
+ * 通过 {@link Admin#createTopics(Collection)} 创建新的主题。
+ * 这个类用于定义新主题的配置，包括分区数、副本因子、副本分配方案和主题级别配置。
+ * 应用场景：
+ * 1. 创建具有指定分区数和副本因子的主题
+ * 2. 创建使用默认分区数和副本因子的主题
+ * 3. 创建具有自定义副本分配方案的主题
+ * 4. 创建带有特定配置参数的主题
  */
 public class NewTopic {
 
+    // 主题名称
     private final String name;
+    // 分区数，如果为空则使用broker默认配置
     private final Optional<Integer> numPartitions;
+    // 副本因子，如果为空则使用broker默认配置
     private final Optional<Short> replicationFactor;
+    // 自定义副本分配方案，key为分区ID，value为该分区的副本所在broker列表
     private final Map<Integer, List<Integer>> replicasAssignments;
+    // 主题级别配置参数
     private Map<String, String> configs = null;
 
     /**
-     * A new topic with the specified replication factor and number of partitions.
+     * 创建具有指定分区数和副本因子的新主题。
+     * 
+     * @param name 主题名称
+     * @param numPartitions 分区数
+     * @param replicationFactor 副本因子
      */
     public NewTopic(String name, int numPartitions, short replicationFactor) {
+        // 将参数转换为Optional类型并调用另一个构造函数
         this(name, Optional.of(numPartitions), Optional.of(replicationFactor));
     }
 
     /**
-     * A new topic that optionally defaults {@code numPartitions} and {@code replicationFactor} to
-     * the broker configurations for {@code num.partitions} and {@code default.replication.factor}
-     * respectively.
+     * 创建新主题，可选择使用broker默认的分区数和副本因子配置。
+     * 如果numPartitions为空，将使用broker的num.partitions配置
+     * 如果replicationFactor为空，将使用broker的default.replication.factor配置
+     * 
+     * @param name 主题名称
+     * @param numPartitions 分区数（可选）
+     * @param replicationFactor 副本因子（可选）
      */
     public NewTopic(String name, Optional<Integer> numPartitions, Optional<Short> replicationFactor) {
         this.name = name;
         this.numPartitions = numPartitions;
         this.replicationFactor = replicationFactor;
+        // 使用默认分区和副本配置时，不需要自定义副本分配
         this.replicasAssignments = null;
     }
 
     /**
-     * A new topic with the specified replica assignment configuration.
+     * 创建具有自定义副本分配方案的新主题。
+     * 这种方式允许用户精确控制每个分区的副本分布。
      *
-     * @param name the topic name.
-     * @param replicasAssignments a map from partition id to replica ids (i.e. broker ids). Although not enforced, it is
-     *                            generally a good idea for all partitions to have the same number of replicas.
-     *                            The first replica will be treated as the preferred leader.
+     * @param name 主题名称
+     * @param replicasAssignments 副本分配方案，key为分区ID，value为副本所在的broker ID列表
+     *                           建议所有分区的副本数量保持一致
+     *                           列表中的第一个副本将被视为首选leader
      */
     public NewTopic(String name, Map<Integer, List<Integer>> replicasAssignments) {
         this.name = name;
+        // 使用自定义副本分配时，不需要指定分区数和副本因子
         this.numPartitions = Optional.empty();
         this.replicationFactor = Optional.empty();
+        // 创建不可修改的副本分配方案Map
         this.replicasAssignments = Collections.unmodifiableMap(replicasAssignments);
     }
 
     /**
-     * The name of the topic to be created.
+     * 获取主题名称。
+     *
+     * @return 主题名称
      */
     public String name() {
         return name;
     }
 
     /**
-     * The number of partitions for the new topic or -1 if a replica assignment has been specified.
+     * 获取主题的分区数。
+     * 如果使用了自定义副本分配，则返回-1
+     *
+     * @return 分区数，或者在使用自定义副本分配时返回-1
      */
     public int numPartitions() {
         return numPartitions.orElse(CreateTopicsRequest.NO_NUM_PARTITIONS);
     }
 
     /**
-     * The replication factor for the new topic or -1 if a replica assignment has been specified.
+     * 获取主题的副本因子。
+     * 如果使用了自定义副本分配，则返回-1
+     *
+     * @return 副本因子，或者在使用自定义副本分配时返回-1
      */
     public short replicationFactor() {
         return replicationFactor.orElse(CreateTopicsRequest.NO_REPLICATION_FACTOR);
     }
 
     /**
-     * A map from partition id to replica ids (i.e. broker ids) or null if the number of partitions and replication
-     * factor have been specified instead.
+     * 获取自定义副本分配方案。
+     * 如果使用了分区数和副本因子来创建主题，则返回null
+     *
+     * @return 副本分配方案Map，或者在使用分区数和副本因子时返回null
      */
     public Map<Integer, List<Integer>> replicasAssignments() {
         return replicasAssignments;
     }
 
     /**
-     * Set the configuration to use on the new topic.
+     * 设置主题级别的配置参数。
+     * 用于配置主题特定的参数，如清理策略、消息保留时间等
      *
-     * @param configs               The configuration map.
-     * @return                      This NewTopic object.
+     * @param configs 配置参数Map，key为配置名，value为配置值
+     * @return 当前NewTopic对象（支持链式调用）
      */
     public NewTopic configs(Map<String, String> configs) {
         this.configs = configs;
@@ -116,17 +151,28 @@ public class NewTopic {
     }
 
     /**
-     * The configuration for the new topic or null if no configs ever specified.
+     * 获取主题的配置参数。
+     *
+     * @return 配置参数Map，如果未设置则返回null
      */
     public Map<String, String> configs() {
         return configs;
     }
 
+    /**
+     * 将NewTopic对象转换为CreatableTopic对象。
+     * 该方法用于内部创建主题请求的处理。
+     *
+     * @return 用于创建主题请求的CreatableTopic对象
+     */
     CreatableTopic convertToCreatableTopic() {
+        // 创建CreatableTopic对象并设置基本属性
         CreatableTopic creatableTopic = new CreatableTopic().
             setName(name).
             setNumPartitions(numPartitions.orElse(CreateTopicsRequest.NO_NUM_PARTITIONS)).
             setReplicationFactor(replicationFactor.orElse(CreateTopicsRequest.NO_REPLICATION_FACTOR));
+        
+        // 如果存在自定义副本分配，添加到CreatableTopic中
         if (replicasAssignments != null) {
             for (Entry<Integer, List<Integer>> entry : replicasAssignments.entrySet()) {
                 creatableTopic.assignments().add(
@@ -135,6 +181,8 @@ public class NewTopic {
                         setBrokerIds(entry.getValue()));
             }
         }
+        
+        // 如果存在配置参数，添加到CreatableTopic中
         if (configs != null) {
             for (Entry<String, String> entry : configs.entrySet()) {
                 creatableTopic.configs().add(

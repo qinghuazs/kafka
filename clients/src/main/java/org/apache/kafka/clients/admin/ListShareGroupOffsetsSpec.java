@@ -26,17 +26,33 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Specification of share group offsets to list using {@link Admin#listShareGroupOffsets(Map, ListShareGroupOffsetsOptions)}.
+ * 用于指定要查询的共享消费者组偏移量的配置类。通过{@link Admin#listShareGroupOffsets(Map, ListShareGroupOffsetsOptions)}方法使用。
+ * 
+ * 共享消费者组是Kafka中的一种特殊消费者组类型，允许多个消费者共同消费同一份数据。
+ * 该类用于指定要查询哪些主题分区的偏移量信息，帮助监控和管理共享消费者组的消费进度。
+ * 
+ * 应用场景：
+ * 1. 监控共享消费者组的消费进度
+ * 2. 诊断消费延迟问题
+ * 3. 手动管理偏移量
+ * 
  * <p>
- * The API of this class is evolving, see {@link Admin} for details.
+ * 该API仍在演进中，详见{@link Admin}。
  */
 @InterfaceStability.Evolving
 public class ListShareGroupOffsetsSpec {
 
+    /**
+     * 要查询偏移量的主题分区集合
+     * 用于存储需要获取偏移量信息的TopicPartition对象列表
+     */
     private Collection<TopicPartition> topicPartitions;
 
     /**
-     * Set the topic partitions whose offsets are to be listed for a share group.
+     * 设置要查询偏移量的主题分区集合
+     * 
+     * @param topicPartitions 主题分区集合，每个元素包含主题名称和分区号
+     * @return 返回当前对象实例，支持链式调用
      */
     public ListShareGroupOffsetsSpec topicPartitions(Collection<TopicPartition> topicPartitions) {
         this.topicPartitions = topicPartitions;
@@ -44,7 +60,9 @@ public class ListShareGroupOffsetsSpec {
     }
 
     /**
-     * Returns the topic partitions whose offsets are to be listed for a share group.
+     * 获取要查询偏移量的主题分区集合
+     * 
+     * @return 如果未设置则返回空列表，否则返回已设置的主题分区集合
      */
     public Collection<TopicPartition> topicPartitions() {
         return topicPartitions == null ? List.of() : topicPartitions;

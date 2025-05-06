@@ -20,35 +20,56 @@ package org.apache.kafka.clients.admin;
 import java.util.Objects;
 
 /**
- * Mechanism and iterations for a SASL/SCRAM credential associated with a user.
+ * 用于存储和管理与用户关联的SASL/SCRAM认证凭证的机制和迭代次数信息。
+ * SASL/SCRAM是一种安全认证机制，用于在Kafka中进行用户身份验证。
+ * 该类作为Kafka broker端SCRAM配置API的一部分，用于管理用户的认证凭证信息。
+ *
+ * 应用场景：
+ * 1. 创建新用户的SCRAM认证凭证时，指定认证机制和迭代次数
+ * 2. 更新现有用户的认证凭证配置
+ * 3. 查询用户的认证机制信息
  *
  * @see <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-554%3A+Add+Broker-side+SCRAM+Config+API">KIP-554: Add Broker-side SCRAM Config API</a>
  */
 public class ScramCredentialInfo {
+    /**
+     * SCRAM认证机制类型，如SCRAM-SHA-256或SCRAM-SHA-512
+     * 这是一个不可变字段，在创建后不能修改
+     */
     private final ScramMechanism mechanism;
+
+    /**
+     * 创建凭证时使用的迭代次数
+     * 迭代次数越高，暴力破解的难度就越大，但服务器端的计算开销也越大
+     * 这是一个不可变字段，在创建后不能修改
+     */
     private final int iterations;
 
     /**
+     * 创建一个新的SCRAM凭证信息实例
      *
-     * @param mechanism the required mechanism
-     * @param iterations the number of iterations used when creating the credential
+     * @param mechanism 必需的SCRAM认证机制类型，不能为null
+     * @param iterations 创建凭证时使用的迭代次数，用于增加密码哈希的计算复杂度
      */
     public ScramCredentialInfo(ScramMechanism mechanism, int iterations) {
+        // 确保mechanism参数不为null，否则抛出NullPointerException
         this.mechanism = Objects.requireNonNull(mechanism);
         this.iterations = iterations;
     }
 
     /**
+     * 获取SCRAM认证机制类型
      *
-     * @return the mechanism
+     * @return 返回当前凭证使用的SCRAM认证机制类型
      */
     public ScramMechanism mechanism() {
         return mechanism;
     }
 
     /**
+     * 获取凭证创建时使用的迭代次数
      *
-     * @return the number of iterations used when creating the credential
+     * @return 返回用于创建凭证时的迭代次数，该值影响密码哈希的强度
      */
     public int iterations() {
         return iterations;

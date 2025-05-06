@@ -19,23 +19,39 @@ package org.apache.kafka.clients.admin;
 import java.util.Objects;
 
 /**
- * Represents a range of versions that a particular broker supports for some feature.
+ * 表示特定Kafka broker支持的某个功能的版本范围。
+ * 
+ * 该类在Kafka的功能版本管理中发挥重要作用：
+ * 1. 用于定义和管理broker支持的功能版本范围
+ * 2. 确保版本兼容性，防止不兼容的版本设置
+ * 3. 在broker功能升级和降级过程中进行版本验证
  */
 public class SupportedVersionRange {
+    /**
+     * broker支持的功能的最小版本号
+     * 该字段表示broker能够支持的某个功能的最低版本要求
+     */
     private final short minVersion;
 
+    /**
+     * broker支持的功能的最大版本号
+     * 该字段表示broker能够支持的某个功能的最高版本限制
+     */
     private final short maxVersion;
 
     /**
-     * Raises an exception unless the following conditions are met:
-     *  0 &lt;= minVersion &lt;= maxVersion.
+     * 创建一个版本范围实例，用于定义broker支持的功能版本范围。
+     * 构造函数会验证版本范围的有效性，确保：
+     * 1. 最小版本号不能为负数
+     * 2. 最大版本号不能为负数
+     * 3. 最大版本号必须大于或等于最小版本号
      *
-     * @param minVersion           The minimum version value.
-     * @param maxVersion           The maximum version value.
-     *
-     * @throws IllegalArgumentException   Raised when the condition described above is not met.
+     * @param minVersion 功能支持的最小版本号
+     * @param maxVersion 功能支持的最大版本号
+     * @throws IllegalArgumentException 当版本范围无效时抛出异常
      */
     public SupportedVersionRange(final short minVersion, final short maxVersion) {
+        // 验证版本范围的有效性
         if (minVersion < 0 || maxVersion < 0 || maxVersion < minVersion) {
             throw new IllegalArgumentException(
                 String.format(
@@ -43,14 +59,25 @@ public class SupportedVersionRange {
                     minVersion,
                     maxVersion));
         }
+        // 初始化版本范围
         this.minVersion = minVersion;
         this.maxVersion = maxVersion;
     }
 
+    /**
+     * 获取功能支持的最小版本号
+     * 
+     * @return 返回最小版本号
+     */
     public short minVersion() {
         return minVersion;
     }
 
+    /**
+     * 获取功能支持的最大版本号
+     * 
+     * @return 返回最大版本号
+     */
     public short maxVersion() {
         return maxVersion;
     }
