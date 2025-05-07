@@ -17,12 +17,25 @@
 package org.apache.kafka.common.errors;
 
 /**
- * This exception indicates that the broker received an unexpected sequence number from the producer,
- * which means that data may have been lost. If the producer is configured for idempotence only (i.e.
- * if <code>enable.idempotence</code> is set and no <code>transactional.id</code> is configured), it
- * is possible to continue sending with the same producer instance, but doing so risks reordering
- * of sent records. For transactional producers, this is a fatal error and you should close the
- * producer.
+ * 表示代理服务器从生产者收到了意外的序列号，这意味着可能发生了数据丢失。
+ * 
+ * 处理策略：
+ * 1. 仅启用幂等性的生产者（设置了enable.idempotence但未配置transactional.id）：
+ *    - 可以继续使用同一个生产者实例发送消息
+ *    - 但存在已发送记录重排序的风险
+ * 2. 事务型生产者：
+ *    - 这是一个致命错误
+ *    - 必须关闭生产者实例
+ * 
+ * 应用场景：
+ * 1. 网络分区导致消息乱序到达
+ * 2. 生产者重试导致序列号不连续
+ * 3. 多个生产者实例并发写入
+ * 
+ * 设计考虑：
+ * - 保证消息的精确一次语义（exactly-once semantics）
+ * - 维护生产者会话的消息顺序
+ * - 区分幂等性和事务性场景的错误处理
  */
 public class OutOfOrderSequenceException extends ApiException {
 

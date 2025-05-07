@@ -17,8 +17,18 @@
 package org.apache.kafka.common.errors;
 
 /**
- * This exception indicates a record has failed its internal CRC check, this generally indicates network or disk
- * corruption.
+ * 当消息记录损坏时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消息记录的CRC校验失败，通常表示网络传输或磁盘存储过程中发生了数据损坏
+ * 2. 消息大小超过了有效限制
+ * 3. 压缩主题中的消息具有空键值
+ * 
+ * 设计考虑：
+ * 1. 继承自RetriableException，表明这是一个可重试的异常
+ * 2. 提供默认的错误消息，详细说明可能的损坏原因
+ * 3. 支持自定义错误消息和异常链，便于进行故障诊断
+ * 4. 作为数据完整性验证的重要组成部分
  */
 public class CorruptRecordException extends RetriableException {
 

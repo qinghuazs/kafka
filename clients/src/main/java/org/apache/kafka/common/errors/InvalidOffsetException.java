@@ -17,9 +17,18 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Thrown when the offset for a set of partitions is invalid (either undefined or out of range),
- * and no reset policy has been configured.
- * @see OffsetOutOfRangeException
+ * 当分区集合的偏移量无效（未定义或超出范围）且未配置重置策略时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消费者组件在拉取消息时，如果请求的偏移量不存在或已过期被删除
+ * 2. 手动设置消费者偏移量时指定了无效值
+ * 3. 消费者组重平衡后获取到无效的偏移量
+ * 
+ * 设计考虑：
+ * - 区别于OffsetOutOfRangeException，本异常表示更严重的错误状态，因为没有可用的重置策略
+ * - 帮助开发者及时发现消费者配置问题或数据一致性问题
+ * 
+ * @see OffsetOutOfRangeException 对比此异常，它支持通过配置auto.offset.reset来恢复
  */
 public class InvalidOffsetException extends ApiException {
 

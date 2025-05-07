@@ -16,7 +16,25 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 副本不合格异常
+ * 
+ * 该异常在以下场景中抛出：
+ * 1. 当一个副本不满足成为Leader副本的条件时
+ * 2. 当副本落后于Leader太多，不能作为ISR（In-Sync Replicas）成员时
+ * 3. 当副本所在的broker不满足特定的配置要求时
+ * 
+ * 副本合格性检查的作用：
+ * - 确保选择合适的副本作为Leader
+ * - 维护数据的一致性和可用性
+ * - 保证副本同步的质量
+ */
 public class IneligibleReplicaException extends ApiException {
+    /**
+     * 使用指定的错误消息构造异常
+     * 
+     * @param message 描述副本不合格问题的详细信息
+     */
     public IneligibleReplicaException(String message) {
         super(message);
     }

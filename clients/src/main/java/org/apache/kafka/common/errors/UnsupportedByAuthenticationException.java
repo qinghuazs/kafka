@@ -17,7 +17,17 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Authentication mechanism does not support the requested function.
+ * 当认证机制不支持请求的功能时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 客户端请求使用不被当前认证机制支持的安全特性
+ * 2. 尝试在不支持的认证模式下执行特权操作
+ * 3. 认证协议版本不兼容导致的功能限制
+ * 
+ * 设计考虑：
+ * - 清晰区分认证机制的功能边界
+ * - 帮助用户理解安全限制和认证要求
+ * - 防止在不适当的认证上下文中执行敏感操作
  */
 public class UnsupportedByAuthenticationException extends ApiException {
     private static final long serialVersionUID = 1L;

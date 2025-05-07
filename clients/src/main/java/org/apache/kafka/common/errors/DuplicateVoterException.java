@@ -16,14 +16,43 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 重复投票者异常
+ * 
+ * 该异常在Kafka的Leader选举过程中，当发现重复的投票者时抛出。
+ * 主要应用场景：
+ * 1. Kafka Controller进行Leader选举时的投票者验证
+ * 2. 确保每个Broker在选举过程中只能投票一次
+ * 
+ * 重复投票者可能导致的问题：
+ * - 选举结果不公平
+ * - 投票统计错误
+ * - 选举过程不合规
+ * 
+ * 该异常的处理通常涉及：
+ * - 重新验证投票者列表
+ * - 清理重复的投票记录
+ * - 可能需要重新发起选举
+ */
 public class DuplicateVoterException extends ApiException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * 使用指定的错误消息构造重复投票者异常
+     * 
+     * @param message 描述重复投票者问题的错误消息
+     */
     public DuplicateVoterException(String message) {
         super(message);
     }
 
+    /**
+     * 使用指定的错误消息和原因构造重复投票者异常
+     * 
+     * @param message 描述重复投票者问题的错误消息
+     * @param cause 导致该异常的原始异常
+     */
     public DuplicateVoterException(String message, Throwable cause) {
         super(message, cause);
     }

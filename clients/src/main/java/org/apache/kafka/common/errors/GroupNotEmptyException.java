@@ -16,7 +16,24 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 当尝试删除一个仍然包含活跃成员的消费者组时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 管理员尝试删除一个仍有消费者在线的消费者组
+ * 2. 防止误操作导致的数据消费中断
+ * 3. 确保消费者组的安全清理
+ * 
+ * 设计考虑：
+ * 1. 作为消费者组删除操作的安全检查机制
+ * 2. 强制要求先优雅关闭所有消费者后才能删除组
+ * 3. 避免因删除活跃组而导致的数据消费异常
+ */
 public class GroupNotEmptyException extends ApiException {
+    /**
+     * 构造函数
+     * @param message 异常描述信息，通常包含消费者组ID和当前活跃成员数量
+     */
     public GroupNotEmptyException(String message) {
         super(message);
     }

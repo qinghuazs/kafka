@@ -17,7 +17,17 @@
 package org.apache.kafka.common.errors;
 
 /**
- * The requesting client does not support the compression type of given partition.
+ * 当请求的客户端不支持指定分区的压缩类型时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消费者尝试读取使用了不支持压缩算法的消息
+ * 2. 生产者配置了客户端库不支持的压缩方式
+ * 3. 不同版本客户端之间的压缩算法兼容性问题
+ * 
+ * 设计考虑：
+ * - 及早发现压缩配置问题，避免运行时数据处理失败
+ * - 确保生产者和消费者使用兼容的压缩方式
+ * - 帮助用户正确配置消息压缩策略
  */
 public class UnsupportedCompressionTypeException extends ApiException {
 

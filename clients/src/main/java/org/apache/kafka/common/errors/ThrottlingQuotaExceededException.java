@@ -17,7 +17,21 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Exception thrown if an operation on a resource exceeds the throttling quota.
+ * 限流配额超限异常
+ * 
+ * 当对资源的操作超过了限流配额时抛出此异常。这是一个可重试的异常，表示当前操作被临时限流。
+ * 
+ * 触发场景：
+ * 1. 客户端请求速率超过了配置的QPS限制
+ * 2. 生产者消息发送速率超过了带宽配额
+ * 3. 消费者拉取速率超过了配置的限制
+ * 4. 单个客户端占用过多的broker资源
+ * 
+ * 处理建议：
+ * - 获取throttleTimeMs值，在指定时间后重试
+ * - 检查并调整客户端配置的限流参数
+ * - 考虑增加客户端实例来分散负载
+ * - 评估是否需要申请更高的资源配额
  */
 public class ThrottlingQuotaExceededException extends RetriableException {
     private int throttleTimeMs = 0;

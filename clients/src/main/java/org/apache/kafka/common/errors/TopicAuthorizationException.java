@@ -19,6 +19,27 @@ package org.apache.kafka.common.errors;
 import java.util.Collections;
 import java.util.Set;
 
+/**
+ * 主题授权异常
+ * 
+ * 当客户端尝试访问未经授权的主题时抛出此异常。这是一个安全相关的异常，
+ * 用于实现Kafka的访问控制机制。
+ * 
+ * 触发场景：
+ * 1. 生产者尝试向未授权的主题发送消息
+ * 2. 消费者尝试从未授权的主题读取消息
+ * 3. 用户尝试执行未经授权的主题管理操作
+ * 
+ * 异常信息：
+ * - 通过unauthorizedTopics()方法可以获取未授权的主题列表
+ * - 如果在异常产生时无法确定具体的未授权主题，则返回空集合
+ * 
+ * 处理建议：
+ * - 检查客户端的ACL配置
+ * - 确认用户权限是否正确设置
+ * - 申请必要的主题访问权限
+ * - 考虑使用更细粒度的权限控制
+ */
 public class TopicAuthorizationException extends AuthorizationException {
     private final Set<String> unauthorizedTopics;
 

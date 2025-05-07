@@ -17,8 +17,18 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Indicates that the broker did not attempt to execute this operation. This may happen for batched RPCs where some
- * operations in the batch failed, causing the broker to respond without trying the rest.
+ * 表示代理服务器未尝试执行此操作。这种情况通常发生在批处理RPC请求中，当批处理中的某些操作失败时，
+ * 代理服务器会直接返回响应而不尝试执行剩余的操作。
+ * 
+ * 应用场景：
+ * 1. 批量创建主题时部分主题创建失败
+ * 2. 批量生产消息时部分消息发送失败
+ * 3. 批量更新配置时部分配置更新失败
+ * 
+ * 设计考虑：
+ * - 优化批处理操作的错误处理机制
+ * - 快速失败策略，避免无谓的操作尝试
+ * - 提供明确的错误信息，帮助定位批处理中的问题
  */
 public class OperationNotAttemptedException extends ApiException {
     public OperationNotAttemptedException(final String message) {

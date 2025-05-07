@@ -18,6 +18,19 @@ package org.apache.kafka.common.errors;
 
 import org.apache.kafka.common.annotation.InterfaceStability;
 
+/**
+ * 当尝试使用未正确释放的实例ID时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消费者组成员重新加入组时，发现之前的实例ID未释放
+ * 2. 消费者实例异常退出，未能正常释放实例ID
+ * 3. 消费者组再平衡过程中的实例ID冲突
+ * 
+ * 设计考虑：
+ * - 确保消费者组成员的唯一性和正确性
+ * - 防止同一个实例ID被多个消费者同时使用
+ * - 帮助识别消费者实例的异常退出情况
+ */
 @InterfaceStability.Evolving
 public class UnreleasedInstanceIdException extends ApiException {
     public UnreleasedInstanceIdException(String message) {

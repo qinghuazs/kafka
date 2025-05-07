@@ -17,11 +17,22 @@
 package org.apache.kafka.common.errors;
 
 /**
- * In the context of the group coordinator, the broker returns this error code for metadata or offset commit
- * requests if the group metadata topic has not been created yet.
- *
- * In the context of the transactional coordinator, this error will be returned if the underlying transactional log
- * is under replicated or if an append to the log times out.
+ * 当协调器不可用时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 组协调器（Group Coordinator）上下文：
+ *    - 当尝试提交元数据或偏移量请求时，如果组元数据主题尚未创建
+ *    - 当消费者组首次启动，需要创建元数据主题时
+ * 
+ * 2. 事务协调器（Transaction Coordinator）上下文：
+ *    - 当底层事务日志副本数不足时
+ *    - 当向事务日志追加数据超时时
+ * 
+ * 设计考虑：
+ * 1. 继承自RetriableException，表明这是一个可重试的异常
+ * 2. 提供单例实例INSTANCE，用于频繁使用的场景
+ * 3. 支持自定义错误消息，便于提供更详细的错误信息
+ * 4. 允许包含原始异常作为cause，便于异常链追踪
  */
 public class CoordinatorNotAvailableException extends RetriableException {
     public static final CoordinatorNotAvailableException INSTANCE = new CoordinatorNotAvailableException();

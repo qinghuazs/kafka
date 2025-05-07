@@ -17,7 +17,17 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Exception thrown when there are unstable offsets for the requested topic partitions.
+ * 当请求的主题分区存在不稳定的偏移量时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消费者组再平衡过程中的偏移量提交
+ * 2. 分区迁移或副本同步过程中的偏移量不一致
+ * 3. 消费者组成员变更导致的偏移量状态不稳定
+ * 
+ * 设计考虑：
+ * - 继承自RetriableException，表明这是一个可重试的临时性错误
+ * - 用于防止在不稳定状态下提交偏移量，确保数据消费的准确性
+ * - 通过重试机制等待系统状态恢复稳定
  */
 public class UnstableOffsetCommitException extends RetriableException {
 

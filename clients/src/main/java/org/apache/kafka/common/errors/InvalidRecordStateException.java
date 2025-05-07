@@ -17,8 +17,17 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Thrown when the acknowledgement of delivery of a record could not be completed because the record
- * state is invalid.
+ * 当由于记录状态无效而无法完成消息投递确认时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 生产者尝试确认已过期或已被清理的消息
+ * 2. 事务提交时发现消息状态异常
+ * 3. 副本同步过程中发现消息状态不一致
+ * 
+ * 设计考虑：
+ * - 用于保证消息投递的可靠性和一致性
+ * - 帮助识别消息生命周期管理中的异常情况
+ * - 通常表明系统中存在消息状态追踪的问题
  */
 public class InvalidRecordStateException extends ApiException {
 

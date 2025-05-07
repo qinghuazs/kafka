@@ -16,56 +16,101 @@
  */
 package org.apache.kafka.common.header;
 
+/**
+ * Kafka消息头部集合接口
+ * 继承自Iterable<Header>，提供对消息头部的增删改查操作
+ * 
+ * 设计说明：
+ * 1. 支持多个同名的头部，按添加顺序维护
+ * 2. 提供只读保护机制，防止头部被意外修改
+ * 3. 实现了迭代器模式，方便遍历所有头部
+ * 
+ * 应用场景：
+ * 1. 在消息中存储元数据信息
+ * 2. 实现消息追踪和调试
+ * 3. 支持自定义消息路由和过滤
+ */
 public interface Headers extends Iterable<Header> {
     
     /**
-     * Adds a header (key inside), to the end, returning if the operation succeeded.
+     * 添加一个头部到集合末尾
      * 
-     * @param header the Header to be added
-     * @return this instance of the Headers, once the header is added.
-     * @throws IllegalStateException is thrown if headers are in a read-only state.
+     * 实现说明：
+     * 1. 验证头部对象不为null
+     * 2. 检查集合是否处于只读状态
+     * 3. 将头部添加到集合末尾
+     * 
+     * @param header 要添加的头部对象，不能为null
+     * @return 当前Headers实例，支持链式调用
+     * @throws IllegalStateException 如果集合处于只读状态则抛出此异常
      */
     Headers add(Header header) throws IllegalStateException;
 
     /**
-     * Creates and adds a header, to the end, returning if the operation succeeded.
+     * 使用键值对创建并添加一个头部到集合末尾
+     * 
+     * 实现说明：
+     * 1. 验证key不为null
+     * 2. 检查集合是否处于只读状态
+     * 3. 创建新的Header对象
+     * 4. 将头部添加到集合末尾
      *
-     * @param key of the header to be added.
-     * @param value of the header to be added.
-     * @return this instance of the Headers, once the header is added.
-     * @throws IllegalStateException is thrown if headers are in a read-only state.
+     * @param key 头部的键，不能为null
+     * @param value 头部的值，可以为null
+     * @return 当前Headers实例，支持链式调用
+     * @throws IllegalStateException 如果集合处于只读状态则抛出此异常
      */
     Headers add(String key, byte[] value) throws IllegalStateException;
 
     /**
-     * Removes all headers for the given key returning if the operation succeeded.
+     * 移除所有具有指定键的头部
      * 
-     * @param key to remove all headers for.
-     * @return this instance of the Headers, once the header is removed.
-     * @throws IllegalStateException is thrown if headers are in a read-only state.
+     * 实现说明：
+     * 1. 验证key不为null
+     * 2. 检查集合是否处于只读状态
+     * 3. 遍历集合查找并移除所有匹配的头部
+     * 
+     * @param key 要移除的头部的键
+     * @return 当前Headers实例，支持链式调用
+     * @throws IllegalStateException 如果集合处于只读状态则抛出此异常
      */
     Headers remove(String key) throws IllegalStateException;
 
     /**
-     * Returns just one (the very last) header for the given key, if present.
+     * 获取指定键的最后一个头部
      * 
-     * @param key to get the last header for.
-     * @return this last header matching the given key, returns null if not present.
+     * 实现说明：
+     * 1. 验证key不为null
+     * 2. 从后向前遍历集合
+     * 3. 返回第一个匹配的头部
+     * 
+     * @param key 要查找的头部的键
+     * @return 最后一个匹配的头部，如果没有找到则返回null
      */
     Header lastHeader(String key);
 
     /**
-     * Returns all headers for the given key, in the order they were added in, if present.
+     * 获取所有具有指定键的头部
+     * 
+     * 实现说明：
+     * 1. 验证key不为null
+     * 2. 创建过滤迭代器
+     * 3. 按添加顺序返回所有匹配的头部
      *
-     * @param key to return the headers for.
-     * @return all headers for the given key, in the order they were added in, if NO headers are present an empty iterable is returned. 
+     * @param key 要查找的头部的键
+     * @return 包含所有匹配头部的Iterable对象，如果没有匹配的头部则返回空的Iterable
      */
     Iterable<Header> headers(String key);
 
     /**
-     * Returns all headers as an array, in the order they were added in.
+     * 将所有头部转换为数组
+     * 
+     * 实现说明：
+     * 1. 创建新的Header数组
+     * 2. 按添加顺序复制所有头部
+     * 3. 返回数组的副本，修改不会影响原集合
      *
-     * @return the headers as a Header[], mutating this array will not affect the Headers, if NO headers are present an empty array is returned.
+     * @return 包含所有头部的数组，如果集合为空则返回空数组
      */
     Header[] toArray();
 

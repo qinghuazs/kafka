@@ -17,8 +17,20 @@
 package org.apache.kafka.common.errors;
 
 /**
- * The transaction coordinator returns this error code if the timeout received via the InitProducerIdRequest is larger than
- * the `transaction.max.timeout.ms` config value.
+ * 事务超时异常
+ * 
+ * 当事务协调器（Transaction Coordinator）接收到的InitProducerIdRequest请求中的超时时间值
+ * 大于服务器端配置的`transaction.max.timeout.ms`值时，将抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 用于限制事务的最大执行时间，防止事务长期占用系统资源
+ * 2. 确保生产者事务的超时设置在合理范围内
+ * 3. 帮助及时发现和处理事务超时配置不当的问题
+ * 
+ * 设计考虑：
+ * 1. 继承自ApiException，表明这是一个API层面的异常
+ * 2. 提供带有异常信息和原因的构造方法，方便异常信息的传递
+ * 3. 通过serialVersionUID确保序列化的版本一致性
  */
 public class InvalidTxnTimeoutException extends ApiException {
     private static final long serialVersionUID = 1L;

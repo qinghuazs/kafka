@@ -16,6 +16,19 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 表示会话超时设置无效的异常。
+ * 
+ * 应用场景：
+ * 1. 当客户端配置的会话超时时间小于服务器允许的最小值
+ * 2. 当客户端配置的会话超时时间大于服务器允许的最大值
+ * 3. 在消费者组协调过程中，如果设置了不合理的会话超时参数
+ * 
+ * 设计考虑：
+ * 1. 继承自ApiException，表示这是一个不可重试的异常
+ * 2. 提供两种构造方法，支持带有原因链的异常创建
+ * 3. 用于帮助用户快速识别和修正会话超时配置问题
+ */
 public class InvalidSessionTimeoutException extends ApiException {
     private static final long serialVersionUID = 1L;
 

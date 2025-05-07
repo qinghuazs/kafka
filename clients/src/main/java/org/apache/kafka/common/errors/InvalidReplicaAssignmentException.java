@@ -16,6 +16,22 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 当Topic分区的副本分配方案无效时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 创建Topic时指定了无效的副本分配方案
+ * 2. 当副本分配违反了基本规则，如：
+ *    - 副本数量不足或过多
+ *    - 同一分区的多个副本被分配到同一个Broker
+ *    - 分配的Broker ID不存在或无效
+ * 3. 在分区重分配过程中指定了不合理的目标分配方案
+ * 
+ * 设计考虑：
+ * - 确保副本分配的合理性和可用性
+ * - 防止因错误的副本分配导致数据可靠性降低
+ * - 维护集群的负载均衡
+ */
 public class InvalidReplicaAssignmentException extends ApiException {
 
     private static final long serialVersionUID = 1L;

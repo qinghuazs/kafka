@@ -16,6 +16,19 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 当尝试访问已经被移动到分层存储中的消息偏移量时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消费者尝试获取的消息已被移动到冷存储层
+ * 2. 访问的偏移量对应的消息不在活跃存储层中
+ * 3. 消息已根据存储策略迁移到不同的存储层级
+ * 
+ * 设计考虑：
+ * - 支持Kafka的分层存储架构，区分热数据和冷数据的访问
+ * - 提示客户端需要通过特定的方式访问历史数据
+ * - 优化存储资源利用，降低热存储的压力
+ */
 public class OffsetMovedToTieredStorageException extends ApiException {
 
     private static final long serialVersionUID = 1L;

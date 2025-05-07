@@ -17,10 +17,29 @@
 package org.apache.kafka.common.errors;
 
 /**
- * This fatal exception indicates that another producer with the same <code>transactional.id</code> has been
- * started. It is only possible to have one producer instance with a <code>transactional.id</code> at any
- * given time, and the latest one to be started "fences" the previous instances so that they can no longer
- * make transactional requests. When you encounter this exception, you must close the producer instance.
+ * 生产者隔离异常
+ * 
+ * 这是一个致命异常，表示使用相同transactional.id的另一个生产者实例已经启动。
+ * 
+ * 核心特性：
+ * 1. 在任何时候，只允许一个具有相同transactional.id的生产者实例处于活动状态
+ * 2. 新启动的生产者实例会自动"隔离"（fence）之前的实例
+ * 3. 被隔离的生产者实例将无法继续发送事务性请求
+ * 
+ * 应用场景：
+ * - 确保exactly-once语义
+ * - 防止双写（双重提交）
+ * - 保证事务完整性
+ * 
+ * 触发条件：
+ * 1. 同一应用的多个实例使用了相同的transactional.id
+ * 2. 生产者实例重启后，原实例仍在运行
+ * 3. 故障转移场景下新实例接管时
+ * 
+ * 处理建议：
+ * - 必须关闭当前生产者实例
+ * - 确保transactional.id的唯一性
+ * - 在故障转移场景中正确处理实例切换
  */
 public class ProducerFencedException extends ApiException {
 

@@ -17,7 +17,17 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Thrown when a request is made for a log directory that is not present on the broker
+ * 当请求访问一个在Broker上不存在的日志目录时抛出此异常
+ *
+ * 应用场景：
+ * 1. 当客户端或管理工具请求访问特定的日志目录，但该目录在Broker上已被删除或从未存在时
+ * 2. 当Broker配置的日志目录路径无效或不可访问时
+ * 3. 在执行日志目录相关的管理操作（如清理、迁移）时，目标目录不存在的情况
+ *
+ * 设计考虑：
+ * 1. 继承自ApiException，表明这是一个API层面的异常，通常需要客户端进行处理
+ * 2. 提供了序列化支持，便于在网络传输时的异常传递
+ * 3. 支持带有详细错误信息的构造，有助于问题诊断
  */
 public class LogDirNotFoundException extends ApiException {
 

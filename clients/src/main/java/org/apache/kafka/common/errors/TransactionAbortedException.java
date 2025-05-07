@@ -17,21 +17,37 @@
 package org.apache.kafka.common.errors;
 
 /**
- * This is the Exception thrown when we are aborting any undrained batches during
- * a transaction which is aborted without any underlying cause - which likely means that the user chose to abort.
+ * 当事务被中止时，用于处理任何未完成（未排空）的批次的异常。
+ * 这个异常通常在以下场景抛出：
+ * 1. 用户主动选择中止事务
+ * 2. 事务在处理过程中被显式中止，且没有明确的底层原因
+ * 3. 事务中的批次因事务中止而失败
  */
 public class TransactionAbortedException extends ApiException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * 使用指定的错误消息和原因构造事务中止异常
+     * @param message 描述事务中止原因的错误消息
+     * @param cause 导致事务中止的底层异常
+     */
     public TransactionAbortedException(String message, Throwable cause) {
         super(message, cause);
     }
 
+    /**
+     * 使用指定的错误消息构造事务中止异常
+     * @param message 描述事务中止原因的错误消息
+     */
     public TransactionAbortedException(String message) {
         super(message);
     }
 
+    /**
+     * 构造一个默认的事务中止异常，使用预设的错误消息
+     * 通常用于表示批次因事务被中止而失败的场景
+     */
     public TransactionAbortedException() {
         super("Failing batch since transaction was aborted");
     }

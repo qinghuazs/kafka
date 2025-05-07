@@ -29,19 +29,30 @@ import java.util.function.Function;
 import javax.security.auth.Subject;
 
 /**
- * This strategy combines the functionality of the {@link LegacyStrategy}, {@link ModernStrategy}, and
- * {@link UnsupportedStrategy} strategies to provide the legacy APIs as long as they are present and not degraded.
- * If the legacy APIs are missing or degraded, this falls back to the modern APIs.
+ * 这个策略类结合了{@link LegacyStrategy}（传统策略）、{@link ModernStrategy}（现代策略）和
+ * {@link UnsupportedStrategy}（不支持策略）的功能，以提供向后兼容的API支持。
+ * 该策略的主要目的是在传统API可用且未降级的情况下使用传统API，
+ * 当传统API缺失或降级时，自动切换到现代API。
+ * 
+ * 设计考虑：
+ * 1. 优先使用传统API以保持最大兼容性
+ * 2. 通过降级机制平滑过渡到现代API
+ * 3. 提供完整的错误处理和日志记录
+ * 4. 支持在运行时动态切换策略
  */
 class CompositeStrategy implements SecurityManagerCompatibility {
 
+    // 用于记录日志的Logger实例
     private static final Logger log = LoggerFactory.getLogger(CompositeStrategy.class);
+    // 单例模式，创建CompositeStrategy的全局实例
     static final CompositeStrategy INSTANCE = new CompositeStrategy(ReflectiveStrategy.Loader.forName());
 
+    // 备用策略，用于在主策略不可用时进行降级
     private final SecurityManagerCompatibility fallbackStrategy;
+    // 当前活动的策略，使用AtomicReference保证线程安全
     private final AtomicReference<SecurityManagerCompatibility> activeStrategy;
 
-    // Visible for testing
+    // 构造函数，用于测试
     CompositeStrategy(ReflectiveStrategy.Loader loader) {
         SecurityManagerCompatibility initial;
         SecurityManagerCompatibility fallback = null;
@@ -72,35 +83,71 @@ class CompositeStrategy implements SecurityManagerCompatibility {
         fallbackStrategy = fallback;
     }
 
+    /**
+     * 执行安全管理器操作的核心方法
+     * 
+     * @param action 要执行的安全操作，封装在Function接口中
+     * @param <T> 操作返回值的类型参数
+     * @return 返回安全操作的执行结果
+     * @throws UnsupportedOperationException 当所有可用策略都无法执行操作时抛出
+     */
     private <T> T performAction(Function<SecurityManagerCompatibility, T> action) {
+        // 获取当前活动的策略
         SecurityManagerCompatibility active = activeStrategy.get();
         try {
+            // 尝试使用当前活动策略执行操作
             return action.apply(active);
         } catch (UnsupportedOperationException e) {
-            // If we chose a fallback strategy during loading, switch to it and retry this operation.
+            // 如果当前策略执行失败，且存在可用的备用策略，则尝试切换到备用策略
             if (active != fallbackStrategy && fallbackStrategy != null) {
+                // 使用CAS操作安全地切换到备用策略
                 if (activeStrategy.compareAndSet(active, fallbackStrategy)) {
-                    log.debug("Using fallback strategy after encountering degraded legacy method", e);
+                    log.debug("检测到传统方法降级，切换到备用策略", e);
                 }
+                // 使用备用策略重试操作
                 return action.apply(fallbackStrategy);
             }
-            // If we're already using the fallback strategy, then there's nothing to do to handle these exceptions.
+            // 如果已经在使用备用策略，或者没有可用的备用策略，则抛出异常
             throw e;
         }
     }
 
+    /**
+     * 执行特权操作
+     * 
+     * @param action 需要以特权方式执行的操作
+     * @param <T> 操作返回值的类型参数
+     * @return 返回特权操作的执行结果
+     */
     @Override
     public <T> T doPrivileged(PrivilegedAction<T> action) {
+        // 将特权操作委托给当前活动的策略执行
         return performAction(compatibility -> compatibility.doPrivileged(action));
     }
 
+    /**
+     * 获取当前的Subject对象
+     * 
+     * @return 返回当前的Subject对象
+     */
     @Override
     public Subject current() {
+        // 委托给当前活动的策略获取Subject
         return performAction(SecurityManagerCompatibility::current);
     }
 
+    /**
+     * 以指定的Subject身份执行操作
+     * 
+     * @param subject 要使用的Subject身份
+     * @param action 要执行的操作
+     * @param <T> 操作返回值的类型参数
+     * @return 返回操作的执行结果
+     * @throws CompletionException 当操作执行失败时抛出
+     */
     @Override
     public <T> T callAs(Subject subject, Callable<T> action) throws CompletionException {
+        // 将操作委托给当前活动的策略执行
         return performAction(compatibility -> compatibility.callAs(subject, action));
     }
 }

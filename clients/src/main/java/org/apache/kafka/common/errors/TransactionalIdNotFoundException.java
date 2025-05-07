@@ -16,8 +16,19 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 当尝试访问或操作一个不存在的事务ID时抛出的异常。
+ * 这个异常通常在以下场景抛出：
+ * 1. 客户端尝试使用一个未注册的事务ID
+ * 2. 事务ID已过期或被删除
+ * 3. 事务协调器无法找到指定的事务ID对应的元数据
+ */
 public class TransactionalIdNotFoundException extends ApiException {
 
+    /**
+     * 使用指定的错误消息构造事务ID未找到异常
+     * @param message 描述事务ID未找到原因的错误消息
+     */
     public TransactionalIdNotFoundException(String message) {
         super(message);
     }

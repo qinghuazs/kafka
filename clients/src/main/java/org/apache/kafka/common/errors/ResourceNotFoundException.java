@@ -17,7 +17,28 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Exception thrown due to a request for a resource that does not exist.
+ * 资源未找到异常。当请求的资源不存在时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 访问不存在的主题（Topic）
+ * 2. 查询不存在的消费者组
+ * 3. 请求不存在的分区
+ * 4. 访问已被删除的资源
+ * 
+ * 异常特点：
+ * 1. 表示请求的资源在系统中不存在
+ * 2. 通常是由于资源已被删除或尚未创建
+ * 3. 继承自ApiException，用于API层面的错误处理
+ * 
+ * 处理机制：
+ * 1. 检查资源名称是否正确
+ * 2. 确认资源是否已被删除
+ * 3. 可能需要创建新的资源
+ * 
+ * 设计考虑：
+ * 1. 包含可选的资源标识符，便于定位问题
+ * 2. 支持带有原因的异常构造
+ * 3. 有助于实现精确的错误报告和处理
  */
 public class ResourceNotFoundException extends ApiException {
 

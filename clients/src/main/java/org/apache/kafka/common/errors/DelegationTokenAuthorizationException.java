@@ -16,6 +16,20 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 当委托令牌（Delegation Token）的授权操作失败时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 当用户尝试创建、续期或删除委托令牌但没有足够权限时
+ * 2. 当使用过期或无效的委托令牌进行认证时
+ * 3. 当令牌的操作权限与请求的操作不匹配时
+ * 
+ * 设计考虑：
+ * 1. 继承自AuthorizationException，表明这是一个授权相关的异常
+ * 2. 用于处理Kafka安全机制中的令牌授权失败情况
+ * 3. 支持自定义错误消息，便于提供详细的授权失败原因
+ * 4. 允许包含原始异常，便于追踪授权失败的根本原因
+ */
 public class DelegationTokenAuthorizationException extends AuthorizationException {
 
     private static final long serialVersionUID = 1L;

@@ -16,7 +16,18 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 表示事务处于可中止状态的异常。
+ * 这个异常通常在以下场景抛出：
+ * 1. 事务正在进行中，但由于某些原因（如超时、资源限制等）可能需要被中止
+ * 2. 事务协调器检测到事务可能需要被中止时
+ * 3. 提示客户端当前事务状态不稳定，可能需要执行中止操作
+ */
 public class TransactionAbortableException extends ApiException {
+    /**
+     * 使用指定的错误消息构造事务可中止异常
+     * @param message 描述事务可能被中止原因的错误消息
+     */
     public TransactionAbortableException(String message) {
         super(message);
     }

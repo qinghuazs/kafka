@@ -17,7 +17,18 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Thrown when a broker registration request is considered invalid by the controller.
+ * 当代理节点(Broker)的注册请求被控制器(Controller)认为无效时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 在Kafka集群中，每个Broker在启动时都需要向Controller注册
+ * 2. 如果注册信息不完整或格式错误（如无效的Broker ID）
+ * 3. 如果Broker配置与集群要求不匹配
+ * 4. 当现有Broker尝试使用已被占用的Broker ID重新注册
+ * 
+ * 设计考虑：
+ * - 确保集群中的Broker注册信息的一致性和有效性
+ * - 帮助快速识别Broker配置或部署问题
+ * - 防止重复或无效的Broker ID导致的集群混乱
  */
 public class InvalidRegistrationException extends ApiException {
 

@@ -16,8 +16,27 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 序列号重复异常
+ * 
+ * 该异常在Kafka事务处理过程中，当检测到重复的序列号时抛出。
+ * 主要用于以下场景：
+ * 1. 生产者在事务中发送消息时，使用了已经使用过的序列号
+ * 2. 确保消息的顺序性和唯一性，防止重复处理
+ * 
+ * 序列号是Kafka用于维护消息顺序和幂等性的重要机制，当出现重复时，
+ * 说明可能存在以下问题：
+ * - 生产者重试导致的重复发送
+ * - 事务状态不一致
+ * - 序列号生成逻辑出现问题
+ */
 public class DuplicateSequenceException extends ApiException {
 
+    /**
+     * 使用指定的错误消息构造序列号重复异常
+     * 
+     * @param message 描述序列号重复原因的错误消息
+     */
     public DuplicateSequenceException(String message) {
         super(message);
     }

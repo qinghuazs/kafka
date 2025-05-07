@@ -17,8 +17,18 @@
 package org.apache.kafka.common.errors;
 
 /**
- * No reset policy has been defined, and the offsets for these partitions are either larger or smaller
- * than the range of offsets the server has for the given partition.
+ * 当未定义重置策略，且请求的偏移量超出服务器为指定分区保存的偏移量范围时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消费者请求的偏移量大于分区的最大偏移量
+ * 2. 消费者请求的偏移量小于分区的最小偏移量
+ * 3. 消息已被清理或过期，导致请求的偏移量不可用
+ * 4. 未配置auto.offset.reset策略时的偏移量越界
+ * 
+ * 设计考虑：
+ * - 继承自InvalidOffsetException，表明这是一种特定的偏移量错误
+ * - 帮助识别消费者组的偏移量配置问题
+ * - 提示用户需要设置合适的偏移量重置策略
  */
 public class OffsetOutOfRangeException extends InvalidOffsetException {
 

@@ -17,8 +17,17 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Indicates that the leader is not able to guarantee monotonically increasing offsets
- * due to the high watermark lagging behind the epoch start offset after a recent leader election
+ * 表示由于最近的领导者选举后，高水位标记落后于epoch起始偏移量，导致领导者无法保证单调递增的偏移量。
+ * 
+ * 应用场景：
+ * 1. 发生领导者选举后，新领导者还未完全同步消息数据
+ * 2. 消费者请求的偏移量在高水位标记和epoch起始偏移量之间
+ * 3. 分区副本同步过程中的临时状态
+ * 
+ * 设计考虑：
+ * - 作为可重试异常，允许客户端在短暂等待后重新尝试操作
+ * - 保证消息的有序性和一致性
+ * - 在领导者切换期间维护消息的完整性
  */
 public class OffsetNotAvailableException extends RetriableException {
     private static final long serialVersionUID = 1L;

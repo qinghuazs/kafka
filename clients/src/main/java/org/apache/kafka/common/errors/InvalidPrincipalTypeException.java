@@ -16,6 +16,19 @@
  */
 package org.apache.kafka.common.errors;
 
+/**
+ * 当指定的安全认证主体类型无效时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 配置ACL时使用了不支持的主体类型
+ * 2. 安全协议与主体类型不匹配
+ * 3. 自定义认证机制使用了未注册的主体类型
+ * 
+ * 设计考虑：
+ * - 用于Kafka安全框架中的身份认证管理
+ * - 帮助管理员正确配置和维护访问控制列表（ACL）
+ * - 确保认证主体类型的一致性和有效性
+ */
 public class InvalidPrincipalTypeException extends ApiException {
 
     private static final long serialVersionUID = 1L;

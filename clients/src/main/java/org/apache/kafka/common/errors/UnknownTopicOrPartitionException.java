@@ -17,11 +17,20 @@
 package org.apache.kafka.common.errors;
 
 /**
- * This topic/partition doesn't exist.
- * This exception is used in contexts where a topic doesn't seem to exist based on possibly stale metadata.
- * This exception is retriable because the topic or partition might subsequently be created.
- *
- * @see InvalidTopicException
+ * 当请求的主题或分区不存在时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 消费者尝试订阅不存在的主题
+ * 2. 生产者尝试向不存在的主题发送消息
+ * 3. 管理操作针对不存在的主题或分区
+ * 4. 元数据可能过期导致的临时性错误
+ * 
+ * 设计考虑：
+ * - 作为可重试异常，因为主题或分区可能在后续被创建
+ * - 区别于InvalidTopicException，后者表示主题名称格式无效
+ * - 通常与过期的元数据缓存相关，需要刷新元数据后重试
+ * 
+ * @see InvalidTopicException 参考无效主题异常类
  */
 public class UnknownTopicOrPartitionException extends InvalidMetadataException {
 

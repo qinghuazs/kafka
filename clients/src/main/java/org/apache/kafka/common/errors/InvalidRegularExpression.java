@@ -18,7 +18,17 @@
 package org.apache.kafka.common.errors;
 
 /**
- * Thrown when a regular expression received in a request is not valid.
+ * 当请求中包含的正则表达式无效时抛出此异常。
+ * 
+ * 应用场景：
+ * 1. 在Topic的创建或更新请求中使用了无效的正则表达式进行名称验证
+ * 2. 在ACL（访问控制列表）规则中使用了格式错误的正则表达式进行资源匹配
+ * 3. 在消费者组的订阅模式中使用了语法错误的正则表达式进行Topic匹配
+ * 
+ * 设计考虑：
+ * - 提前验证正则表达式的有效性，避免运行时错误
+ * - 保护系统免受恶意或错误的正则表达式攻击
+ * - 提供清晰的错误信息，帮助用户快速定位和修复问题
  */
 public class InvalidRegularExpression extends ApiException {
     public InvalidRegularExpression(String message) {
