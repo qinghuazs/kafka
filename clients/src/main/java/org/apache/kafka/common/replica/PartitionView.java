@@ -21,11 +21,21 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * View of a partition used by {@link ReplicaSelector} to determine a preferred replica.
+ * 分区视图，由{@link ReplicaSelector}用于确定首选副本。
+ * 该接口提供了分区的只读视图，包含分区的副本集合和leader副本信息，
+ * 使副本选择器能够基于当前分区状态做出明智的选择决策。
  */
 public interface PartitionView {
+    /**
+     * 获取分区的所有副本视图集合
+     * @return 包含所有副本信息的不可修改集合
+     */
     Set<ReplicaView> replicas();
 
+    /**
+     * 获取分区的leader副本视图
+     * @return leader副本的视图信息
+     */
     ReplicaView leader();
 
     class DefaultPartitionView implements PartitionView {

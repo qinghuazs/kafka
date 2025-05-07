@@ -25,14 +25,24 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Plug-able interface for selecting a preferred read replica given the current set of replicas for a partition
- * and metadata from the client.
+ * 可插拔的副本选择器接口，用于为客户端选择最优的读取副本。
+ * 
+ * 该接口允许实现自定义的副本选择策略，通过考虑以下因素来做出选择：
+ * 1. 分区当前的副本集合状态
+ * 2. 客户端的元数据（如机架位置、网络地址等）
+ * 3. 副本的同步状态和性能指标
+ * 
+ * 实现此接口的选择器可以通过配置进行自定义，并且在不再需要时可以优雅关闭。
  */
 public interface ReplicaSelector extends Configurable, Closeable {
 
     /**
-     * Select the preferred replica a client should use for fetching. If no replica is available, this will return an
-     * empty optional.
+     * 为客户端选择最优的读取副本
+     * 
+     * @param topicPartition 目标主题分区
+     * @param clientMetadata 客户端元数据，包含客户端的位置信息等
+     * @param partitionView 分区的当前视图，包含所有副本的状态信息
+     * @return 如果找到合适的副本则返回其视图，否则返回空Optional
      */
     Optional<ReplicaView> select(TopicPartition topicPartition,
                                  ClientMetadata clientMetadata,

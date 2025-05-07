@@ -22,32 +22,44 @@ import java.net.InetAddress;
 import java.util.Objects;
 
 /**
- * Holder for all the client metadata required to determine a preferred replica.
+ * 用于确定首选副本所需的所有客户端元数据的持有者。
+ * 该接口封装了客户端的关键信息，包括机架ID、客户端ID、网络地址等，
+ * 这些信息用于副本选择器进行智能的副本选择决策。
  */
 public interface ClientMetadata {
 
     /**
-     * Rack ID sent by the client
+     * 客户端发送的机架ID
+     * 用于机架感知的副本选择，帮助实现就近读取策略
+     * @return 客户端所在的机架ID，如果客户端未指定则可能为null
      */
     String rackId();
 
     /**
-     * Client ID sent by the client
+     * 客户端发送的客户端ID
+     * 用于唯一标识客户端，便于跟踪和调试
+     * @return 客户端的唯一标识符
      */
     String clientId();
 
     /**
-     * Incoming address of the client
+     * 客户端的网络地址
+     * 用于网络相关的决策和监控
+     * @return 客户端的IP地址
      */
     InetAddress clientAddress();
 
     /**
-     * Security principal of the client
+     * 客户端的安全主体
+     * 用于安全认证和授权决策
+     * @return 客户端的Kafka安全主体
      */
     KafkaPrincipal principal();
 
     /**
-     * Listener name for the client
+     * 客户端的监听器名称
+     * 用于多监听器场景下的连接管理
+     * @return 客户端连接使用的监听器名称
      */
     String listenerName();
 
