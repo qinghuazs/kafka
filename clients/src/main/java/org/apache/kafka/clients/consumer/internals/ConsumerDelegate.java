@@ -22,22 +22,46 @@ import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.Timer;
 
 /**
- * This extension interface provides a handful of methods to expose internals of the {@link Consumer} for
- * various tests.
+ * 消费者委托接口
+ * 这个扩展接口提供了一些方法来暴露{@link Consumer}的内部实现，主要用于各种测试场景
  *
  * <p/>
  *
- * <em>Note</em>: this is for internal use only and is not intended for use by end users. Internal users should
- * not attempt to determine the underlying implementation to avoid coding to an unstable interface. Rather, it is
- * the {@link Consumer} API contract that should serve as the caller's interface.
+ * <em>注意</em>：这个接口仅供内部使用，不适合最终用户使用。内部用户也不应该尝试确定底层实现
+ * 以避免依赖不稳定的接口。相反，应该使用{@link Consumer} API契约作为调用者的接口。
  */
 public interface ConsumerDelegate<K, V> extends Consumer<K, V> {
 
+    /**
+     * 获取客户端ID
+     * 用于标识消费者客户端的唯一标识符
+     *
+     * @return 客户端ID字符串
+     */
     String clientId();
 
+    /**
+     * 获取度量注册表
+     * 提供对消费者内部度量指标的访问
+     *
+     * @return Metrics对象，包含所有注册的度量指标
+     */
     Metrics metricsRegistry();
 
+    /**
+     * 获取Kafka消费者度量指标
+     * 提供特定于Kafka消费者的度量指标
+     *
+     * @return KafkaConsumerMetrics对象，包含消费者特定的度量指标
+     */
     KafkaConsumerMetrics kafkaConsumerMetrics();
 
+    /**
+     * 根据需要更新分配元数据
+     * 检查并更新消费者的分区分配元数据
+     *
+     * @param timer 用于限制操作时间的计时器
+     * @return 如果元数据需要更新并且更新成功则返回true，否则返回false
+     */
     boolean updateAssignmentMetadataIfNeeded(final Timer timer);
 }

@@ -19,35 +19,38 @@ package org.apache.kafka.clients.consumer.internals;
 import org.apache.kafka.common.TopicPartition;
 
 /**
- * {@code FetchUtils} provides a place for disparate parts of the fetch logic to live.
+ * FetchUtils类为分散的获取逻辑提供了一个统一的存放位置。
+ * 该类包含了与获取操作相关的工具方法，用于处理元数据更新和副本管理。
  */
 public class FetchUtils {
 
     /**
-     * Performs two combined actions based on the state related to the {@link TopicPartition}:
+     * 基于主题分区的状态执行两个组合操作：
      *
      * <ol>
      *     <li>
-     *         Invokes {@link ConsumerMetadata#requestUpdate(boolean)} to signal that the metadata is incorrect and
-     *         needs to be updated
+     *         调用{@link ConsumerMetadata#requestUpdate(boolean)}来通知元数据不正确
+     *         并需要更新
      *     </li>
      *     <li>
-     *         Invokes {@link SubscriptionState#clearPreferredReadReplica(TopicPartition)} to clear out any read replica
-     *         information that may be present.
+     *         调用{@link SubscriptionState#clearPreferredReadReplica(TopicPartition)}
+     *         来清除可能存在的任何读取副本信息
      *     </li>
      * </ol>
      *
-     * This utility method should be invoked if the client detects (or is told by a node in the broker) that an
-     * attempt was made to fetch from a node that isn't the leader or preferred replica.
+     * 当客户端检测到（或被代理节点告知）尝试从非领导者或非首选副本的节点获取数据时，
+     * 应该调用此工具方法。
      *
-     * @param metadata {@link ConsumerMetadata} for which to request an update
-     * @param subscriptions {@link SubscriptionState} to clear any internal read replica node
-     * @param topicPartition {@link TopicPartition} for which this state change is related
+     * @param metadata 需要请求更新的消费者元数据
+     * @param subscriptions 需要清除内部读取副本节点的订阅状态
+     * @param topicPartition 与此状态更改相关的主题分区
      */
     static void requestMetadataUpdate(final ConsumerMetadata metadata,
                                       final SubscriptionState subscriptions,
                                       final TopicPartition topicPartition) {
+        // 请求更新元数据，参数false表示这不是强制更新
         metadata.requestUpdate(false);
+        // 清除指定主题分区的首选读取副本信息
         subscriptions.clearPreferredReadReplica(topicPartition);
     }
 }

@@ -37,15 +37,38 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * {@code FetchRequestManager} is responsible for generating {@link FetchRequest} that represent the
- * {@link SubscriptionState#fetchablePartitions(Predicate)} based on the user's topic subscription/partition
- * assignment.
+ * FetchRequestManager负责根据用户的主题订阅/分区分配，
+ * 为可获取的分区（{@link SubscriptionState#fetchablePartitions(Predicate)}）
+ * 生成获取请求（{@link FetchRequest}）。
  */
 public class FetchRequestManager extends AbstractFetch implements RequestManager {
 
+    /**
+     * 网络客户端代理
+     * 用于处理与Kafka代理的网络通信
+     */
     private final NetworkClientDelegate networkClientDelegate;
+
+    /**
+     * 待处理的获取请求Future
+     * 用于跟踪当前正在进行的获取请求
+     */
     private CompletableFuture<Void> pendingFetchRequestFuture;
 
+    /**
+     * 构造函数
+     * 初始化获取请求管理器的所有必要组件
+     *
+     * @param logContext 日志上下文
+     * @param time 时间服务
+     * @param metadata 消费者元数据
+     * @param subscriptions 订阅状态
+     * @param fetchConfig 获取配置
+     * @param fetchBuffer 获取缓冲区
+     * @param metricsManager 度量管理器
+     * @param networkClientDelegate 网络客户端代理
+     * @param apiVersions API版本信息
+     */
     FetchRequestManager(final LogContext logContext,
                         final Time time,
                         final ConsumerMetadata metadata,
@@ -55,41 +78,59 @@ public class FetchRequestManager extends AbstractFetch implements RequestManager
                         final FetchMetricsManager metricsManager,
                         final NetworkClientDelegate networkClientDelegate,
                         final ApiVersions apiVersions) {
+        // 调用父类构造函数初始化基本组件
         super(logContext, metadata, subscriptions, fetchConfig, fetchBuffer, metricsManager, time, apiVersions);
+        // 设置网络客户端代理
         this.networkClientDelegate = networkClientDelegate;
     }
 
+    /**
+     * 检查节点是否不可用
+     *
+     * @param node 要检查的节点
+     * @return 如果节点不可用返回true
+     */
     @Override
     protected boolean isUnavailable(Node node) {
+        // 委托给网络客户端代理检查节点可用性
         return networkClientDelegate.isUnavailable(node);
     }
 
+    /**
+     * 检查并可能抛出认证失败异常
+     *
+     * @param node 要检查的节点
+     */
     @Override
     protected void maybeThrowAuthFailure(Node node) {
+        // 委托给网络客户端代理检查认证失败
         networkClientDelegate.maybeThrowAuthFailure(node);
     }
 
     /**
-     * Signals the {@link Consumer} wants requests be created for the broker nodes to fetch the next
-     * batch of records.
+     * 创建获取请求
+     * 通知消费者需要为代理节点创建请求以获取下一批记录
      *
      * @see CreateFetchRequestsEvent
-     * @return Future on which the caller can wait to ensure that the requests have been created
+     * @return 调用者可以等待的Future，确保请求已创建
      */
     public CompletableFuture<Void> createFetchRequests() {
+        // 创建新的CompletableFuture
         CompletableFuture<Void> future = new CompletableFuture<>();
 
         if (pendingFetchRequestFuture != null) {
-            // In this case, we have an outstanding fetch request, so chain the newly created future to be
-            // completed when the "pending" future is completed.
+            // 如果存在待处理的获取请求，将新创建的future链接到待处理的future
             pendingFetchRequestFuture.whenComplete((value, exception) -> {
                 if (exception != null) {
+                    // 如果有异常，使新future异常完成
                     future.completeExceptionally(exception);
                 } else {
+                    // 否则正常完成新future
                     future.complete(value);
                 }
             });
         } else {
+            // 如果没有待处理的请求，设置新future为待处理
             pendingFetchRequestFuture = future;
         }
 
@@ -97,10 +138,14 @@ public class FetchRequestManager extends AbstractFetch implements RequestManager
     }
 
     /**
-     * {@inheritDoc}
+     * 轮询获取请求
+     * 
+     * @param currentTimeMs 当前时间戳
+     * @return 轮询结果
      */
     @Override
     public PollResult poll(long currentTimeMs) {
+        // 使用内部轮询方法处理常规获取请求
         return pollInternal(
             this::prepareFetchRequests,
             this::handleFetchSuccess,
@@ -109,14 +154,17 @@ public class FetchRequestManager extends AbstractFetch implements RequestManager
     }
 
     /**
-     * {@inheritDoc}
+     * 关闭时的轮询操作
+     * 
+     * @param currentTimeMs 当前时间戳
+     * @return 轮询结果
      */
     @Override
     public PollResult pollOnClose(long currentTimeMs) {
-        // There needs to be a pending fetch request for pollInternal to create the requests.
+        // 创建待处理的获取请求，这是pollInternal创建请求所必需的
         createFetchRequests();
 
-        // TODO: move the logic to poll to handle signal close
+        // 使用内部轮询方法处理关闭时的获取会话请求
         return pollInternal(
                 this::prepareCloseFetchSessionRequests,
                 this::handleCloseFetchSessionSuccess,
@@ -125,30 +173,32 @@ public class FetchRequestManager extends AbstractFetch implements RequestManager
     }
 
     /**
-     * Creates the {@link PollResult poll result} that contains a list of zero or more
-     * {@link FetchRequest.Builder fetch requests}.
+     * 创建包含零个或多个获取请求的轮询结果
      *
-     * @param fetchRequestPreparer {@link FetchRequestPreparer} to generate a {@link Map} of {@link Node nodes}
-     *                             to their {@link FetchSessionHandler.FetchRequestData}
-     * @param successHandler       {@link ResponseHandler Handler for successful responses}
-     * @param errorHandler         {@link ResponseHandler Handler for failure responses}
-     * @return {@link PollResult}
+     * @param fetchRequestPreparer 获取请求准备器，生成节点到其获取请求数据的映射
+     * @param successHandler 成功响应的处理器
+     * @param errorHandler 失败响应的处理器
+     * @return 轮询结果
      */
     private PollResult pollInternal(FetchRequestPreparer fetchRequestPreparer,
                                     ResponseHandler<ClientResponse> successHandler,
                                     ResponseHandler<Throwable> errorHandler) {
+        // 如果没有待处理的获取请求，返回空结果
         if (pendingFetchRequestFuture == null) {
-            // If no explicit request for creating fetch requests was issued, just short-circuit.
             return PollResult.EMPTY;
         }
 
         try {
+            // 准备获取请求
             Map<Node, FetchSessionHandler.FetchRequestData> fetchRequests = fetchRequestPreparer.prepare();
 
+            // 将获取请求转换为未发送的请求列表
             List<UnsentRequest> requests = fetchRequests.entrySet().stream().map(entry -> {
                 final Node fetchTarget = entry.getKey();
                 final FetchSessionHandler.FetchRequestData data = entry.getValue();
+                // 创建获取请求构建器
                 final FetchRequest.Builder request = createFetchRequest(fetchTarget, data);
+                // 创建响应处理器
                 final BiConsumer<ClientResponse, Throwable> responseHandler = (clientResponse, error) -> {
                     if (error != null)
                         errorHandler.handle(fetchTarget, data, error);
@@ -156,28 +206,34 @@ public class FetchRequestManager extends AbstractFetch implements RequestManager
                         successHandler.handle(fetchTarget, data, clientResponse);
                 };
 
+                // 创建未发送的请求并添加完成处理器
                 return new UnsentRequest(request, Optional.of(fetchTarget)).whenComplete(responseHandler);
             }).collect(Collectors.toList());
 
+            // 完成待处理的future
             pendingFetchRequestFuture.complete(null);
             return new PollResult(requests);
         } catch (Throwable t) {
-            // A "dummy" poll result is returned here rather than rethrowing the error because any error
-            // that is thrown from any RequestManager.poll() method interrupts the polling of the other
-            // request managers.
+            // 异常处理：返回空结果而不是重新抛出异常
+            // 因为从RequestManager.poll()方法抛出的任何异常都会中断其他请求管理器的轮询
             pendingFetchRequestFuture.completeExceptionally(t);
             return PollResult.EMPTY;
         } finally {
+            // 清除待处理的future
             pendingFetchRequestFuture = null;
         }
     }
 
     /**
-     * Simple functional interface to all passing in a method reference for improved readability.
+     * 获取请求准备器接口
+     * 简单的函数式接口，用于传递方法引用以提高可读性
      */
     @FunctionalInterface
     protected interface FetchRequestPreparer {
-
+        /**
+         * 准备获取请求数据
+         * @return 节点到其获取请求数据的映射
+         */
         Map<Node, FetchSessionHandler.FetchRequestData> prepare();
     }
 }

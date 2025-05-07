@@ -22,66 +22,87 @@ import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.PollRes
 import static org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.PollResult.EMPTY;
 
 /**
- * {@code PollResult} consist of {@code UnsentRequest} if there are requests to send; otherwise, return the time till
- * the next poll event.
+ * 请求管理器接口
+ * 如果有请求需要发送，{@code PollResult}将包含{@code UnsentRequest}；
+ * 否则，返回到下一次轮询事件的时间间隔。
+ * 
+ * 应用场景：
+ * 1. 管理消费者的网络请求
+ * 2. 处理心跳和关闭请求
+ * 3. 控制请求的发送时机
+ * 4. 管理消费者的生命周期
  */
 public interface RequestManager {
 
     /**
-     * During normal operation of the {@link Consumer}, a request manager may need to send out network requests.
-     * Implementations can return {@link PollResult their need for network I/O} by returning the requests here.
-     * This method is called within a single-threaded context from
-     * {@link ConsumerNetworkThread the consumer's network I/O thread}. As such, there should be no need for
-     * synchronization protection in this method's implementation.
+     * 轮询方法，用于在消费者正常运行期间发送网络请求
+     * 
+     * 实现细节：
+     * - 在消费者的网络I/O线程的单线程上下文中调用
+     * - 不需要同步保护
+     * - 不执行实际的网络I/O操作
+     * - 方法本身不应该阻塞
+     * - 需要快速执行以确保及时发送心跳
+     * 
+     * 应用场景：
+     * - 检查是否有待发送的请求
+     * - 准备网络I/O操作
+     * - 管理请求队列
+     * - 控制请求发送时机
      *
-     * <p/>
-     *
-     * <em>Note</em>: no network I/O occurs in this method. The method itself should not block for any reason. This
-     * method is called from the consumer's network I/O thread, so quick execution of this method in <em>all</em>
-     * request managers is critical to ensure that we can heartbeat in a timely fashion.
-     *
-     * @param currentTimeMs The current system time in milliseconds at which the method was called;
-     *                      useful for determining if time-sensitive operations should be performed
+     * @param currentTimeMs 调用方法时的当前系统时间（毫秒），用于确定是否执行时间敏感的操作
+     * @return PollResult 包含未发送的请求或下次轮询的时间
      */
     PollResult poll(long currentTimeMs);
 
     /**
-     * On shutdown of the {@link Consumer}, a request manager may need to send out network requests. Implementations
-     * can signal that by returning the {@link PollResult close} requests here. Like {@link #poll(long)}, this method
-     * is called within a single-threaded context from {@link ConsumerNetworkThread the consumer's network I/O thread}.
-     * As such, there should be no need for synchronization protection in this method's implementation.
+     * 关闭时的轮询方法，用于在消费者关闭时发送网络请求
+     * 
+     * 实现细节：
+     * - 在消费者的网络I/O线程的单线程上下文中调用
+     * - 不需要同步保护
+     * - 不执行实际的网络I/O操作
+     * - 方法本身不应该阻塞
+     * - 需要快速执行以确保在用户提供的超时时间内完成关闭任务
      *
-     * <p/>
-     *
-     * <em>Note</em>: no network I/O occurs in this method. The method itself should not block for any reason. This
-     * method is called as an (indirect) result of {@link Consumer#close() the consumer's close method} being invoked.
-     * (Note that it is still invoked on the consumer's network I/O thread). Quick execution of this method in
-     * <em>all</em> request managers is critical to ensure that we can complete as many of the consumer's shutdown
-     * tasks as possible within the user-provided timeout.
-     *
-     * @param currentTimeMs The current system time in milliseconds at which the method was called
+     * @param currentTimeMs 调用方法时的当前系统时间（毫秒）
+     * @return PollResult 包含关闭请求，默认返回空结果
      */
     default PollResult pollOnClose(long currentTimeMs) {
+        // 返回空的轮询结果
         return EMPTY;
     }
 
     /**
-     * Returns the delay for which the application thread can safely wait before it should be responsive
-     * to results from the request managers. For example, the subscription state can change when heartbeats
-     * are sent, so blocking for longer than the heartbeat interval might mean the application thread is not
-     * responsive to changes.
+     * 获取应用线程可以安全等待的延迟时间
+     * 
+     * 实现细节：
+     * - 计算安全的等待时间
+     * - 考虑心跳间隔等因素
+     * - 确保不会错过重要的状态变化
+     * 
+     * 应用场景：
+     * - 当发送心跳时，订阅状态可能发生变化
+     * - 阻塞时间超过心跳间隔可能导致应用线程无法及时响应变化
+     * - 控制应用线程的响应性
      *
-     * @param currentTimeMs The current system time at which the method was called; useful for determining if
-     *                      time-sensitive operations should be performed
-     *
-     * @return The maximum delay in milliseconds
+     * @param currentTimeMs 调用方法时的当前系统时间（毫秒）
+     * @return 最大等待时间（毫秒），默认返回Long.MAX_VALUE
      */
     default long maximumTimeToWait(long currentTimeMs) {
+        // 返回最大可能的等待时间
         return Long.MAX_VALUE;
     }
 
     /**
-     * Signals the request manager that the consumer is closing to prepare for the proper actions to be taken.
+     * 通知请求管理器消费者正在关闭
+     * 用于准备执行适当的关闭操作
+     * 
+     * 实现细节：
+     * - 标记关闭状态
+     * - 准备清理资源
+     * - 取消待处理的请求
+     * - 默认实现为空
      */
     default void signalClose() { }
 }

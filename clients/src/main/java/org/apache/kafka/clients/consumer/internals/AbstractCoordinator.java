@@ -87,77 +87,107 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * AbstractCoordinator implements group management for a single group member by interacting with
- * a designated Kafka broker (the coordinator). Group semantics are provided by extending this class.
- * See {@link ConsumerCoordinator} for example usage.
+ * AbstractCoordinator类实现了单个组成员的组管理功能，通过与指定的Kafka broker(协调器)进行交互
+ * 组语义通过扩展此类来提供。参见{@link ConsumerCoordinator}作为使用示例
  *
- * From a high level, Kafka's group management protocol consists of the following sequence of actions:
+ * 从高层次来看，Kafka的组管理协议包含以下操作序列：
  *
  * <ol>
- *     <li>Group Registration: Group members register with the coordinator providing their own metadata
- *         (such as the set of topics they are interested in).</li>
- *     <li>Group/Leader Selection: The coordinator select the members of the group and chooses one member
- *         as the leader.</li>
- *     <li>State Assignment: The leader collects the metadata from all the members of the group and
- *         assigns state.</li>
- *     <li>Group Stabilization: Each member receives the state assigned by the leader and begins
- *         processing.</li>
+ *     <li>组注册：组成员向协调器注册，提供自己的元数据（如感兴趣的主题集合）</li>
+ *     <li>组/领导者选举：协调器选择组的成员并选择一个成员作为领导者</li>
+ *     <li>状态分配：领导者收集组内所有成员的元数据并分配状态</li>
+ *     <li>组稳定：每个成员接收领导者分配的状态并开始处理</li>
  * </ol>
  *
- * To leverage this protocol, an implementation must define the format of metadata provided by each
- * member for group registration in {@link #metadata()} and the format of the state assignment provided
- * by the leader in {@link #onLeaderElected(String, String, List, boolean)} and becomes available to members in
- * {@link #onJoinComplete(int, String, String, ByteBuffer)}.
+ * 要使用此协议，实现必须定义：
+ * 1. 在{@link #metadata()}中提供每个成员用于组注册的元数据格式
+ * 2. 在{@link #onLeaderElected(String, String, List, boolean)}中提供领导者的状态分配格式
+ * 3. 在{@link #onJoinComplete(int, String, String, ByteBuffer)}中使状态对成员可用
  *
- * Note on locking: this class shares state between the caller and a background thread which is
- * used for sending heartbeats after the client has joined the group. All mutable state as well as
- * state transitions are protected with the class's monitor. Generally this means acquiring the lock
- * before reading or writing the state of the group (e.g. generation, memberId) and holding the lock
- * when sending a request that affects the state of the group (e.g. JoinGroup, LeaveGroup).
+ * 关于锁定的说明：此类在调用者和后台线程之间共享状态，后台线程用于在客户端加入组后发送心跳
+ * 所有可变状态和状态转换都受类监视器保护。这通常意味着在读取或写入组的状态（如generation, memberId）之前
+ * 获取锁，并在发送影响组状态的请求（如JoinGroup, LeaveGroup）时持有锁
  */
 public abstract class AbstractCoordinator implements Closeable {
+    /**
+     * 心跳线程名称前缀
+     */
     public static final String HEARTBEAT_THREAD_PREFIX = "kafka-coordinator-heartbeat-thread";
+    
+    /**
+     * 加入组超时时间间隔（毫秒）
+     */
     public static final int JOIN_GROUP_TIMEOUT_LAPSE = 5000;
 
+    /**
+     * 成员状态枚举
+     * 描述消费者在消费者组中的当前状态
+     */
     protected enum MemberState {
-        UNJOINED,             // the client is not part of a group
-        PREPARING_REBALANCE,  // the client has sent the join group request, but have not received response
-        COMPLETING_REBALANCE, // the client has received join group response, but have not received assignment
-        STABLE;               // the client has joined and is sending heartbeats
+        UNJOINED,             // 客户端不是组的一部分
+        PREPARING_REBALANCE,  // 客户端已发送加入组请求，但尚未收到响应
+        COMPLETING_REBALANCE, // 客户端已收到加入组响应，但尚未收到分配
+        STABLE;               // 客户端已加入并正在发送心跳
 
+        /**
+         * 检查成员是否尚未加入组
+         * @return 如果状态为UNJOINED或PREPARING_REBALANCE则返回true
+         */
         public boolean hasNotJoinedGroup() {
             return equals(UNJOINED) || equals(PREPARING_REBALANCE);
         }
     }
 
+    // 日志记录器
     private final Logger log;
+    // 心跳管理器
     private final Heartbeat heartbeat;
+    // 组协调器指标
     private final GroupCoordinatorMetrics sensors;
+    // 重平衡配置
     private final GroupRebalanceConfig rebalanceConfig;
+    // 客户端遥测报告器（可选）
     private final Optional<ClientTelemetryReporter> clientTelemetryReporter;
 
+    // 时间管理器
     protected final Time time;
+    // 消费者网络客户端
     protected final ConsumerNetworkClient client;
+    // 指数退避重试机制
     protected final ExponentialBackoff retryBackoff;
 
+    // 协调器节点
     private Node coordinator = null;
+    // 重新加入原因
     private String rejoinReason = "";
+    // 是否需要重新加入
     private boolean rejoinNeeded = true;
+    // 是否需要准备加入
     private boolean needsJoinPrepare = true;
+    // 心跳线程
     private HeartbeatThread heartbeatThread = null;
+    // 加入组的Future
     private RequestFuture<ByteBuffer> joinFuture = null;
+    // 查找协调器的Future
     private RequestFuture<Void> findCoordinatorFuture = null;
+    // 查找协调器时的致命异常
     private volatile RuntimeException fatalFindCoordinatorException = null;
+    // 当前代（世代）信息
     private Generation generation = Generation.NO_GENERATION;
+    // 最后一次重平衡开始时间
     private long lastRebalanceStartMs = -1L;
+    // 最后一次重平衡结束时间
     private long lastRebalanceEndMs = -1L;
-    private long lastTimeOfConnectionMs = -1L; // starting logging a warning only after unable to connect for a while
+    // 最后一次连接时间（仅在长时间无法连接时开始记录警告）
+    private long lastTimeOfConnectionMs = -1L;
 
+    // 当前成员状态
     protected MemberState state = MemberState.UNJOINED;
 
 
     /**
-     * Initialize the coordination manager.
+     * 初始化协调管理器
+     * 这是一个便捷的构造函数，不包含遥测报告器
      */
     public AbstractCoordinator(GroupRebalanceConfig rebalanceConfig,
                                LogContext logContext,
@@ -165,9 +195,21 @@ public abstract class AbstractCoordinator implements Closeable {
                                Metrics metrics,
                                String metricGrpPrefix,
                                Time time) {
+        // 调用完整的构造函数，传入空的遥测报告器
         this(rebalanceConfig, logContext, client, metrics, metricGrpPrefix, time, Optional.empty());
     }
 
+    /**
+     * 初始化协调管理器的完整构造函数
+     *
+     * @param rebalanceConfig 重平衡配置，包含组ID等重要参数
+     * @param logContext 日志上下文，用于创建日志记录器
+     * @param client 消费者网络客户端，用于网络通信
+     * @param metrics 指标收集器，用于性能监控
+     * @param metricGrpPrefix 指标组前缀，用于指标分类
+     * @param time 时间管理器，用于时间相关操作
+     * @param clientTelemetryReporter 可选的客户端遥测报告器
+     */
     public AbstractCoordinator(GroupRebalanceConfig rebalanceConfig,
                                LogContext logContext,
                                ConsumerNetworkClient client,
@@ -175,58 +217,70 @@ public abstract class AbstractCoordinator implements Closeable {
                                String metricGrpPrefix,
                                Time time,
                                Optional<ClientTelemetryReporter> clientTelemetryReporter) {
+        // 确保组ID不为空
         Objects.requireNonNull(rebalanceConfig.groupId,
                                "Expected a non-null group id for coordinator construction");
+        // 初始化重平衡配置
         this.rebalanceConfig = rebalanceConfig;
+        // 创建日志记录器
         this.log = logContext.logger(this.getClass());
+        // 设置网络客户端
         this.client = client;
+        // 设置时间管理器
         this.time = time;
+        // 创建指数退避重试机制
         this.retryBackoff = new ExponentialBackoff(
                 rebalanceConfig.retryBackoffMs,
                 CommonClientConfigs.RETRY_BACKOFF_EXP_BASE,
                 rebalanceConfig.retryBackoffMaxMs,
                 CommonClientConfigs.RETRY_BACKOFF_JITTER);
+        // 创建心跳管理器
         this.heartbeat = new Heartbeat(rebalanceConfig, time);
+        // 创建组协调器指标
         this.sensors = new GroupCoordinatorMetrics(metrics, metricGrpPrefix);
+        // 设置遥测报告器
         this.clientTelemetryReporter = clientTelemetryReporter;
     }
 
     /**
-     * Unique identifier for the class of supported protocols (e.g. "consumer" or "connect").
-     * @return Non-null protocol type name
+     * 获取支持的协议类型的唯一标识符
+     * 例如"consumer"或"connect"
+     *
+     * @return 非空的协议类型名称
      */
     protected abstract String protocolType();
 
     /**
-     * Get the current list of protocols and their associated metadata supported
-     * by the local member. The order of the protocols in the list indicates the preference
-     * of the protocol (the first entry is the most preferred). The coordinator takes this
-     * preference into account when selecting the generation protocol (generally more preferred
-     * protocols will be selected as long as all members support them and there is no disagreement
-     * on the preference).
-     * @return Non-empty map of supported protocols and metadata
+     * 获取本地成员支持的协议列表及其关联的元数据
+     * 列表中协议的顺序表示偏好（第一个条目最优先）
+     * 协调器在选择生成协议时会考虑这个偏好
+     * 通常会选择更优先的协议，只要所有成员都支持且在偏好上没有分歧
+     *
+     * @return 非空的支持协议和元数据映射
      */
     protected abstract JoinGroupRequestData.JoinGroupRequestProtocolCollection metadata();
 
     /**
-     * Invoked prior to each group join or rejoin. This is typically used to perform any
-     * cleanup from the previous generation (such as committing offsets for the consumer)
-     * @param timer Timer bounding how long this method can block
-     * @param generation The previous generation or -1 if there was none
-     * @param memberId The identifier of this member in the previous group or "" if there was none
-     * @return true If onJoinPrepare async commit succeeded, false otherwise
+     * 在每次加入或重新加入组之前调用
+     * 通常用于执行前一代的清理工作（例如提交消费者的偏移量）
+     *
+     * @param timer 限制方法阻塞时间的计时器
+     * @param generation 前一代的代数，如果没有则为-1
+     * @param memberId 成员在前一个组中的标识符，如果没有则为空字符串
+     * @return 如果异步提交成功则返回true，否则返回false
      */
     protected abstract boolean onJoinPrepare(Timer timer, int generation, String memberId);
 
     /**
-     * Invoked when the leader is elected. This is used by the leader to perform the assignment
-     * if necessary and to push state to all the members of the group (e.g. to push partition
-     * assignments in the case of the new consumer)
-     * @param leaderId The id of the leader (which is this member)
-     * @param protocol The protocol selected by the coordinator
-     * @param allMemberMetadata Metadata from all members of the group
-     * @param skipAssignment True if leader must skip running the assignor
-     * @return A map from each member to their state assignment
+     * 当选出领导者时调用
+     * 领导者使用此方法执行必要的分配并将状态推送给组的所有成员
+     * 例如在新消费者的情况下推送分区分配
+     *
+     * @param leaderId 领导者的ID（即当前成员）
+     * @param protocol 协调器选择的协议
+     * @param allMemberMetadata 组中所有成员的元数据
+     * @param skipAssignment 如果为true，领导者必须跳过运行分配器
+     * @return 从每个成员到其状态分配的映射
      */
     protected abstract Map<String, ByteBuffer> onLeaderElected(String leaderId,
                                                                String protocol,
@@ -234,13 +288,14 @@ public abstract class AbstractCoordinator implements Closeable {
                                                                boolean skipAssignment);
 
     /**
-     * Invoked when a group member has successfully joined a group. If this call fails with an exception,
-     * then it will be retried using the same assignment state on the next call to {@link #ensureActiveGroup()}.
+     * 当组成员成功加入组时调用
+     * 如果此调用失败并抛出异常，则在下次调用ensureActiveGroup()时
+     * 将使用相同的分配状态重试
      *
-     * @param generation The generation that was joined
-     * @param memberId The identifier for the local member in the group
-     * @param protocol The protocol selected by the coordinator
-     * @param memberAssignment The assignment propagated from the group leader
+     * @param generation 加入的代数
+     * @param memberId 本地成员在组中的标识符
+     * @param protocol 协调器选择的协议
+     * @param memberAssignment 从组领导者传播的分配
      */
     protected abstract void onJoinComplete(int generation,
                                            String memberId,
@@ -248,9 +303,10 @@ public abstract class AbstractCoordinator implements Closeable {
                                            ByteBuffer memberAssignment);
 
     /**
-     * Invoked prior to each leave group event. This is typically used to cleanup assigned partitions;
-     * note it is triggered by the consumer's API caller thread (i.e. background heartbeat thread would
-     * not trigger it even if it tries to force leaving group upon heartbeat session expiration)
+     * 在每次离开组事件之前调用
+     * 通常用于清理已分配的分区
+     * 注意：这是由消费者的API调用者线程触发的
+     * （即使后台心跳线程在心跳会话过期时尝试强制离开组，也不会触发此方法）
      */
     protected void onLeavePrepare() {}
 
@@ -259,6 +315,13 @@ public abstract class AbstractCoordinator implements Closeable {
      *
      * @param timer Timer bounding how long this method can block
      * @return true If coordinator discovery and initial connection succeeded, false otherwise
+     */
+    /**
+     * 确保协调器已准备好接收请求
+     * 这是一个同步方法，会阻塞直到协调器准备就绪或超时
+     *
+     * @param timer 限制方法阻塞时间的计时器
+     * @return 如果协调器发现和初始连接成功则返回true，否则返回false
      */
     protected synchronized boolean ensureCoordinatorReady(final Timer timer) {
         return ensureCoordinatorReady(timer, false);
@@ -271,69 +334,104 @@ public abstract class AbstractCoordinator implements Closeable {
      *
      * @return true If coordinator discovery and initial connection succeeded, false otherwise
      */
+    /**
+     * 确保协调器已准备好接收请求的异步版本
+     * 此方法会立即返回而不阻塞，适用于不期望唤醒的异步上下文
+     *
+     * @return 如果协调器发现和初始连接成功则返回true，否则返回false
+     */
     protected synchronized boolean ensureCoordinatorReadyAsync() {
         return ensureCoordinatorReady(time.timer(0), true);
     }
 
+    /**
+     * 确保协调器已准备好接收请求的内部实现方法
+     *
+     * @param timer 限制方法阻塞时间的计时器
+     * @param disableWakeup 是否禁用唤醒机制
+     * @return 如果协调器已就绪则返回true，否则返回false
+     */
     private synchronized boolean ensureCoordinatorReady(final Timer timer, boolean disableWakeup) {
+        // 如果协调器已知，直接返回true
         if (!coordinatorUnknown())
             return true;
 
+        // 记录尝试次数，用于退避计算
         long attempts = 0L;
         do {
+            // 检查是否存在致命异常
             if (fatalFindCoordinatorException != null) {
                 final RuntimeException fatalException = fatalFindCoordinatorException;
                 fatalFindCoordinatorException = null;
                 throw fatalException;
             }
+            // 查找协调器
             final RequestFuture<Void> future = lookupCoordinator();
+            // 轮询等待查找结果
             client.poll(future, timer, disableWakeup);
 
+            // 如果请求未完成，说明超时，跳出循环
             if (!future.isDone()) {
-                // ran out of time
                 break;
             }
 
             RuntimeException fatalException = null;
 
+            // 处理查找失败的情况
             if (future.failed()) {
                 if (future.isRetriable()) {
+                    // 可重试错误，记录日志并进行退避重试
                     log.debug("Coordinator discovery failed, refreshing metadata", future.exception());
                     timer.sleep(retryBackoff.backoff(attempts++));
                     client.awaitMetadataUpdate(timer);
                 } else {
+                    // 不可重试的致命错误
                     fatalException = future.exception();
                     log.info("FindCoordinator request hit fatal exception", fatalException);
                 }
             } else if (coordinator != null && client.isUnavailable(coordinator)) {
-                // we found the coordinator, but the connection has failed, so mark
-                // it dead and backoff before retrying discovery
+                // 协调器已找到但连接失败，标记为未知并进行退避重试
                 markCoordinatorUnknown("coordinator unavailable");
                 timer.sleep(retryBackoff.backoff(attempts++));
             }
 
+            // 清理查找Future
             clearFindCoordinatorFuture();
+            // 如果存在致命异常，抛出
             if (fatalException != null)
                 throw fatalException;
         } while (coordinatorUnknown() && timer.notExpired());
 
+        // 返回协调器是否已知
         return !coordinatorUnknown();
     }
 
+    /**
+     * 查找协调器的方法
+     * 使用异步Future模式实现
+     *
+     * @return 包含查找结果的Future对象
+     */
     protected synchronized RequestFuture<Void> lookupCoordinator() {
         if (findCoordinatorFuture == null) {
-            // find a node to ask about the coordinator
+            // 查找负载最小的节点
             Node node = this.client.leastLoadedNode();
             if (node == null) {
+                // 没有可用的broker节点
                 log.debug("No broker available to send FindCoordinator request");
                 return RequestFuture.noBrokersAvailable();
             } else {
+                // 向选中的节点发送查找协调器请求
                 findCoordinatorFuture = sendFindCoordinatorRequest(node);
             }
         }
         return findCoordinatorFuture;
     }
 
+    /**
+     * 清理查找协调器的Future对象
+     * 用于重置查找状态
+     */
     private synchronized void clearFindCoordinatorFuture() {
         findCoordinatorFuture = null;
     }
@@ -344,8 +442,14 @@ public abstract class AbstractCoordinator implements Closeable {
      *
      * @return true if it should, false otherwise
      */
+    /**
+     * 检查是否需要重新加入组或是否有未完成的重新加入请求
+     * 例如在元数据变更时需要重新加入
+     *
+     * @return 如果需要重新加入或有待处理的加入请求则返回true，否则返回false
+     */
     protected synchronized boolean rejoinNeededOrPending() {
-        // if there's a pending joinFuture, we should try to complete handling it.
+        // 如果需要重新加入或存在未完成的加入请求，返回true
         return rejoinNeeded || joinFuture != null;
     }
 
@@ -359,39 +463,62 @@ public abstract class AbstractCoordinator implements Closeable {
      * @param now current time in milliseconds
      * @throws RuntimeException for unexpected errors raised from the heartbeat thread
      */
+    /**
+     * 检查心跳线程的状态（如果活跃）并指示客户端的活跃性
+     * 在通过{@link #ensureActiveGroup()}加入组后必须定期调用此方法
+     * 以确保成员留在组中。如果在超过重平衡超时时间的间隔内没有调用此方法
+     * 则客户端将主动离开组
+     *
+     * @param now 当前时间（毫秒）
+     * @throws RuntimeException 当心跳线程抛出意外错误时
+     */
     protected synchronized void pollHeartbeat(long now) {
+        // 检查心跳线程是否存在
         if (heartbeatThread != null) {
+            // 检查心跳线程是否失败
             if (heartbeatThread.hasFailed()) {
-                // set the heartbeat thread to null and raise an exception. If the user catches it,
-                // the next call to ensureActiveGroup() will spawn a new heartbeat thread.
+                // 设置心跳线程为null并抛出异常
+                // 如果用户捕获异常，下次调用ensureActiveGroup()将创建新的心跳线程
                 RuntimeException cause = heartbeatThread.failureCause();
                 heartbeatThread = null;
                 throw cause;
             }
-            // Awake the heartbeat thread if needed
+            // 如果需要发送心跳，唤醒心跳线程
             if (heartbeat.shouldHeartbeat(now)) {
                 notify();
             }
+            // 执行心跳轮询
             heartbeat.poll(now);
         }
     }
 
+    /**
+     * 计算到下一次心跳的时间间隔
+     *
+     * @param now 当前时间（毫秒）
+     * @return 到下一次心跳的时间间隔（毫秒）
+     */
     protected synchronized long timeToNextHeartbeat(long now) {
-        // if we have not joined the group or we are preparing rebalance,
-        // we don't need to send heartbeats
+        // 如果尚未加入组或正在准备重平衡，不需要发送心跳
         if (state.hasNotJoinedGroup())
             return Long.MAX_VALUE;
+        // 检查心跳线程是否失败
         if (heartbeatThread != null && heartbeatThread.hasFailed()) {
-            // if an exception occurs in the heartbeat thread, raise it.
+            // 如果心跳线程发生异常，抛出异常
             throw heartbeatThread.failureCause();
         }
+        // 计算到下一次心跳的时间
         return heartbeat.timeToNextHeartbeat(now);
     }
 
     /**
      * Ensure that the group is active (i.e. joined and synced)
      */
+    /**
+     * 确保组处于活跃状态（即已加入并同步）
+     */
     public void ensureActiveGroup() {
+        // 循环直到确保组处于活跃状态
         while (!ensureActiveGroup(time.timer(Long.MAX_VALUE))) {
             log.warn("still waiting to ensure active group");
         }
@@ -404,36 +531,58 @@ public abstract class AbstractCoordinator implements Closeable {
      * @throws KafkaException if the callback throws exception
      * @return true iff the group is active
      */
+    /**
+     * 确保组处于活跃状态（即已加入并同步）
+     *
+     * @param timer 限制方法阻塞时间的计时器
+     * @throws KafkaException 如果回调抛出异常
+     * @return 如果组处于活跃状态则返回true
+     */
     boolean ensureActiveGroup(final Timer timer) {
-        // always ensure that the coordinator is ready because we may have been disconnected
-        // when sending heartbeats and does not necessarily require us to rejoin the group.
+        // 始终确保协调器就绪，因为在发送心跳时可能已断开连接
+        // 这不一定需要我们重新加入组
         if (!ensureCoordinatorReady(timer)) {
             return false;
         }
 
+        // 如果需要，启动心跳线程
         startHeartbeatThreadIfNeeded();
+        // 如果需要，加入组
         return joinGroupIfNeeded(timer);
     }
 
+    /**
+     * 如果需要，启动心跳线程
+     * 此方法是同步的，以确保线程安全
+     */
     private synchronized void startHeartbeatThreadIfNeeded() {
+        // 如果心跳线程不存在，创建并启动新的心跳线程
         if (heartbeatThread == null) {
             heartbeatThread = new HeartbeatThread();
             heartbeatThread.start();
         }
     }
 
+    /**
+     * 关闭心跳线程
+     * 此方法会等待心跳线程完全关闭
+     */
     private void closeHeartbeatThread() {
         HeartbeatThread thread;
         synchronized (this) {
+            // 如果心跳线程不存在，直接返回
             if (heartbeatThread == null)
                 return;
+            // 关闭心跳线程
             heartbeatThread.close();
             thread = heartbeatThread;
             heartbeatThread = null;
         }
         try {
+            // 等待心跳线程完全关闭
             thread.join();
         } catch (InterruptedException e) {
+            // 如果等待被中断，记录警告并抛出中断异常
             log.warn("Interrupted while waiting for consumer heartbeat thread to close");
             throw new InterruptException(e);
         }

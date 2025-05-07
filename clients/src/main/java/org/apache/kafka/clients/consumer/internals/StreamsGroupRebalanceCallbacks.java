@@ -20,30 +20,51 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Callbacks for handling Streams group rebalance events in Kafka Streams.
+ * Kafka Streams中流组重平衡事件的回调接口
+ * 
+ * 应用场景：
+ * 1. 处理流线程任务的撤销
+ * 2. 处理流线程任务的分配
+ * 3. 处理流线程任务的完全丢失
+ * 4. 提供重平衡事件的异常处理机制
  */
 public interface StreamsGroupRebalanceCallbacks {
 
     /**
-     * Called when tasks are revoked from a stream thread.
+     * 当任务从流线程中被撤销时调用
+     * 
+     * 使用场景：
+     * - 在重平衡过程中，当任务需要从当前流线程中移除时
+     * - 在流应用关闭时，需要清理任务资源
+     * - 在任务迁移过程中，需要保存任务状态
      *
-     * @param tasks The tasks to be revoked.
-     * @return The exception thrown during the callback, if any.
+     * @param tasks 要被撤销的任务集合，包含任务ID信息
+     * @return 回调过程中抛出的异常（如果有），使用Optional包装
      */
     Optional<Exception> onTasksRevoked(final Set<StreamsRebalanceData.TaskId> tasks);
 
     /**
-     * Called when tasks are assigned from a stream thread.
+     * 当任务被分配给流线程时调用
+     * 
+     * 使用场景：
+     * - 在重平衡完成后，接收新分配的任务
+     * - 在流应用启动时，初始化任务
+     * - 在任务重新分配后，恢复任务状态
      *
-     * @param assignment The tasks assigned.
-     * @return The exception thrown during the callback, if any.
+     * @param assignment 任务分配信息，包含分配给该线程的所有任务
+     * @return 回调过程中抛出的异常（如果有），使用Optional包装
      */
     Optional<Exception> onTasksAssigned(final StreamsRebalanceData.Assignment assignment);
 
     /**
-     * Called when a stream thread loses all assigned tasks.
+     * 当流线程失去所有已分配的任务时调用
+     * 
+     * 使用场景：
+     * - 在发生严重错误时，需要清理所有任务资源
+     * - 在流线程关闭时，需要进行最终清理
+     * - 在重平衡导致任务完全重新分配时
      *
-     * @return The exception thrown during the callback, if any.
+     * @return 回调过程中抛出的异常（如果有），使用Optional包装
      */
     Optional<Exception> onAllTasksLost();
 }

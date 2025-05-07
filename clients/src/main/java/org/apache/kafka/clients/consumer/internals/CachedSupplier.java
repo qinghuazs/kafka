@@ -19,25 +19,43 @@ package org.apache.kafka.clients.consumer.internals;
 import java.util.function.Supplier;
 
 /**
- * Simple {@link Supplier} that caches the initial creation of the object and stores it for later calls
- * to {@link #get()}.
+ * 简单的缓存供应器类
+ * 缓存对象的初始创建并将其存储以供后续的{@link #get()}调用使用
  *
  * <p/>
  *
- * <em>Note</em>: this class is not thread safe! Use only in contexts which are designed/guaranteed to be
- * single-threaded.
+ * <em>注意</em>：此类不是线程安全的！只能在设计为/保证是单线程的上下文中使用。
  */
 public abstract class CachedSupplier<T> implements Supplier<T> {
 
+    /**
+     * 缓存的结果对象
+     * 用于存储create()方法创建的对象实例
+     */
     private T result;
 
+    /**
+     * 创建缓存对象的抽象方法
+     * 子类必须实现此方法来提供实际的对象创建逻辑
+     *
+     * @return 创建的对象实例
+     */
     protected abstract T create();
 
+    /**
+     * 获取缓存的对象实例
+     * 如果对象尚未创建，则调用create()方法创建并缓存
+     * 如果对象已存在，则直接返回缓存的实例
+     *
+     * @return 缓存的对象实例
+     */
     @Override
     public T get() {
+        // 如果结果为空，调用create()方法创建新实例
         if (result == null)
             result = create();
 
+        // 返回缓存的结果
         return result;
     }
 }

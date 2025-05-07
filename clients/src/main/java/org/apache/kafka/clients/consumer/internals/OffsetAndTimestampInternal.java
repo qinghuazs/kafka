@@ -21,32 +21,90 @@ import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import java.util.Optional;
 
 /**
- * Internal representation of {@link OffsetAndTimestamp} to allow negative timestamps and offset.
+ * OffsetAndTimestamp的内部表示类
+ * 允许使用负数时间戳和偏移量，这在内部处理中可能需要
+ * 
+ * 应用场景：
+ * 1. 处理特殊的时间戳值（如-1表示最早可用偏移量）
+ * 2. 处理特殊的偏移量值（如-1表示无效偏移量）
+ * 3. 在内部操作中需要使用负值的场景
+ * 4. 在构建公共API响应前的中间表示
  */
 public class OffsetAndTimestampInternal {
+    /**
+     * 消息的时间戳
+     * 可以是负值，用于特殊场景（如-1表示无效时间戳）
+     */
     private final long timestamp;
+
+    /**
+     * 消息的偏移量
+     * 可以是负值，用于特殊场景（如-1表示无效偏移量）
+     */
     private final long offset;
+
+    /**
+     * 领导者纪元
+     * 用于确保消息的一致性和顺序性
+     * Optional包装允许表示无领导者纪元的情况
+     */
     private final Optional<Integer> leaderEpoch;
 
+    /**
+     * 构造函数
+     * 创建一个新的OffsetAndTimestampInternal实例
+     *
+     * @param offset 消息偏移量，可以是负值
+     * @param timestamp 消息时间戳，可以是负值
+     * @param leaderEpoch 可选的领导者纪元
+     */
     public OffsetAndTimestampInternal(long offset, long timestamp, Optional<Integer> leaderEpoch) {
+        // 初始化偏移量
         this.offset = offset;
+        // 初始化时间戳
         this.timestamp = timestamp;
+        // 初始化领导者纪元
         this.leaderEpoch = leaderEpoch;
     }
 
+    /**
+     * 获取偏移量
+     * 
+     * @return 消息的偏移量，可能为负值
+     */
     long offset() {
+        // 返回存储的偏移量值
         return offset;
     }
 
+    /**
+     * 获取时间戳
+     * 
+     * @return 消息的时间戳，可能为负值
+     */
     long timestamp() {
+        // 返回存储的时间戳值
         return timestamp;
     }
 
+    /**
+     * 获取领导者纪元
+     * 
+     * @return 可选的领导者纪元
+     */
     Optional<Integer> leaderEpoch() {
+        // 返回存储的领导者纪元
         return leaderEpoch;
     }
 
+    /**
+     * 构建公共API使用的OffsetAndTimestamp实例
+     * 将内部表示转换为外部API使用的格式
+     * 
+     * @return 新创建的OffsetAndTimestamp实例
+     */
     public OffsetAndTimestamp buildOffsetAndTimestamp() {
+        // 使用当前实例的值创建新的OffsetAndTimestamp对象
         return new OffsetAndTimestamp(offset, timestamp, leaderEpoch);
     }
 
