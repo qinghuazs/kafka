@@ -58,6 +58,9 @@ public interface ProducerInterceptor<K, V> extends Configurable, AutoCloseable {
      * 如果列表中的某个拦截器从onSend()抛出异常，异常将被捕获并记录日志，下一个拦截器将使用列表中最后一个成功的拦截器返回的记录，
      * 或者使用客户端的原始记录。
      *
+     * 如果onSend返回null，生产者会直接忽略该消息。此时，消息不会被序列化、分配分区，也不会进入发送队列（RecordAccumulator），更不会被传输到Broker。
+     * 相当于Kafka丢弃了该消息。
+     * 如果存在多个拦截器，当某个拦截器返回null时，后续拦截器的onSend方法将不再执行，最终结果仍然是消息被丢弃。
      * @param record 来自客户端的记录或拦截器链中前一个拦截器返回的记录
      * @return 要发送到主题/分区的生产者记录
      */

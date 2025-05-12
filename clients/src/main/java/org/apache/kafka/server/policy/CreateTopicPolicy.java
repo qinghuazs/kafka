@@ -25,25 +25,67 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * <p>An interface for enforcing a policy on create topics requests.
+ * 主题创建策略接口
+ * 用于对创建主题的请求实施策略验证
  *
- * <p>Common use cases are requiring that the replication factor, <code>min.insync.replicas</code> and/or retention settings for a
- * topic are within an allowable range.
+ * 应用场景：
+ * 1. 验证复制因子：确保主题的复制因子在允许范围内，防止设置过大或过小的复制因子
+ * 2. 验证同步副本：验证min.insync.replicas配置是否合理，确保数据可靠性
+ * 3. 验证数据保留：检查retention相关设置是否在合理范围内，避免存储资源浪费
+ * 4. 自定义验证：实现自定义的主题创建规则，如命名规范、特定配置要求等
  *
- * <p>If <code>create.topic.policy.class.name</code> is defined, Kafka will create an instance of the specified class
- * using the default constructor and will then pass the broker configs to its <code>configure()</code> method. During
- * broker shutdown, the <code>close()</code> method will be invoked so that resources can be released (if necessary).
+ * 实现说明：
+ * 当create.topic.policy.class.name被定义时，Kafka会：
+ * 1. 使用默认构造函数创建指定类的实例
+ * 2. 将broker配置通过configure()方法传递给实例
+ * 3. 在broker关闭时调用close()方法释放资源
+ *
+ * 设计考虑：
+ * 1. 可扩展性：通过接口设计支持自定义策略实现
+ * 2. 解耦性：策略验证与主题创建逻辑分离
+ * 3. 灵活性：支持多种验证规则组合
+ * 4. 资源管理：提供资源释放机制
  */
 public interface CreateTopicPolicy extends Configurable, AutoCloseable {
 
     /**
-     * Class containing the create request parameters.
+     * 请求元数据类
+     * 包含创建主题请求的参数信息
+     * 
+     * 应用场景：
+     * 1. 参数验证：验证主题创建请求的各项参数
+     * 2. 策略执行：根据参数执行相应的验证策略
+     * 3. 参数传递：在验证过程中传递必要的请求信息
      */
     class RequestMetadata {
+        /**
+         * 主题名称
+         * 要创建的主题的名称
+         */
         private final String topic;
+
+        /**
+         * 分区数量
+         * 要创建的分区数量，如果指定了replicasAssignments则为null
+         */
         private final Integer numPartitions;
+
+        /**
+         * 复制因子
+         * 主题的复制因子，如果指定了replicasAssignments则为null
+         */
         private final Short replicationFactor;
+
+        /**
+         * 副本分配方案
+         * 从分区ID到副本（broker）ID的映射，如果指定了numPartitions和replicationFactor则为null
+         */
         private final Map<Integer, List<Integer>> replicasAssignments;
+
+        /**
+         * 主题配置
+         * 要创建的主题的配置参数，不包括broker默认配置
+         */
         private final Map<String, String> configs;
 
         /**
@@ -134,14 +176,22 @@ public interface CreateTopicPolicy extends Configurable, AutoCloseable {
     }
 
     /**
-     * Validate the request parameters and throw a <code>PolicyViolationException</code> with a suitable error
-     * message if the create topics request parameters for the provided topic do not satisfy this policy.
+     * 验证请求参数
+     * 如果提供的主题的创建请求参数不满足策略要求，则抛出带有适当错误消息的PolicyViolationException
      *
-     * Clients will receive the POLICY_VIOLATION error code along with the exception's message. Note that validation
-     * failure only affects the relevant topic, other topics in the request will still be processed.
+     * 实现要求：
+     * 1. 验证逻辑：根据具体策略实现验证逻辑
+     * 2. 错误处理：提供清晰的错误消息说明违反的策略
+     * 3. 部分验证：验证失败只影响相关主题，不影响请求中的其他主题
      *
-     * @param requestMetadata the create topics request parameters for the provided topic.
-     * @throws PolicyViolationException if the request parameters do not satisfy this policy.
+     * 使用场景：
+     * 1. 配置验证：验证主题配置是否符合要求
+     * 2. 资源控制：控制主题的资源使用（如分区数、复制因子）
+     * 3. 命名规范：验证主题名称是否符合规范
+     * 4. 安全控制：实施主题创建的安全策略
+     *
+     * @param requestMetadata 要验证的主题创建请求参数
+     * @throws PolicyViolationException 当请求参数不满足策略要求时抛出
      */
     void validate(RequestMetadata requestMetadata) throws PolicyViolationException;
 }

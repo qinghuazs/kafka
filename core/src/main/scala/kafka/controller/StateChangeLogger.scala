@@ -20,25 +20,42 @@ package kafka.controller
 import com.typesafe.scalalogging.Logger
 import kafka.utils.Logging
 
+/**
+ * 状态变更日志记录器的单例对象
+ * 用于创建和管理全局共享的日志记录器实例
+ */
 object StateChangeLogger {
+  // 创建一个名为"state.change.logger"的日志记录器实例
   private val logger = Logger("state.change.logger")
 }
 
 /**
- * Simple class that sets `logIdent` appropriately depending on whether the state change logger is being used in the
- * context of the KafkaController or not (e.g. ReplicaManager and MetadataCache log to the state change logger
- * irrespective of whether the broker is the Controller).
+ * 状态变更日志记录器类
+ * 
+ * 该类负责根据运行上下文（是否在Kafka控制器中）设置适当的日志标识符(logIdent)。
+ * 在Kafka集群中，无论broker是否为控制器，都会使用此日志记录器记录状态变更信息
+ * （例如：ReplicaManager和MetadataCache都会使用此日志记录器）。
+ *
+ * @param brokerId broker的唯一标识符
+ * @param inControllerContext 是否在控制器上下文中运行
+ * @param controllerEpoch 可选的控制器纪元号，仅在控制器上下文中有效
  */
 class StateChangeLogger(brokerId: Int, inControllerContext: Boolean, controllerEpoch: Option[Int]) extends Logging {
 
+  // 验证控制器纪元的合法性：只有在控制器上下文中才能定义控制器纪元
   if (controllerEpoch.isDefined && !inControllerContext)
     throw new IllegalArgumentException("Controller epoch should only be defined if inControllerContext is true")
 
+  // 使用单例对象中的共享日志记录器实例
   override lazy val logger: Logger = StateChangeLogger.logger
 
+  // 在本地代码块中初始化日志标识符
   locally {
+    // 根据运行上下文确定前缀：控制器上下文使用"Controller"，否则使用"Broker"
     val prefix = if (inControllerContext) "Controller" else "Broker"
+    // 处理控制器纪元信息：如果存在则添加到标识符中，否则为空字符串
     val epochEntry = controllerEpoch.fold("")(epoch => s" epoch=$epoch")
+    // 组装最终的日志标识符，格式：[前缀 id=brokerId epoch=epochNumber]
     logIdent = s"[$prefix id=$brokerId$epochEntry] "
   }
 

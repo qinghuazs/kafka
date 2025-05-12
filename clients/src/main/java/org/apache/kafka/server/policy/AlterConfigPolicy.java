@@ -24,42 +24,72 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * <p>An interface for enforcing a policy on alter configs requests.
- *
- * <p>Common use cases are requiring that the replication factor, <code>min.insync.replicas</code> and/or retention settings for a
- * topic remain within an allowable range.
- *
- * <p>If <code>alter.config.policy.class.name</code> is defined, Kafka will create an instance of the specified class
- * using the default constructor and will then pass the broker configs to its <code>configure()</code> method. During
- * broker shutdown, the <code>close()</code> method will be invoked so that resources can be released (if necessary).
+ * 配置修改策略接口
+ * 用于对修改配置请求实施策略验证
+ * 
+ * 常见用例：
+ * 1. 验证主题的复制因子是否在允许范围内
+ * 2. 验证min.insync.replicas设置是否合规
+ * 3. 验证数据保留设置是否在允许范围内
+ * 
+ * 实现说明：
+ * 当alter.config.policy.class.name被定义时，Kafka会：
+ * 1. 使用默认构造函数创建指定类的实例
+ * 2. 将broker配置传递给configure()方法
+ * 3. 在broker关闭时调用close()方法释放资源
  */
 public interface AlterConfigPolicy extends Configurable, AutoCloseable {
 
     /**
-     * Class containing the create request parameters.
+     * 请求元数据类
+     * 包含创建请求的参数信息
+     * 
+     * 应用场景：
+     * 1. 配置验证：验证配置修改请求的参数
+     * 2. 策略执行：根据资源类型和配置执行相应的策略
+     * 3. 参数传递：在验证过程中传递必要的请求信息
      */
     class RequestMetadata {
-
+        /**
+         * 配置资源对象
+         * 表示要修改配置的资源（如主题、broker等）
+         */
         private final ConfigResource resource;
+
+        /**
+         * 配置映射
+         * 存储要修改的配置键值对
+         */
         private final Map<String, String> configs;
 
         /**
-         * Create an instance of this class with the provided parameters.
-         *
-         * This constructor is public to make testing of <code>AlterConfigPolicy</code> implementations easier.
+         * 创建请求元数据实例
+         * 构造函数设为public以便于测试AlterConfigPolicy的实现
+         * 
+         * @param resource 配置资源对象
+         * @param configs 配置映射
          */
         public RequestMetadata(ConfigResource resource, Map<String, String> configs) {
+            // 初始化资源对象
             this.resource = resource;
+            // 初始化配置映射
             this.configs = configs;
         }
 
         /**
-         * Return the configs in the request.
+         * 获取请求中的配置映射
+         * 
+         * @return 配置键值对映射
          */
         public Map<String, String> configs() {
             return configs;
         }
 
+        /**
+         * 获取配置资源对象
+         * 
+         * @return 配置资源对象
+         */
         public ConfigResource resource() {
             return resource;
         }
@@ -85,15 +115,22 @@ public interface AlterConfigPolicy extends Configurable, AutoCloseable {
     }
 
     /**
-     * Validate the request parameters and throw a <code>PolicyViolationException</code> with a suitable error
-     * message if the alter configs request parameters for the provided resource do not satisfy this policy.
-     *
-     * Clients will receive the POLICY_VIOLATION error code along with the exception's message. Note that validation
-     * failure only affects the relevant resource, other resources in the request will still be processed.
-     *
-     * @param requestMetadata the alter configs request parameters for the provided resource (topic is the only resource
-     *                        type whose configs can be updated currently).
-     * @throws PolicyViolationException if the request parameters do not satisfy this policy.
+     * 验证请求参数
+     * 如果提供的资源的配置修改请求参数不满足策略要求，
+     * 则抛出带有适当错误消息的PolicyViolationException
+     * 
+     * 实现要求：
+     * 1. 验证逻辑：根据资源类型和配置实现具体的验证逻辑
+     * 2. 错误处理：提供清晰的错误消息说明违反的策略
+     * 3. 部分验证：验证失败只影响相关资源，不影响请求中的其他资源
+     * 
+     * 使用场景：
+     * 1. 配置验证：验证配置值是否在允许范围内
+     * 2. 权限控制：验证是否允许进行特定的配置修改
+     * 3. 一致性检查：确保配置修改不会破坏系统一致性
+     * 
+     * @param requestMetadata 要验证的配置修改请求参数（目前只支持主题资源类型的配置更新）
+     * @throws PolicyViolationException 当请求参数不满足策略要求时抛出
      */
     void validate(RequestMetadata requestMetadata) throws PolicyViolationException;
 }
