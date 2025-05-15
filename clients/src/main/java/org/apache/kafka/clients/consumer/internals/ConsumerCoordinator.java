@@ -2028,130 +2028,224 @@ public final class ConsumerCoordinator extends AbstractCoordinator { // Consumer
     }
 
     /**
-     * Fetch the committed offsets for a set of partitions. This is a non-blocking call. The
-     * returned future can be polled to get the actual offsets returned from the broker.
+     * 为一组分区获取已提交的位移。这是一个非阻塞调用。
+     * 返回的 future 可以被轮询以获取从 broker 返回的实际位移。
+     * 
+     * 应用场景：当消费者需要知道某些分区的已提交位移时使用，例如在重平衡后或手动查询位移时。
+     * 实现细节：
+     * 1. 首先检查并获取协调器节点
+     * 2. 构造位移获取请求
+     * 3. 异步发送请求并注册响应处理器
+     * 设计考虑：使用异步方式避免阻塞，提高系统响应性
      *
-     * @param partitions The set of partitions to get offsets for.
-     * @return A request future containing the committed offsets.
+     * @param partitions 需要获取位移的分区集合
+     * @return 包含已提交位移的请求 future
      */
     private RequestFuture<Map<TopicPartition, OffsetAndMetadata>> sendOffsetFetchRequest(Set<TopicPartition> partitions) {
+        // 检查并获取协调器节点
         Node coordinator = checkAndGetCoordinator();
+        // 如果协调器不可用，返回错误 future
         if (coordinator == null)
             return RequestFuture.coordinatorNotAvailable();
 
+        // 记录调试日志
         log.debug("Fetching committed offsets for partitions: {}", partitions);
-        // construct the request
+        // 构造请求对象
         OffsetFetchRequest.Builder requestBuilder =
             new OffsetFetchRequest.Builder(this.rebalanceConfig.groupId, true, new ArrayList<>(partitions), throwOnFetchStableOffsetsUnsupported);
 
-        // send the request with a callback
+        // 发送请求并注册回调处理器
         return client.send(coordinator, requestBuilder)
                 .compose(new OffsetFetchResponseHandler());
     }
 
+    /**
+     * 位移获取响应处理器，负责处理从协调器返回的位移获取响应。
+     * 
+     * 应用场景：处理异步位移获取请求的响应，解析响应数据并更新本地状态。
+     * 实现细节：继承自 CoordinatorResponseHandler，专门处理 OffsetFetchResponse 类型的响应。
+     * 设计考虑：
+     * 1. 使用内部类方式实现，可以访问外部类的状态
+     * 2. 通过继承 CoordinatorResponseHandler 复用通用的响应处理逻辑
+     * 3. 采用异步回调方式处理响应，避免阻塞
+     */
     private class OffsetFetchResponseHandler extends CoordinatorResponseHandler<OffsetFetchResponse, Map<TopicPartition, OffsetAndMetadata>> {
+        /**
+         * 构造函数
+         * 实现细节：调用父类构造函数，传入 NO_GENERATION 表示此请求不依赖于特定的消费者组代数
+         */
         private OffsetFetchResponseHandler() {
             super(Generation.NO_GENERATION);
         }
 
         @Override
         public void handle(OffsetFetchResponse response, RequestFuture<Map<TopicPartition, OffsetAndMetadata>> future) {
+            // 检查响应中是否存在组级别的错误
             Errors responseError = response.groupLevelError(rebalanceConfig.groupId);
             if (responseError != Errors.NONE) {
+                // 记录调试日志
                 log.debug("Offset fetch failed: {}", responseError.message());
 
+                // 处理协调器相关错误
                 if (responseError == Errors.COORDINATOR_NOT_AVAILABLE ||
                     responseError == Errors.NOT_COORDINATOR) {
-                    // re-discover the coordinator and retry
+                    // 标记协调器为未知并重试
                     markCoordinatorUnknown(responseError);
                     future.raise(responseError);
                 } else if (responseError == Errors.GROUP_AUTHORIZATION_FAILED) {
+                    // 处理组授权失败错误
                     future.raise(GroupAuthorizationException.forGroupId(rebalanceConfig.groupId));
                 } else if (responseError.exception() instanceof RetriableException) {
-                    // retry
+                    // 处理可重试错误
                     future.raise(responseError);
-                // 如果消费者使用的是手动分区分配策略
-        } else {
+                } else {
+                    // 处理其他未预期的错误
                     future.raise(new KafkaException("Unexpected error in fetch offset response: " + responseError.message()));
                 }
                 return;
             }
 
+            // 用于存储未授权的主题
             Set<String> unauthorizedTopics = null;
+            // 获取响应中的分区数据
             Map<TopicPartition, OffsetFetchResponse.PartitionData> responseData =
                 response.partitionDataMap(rebalanceConfig.groupId);
+            // 创建结果 Map，用于存储解析后的位移元数据
             Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>(responseData.size());
+            // 存储具有不稳定位移的主题分区
             Set<TopicPartition> unstableTxnOffsetTopicPartitions = new HashSet<>();
+
+            // 遍历处理每个分区的响应数据
             for (Map.Entry<TopicPartition, OffsetFetchResponse.PartitionData> entry : responseData.entrySet()) {
                 TopicPartition tp = entry.getKey();
                 OffsetFetchResponse.PartitionData partitionData = entry.getValue();
+                
+                // 处理分区级别的错误
                 if (partitionData.hasError()) {
                     Errors error = partitionData.error;
                     log.debug("Failed to fetch offset for partition {}: {}", tp, error.message());
 
                     if (error == Errors.UNKNOWN_TOPIC_OR_PARTITION) {
+                        // 主题或分区不存在
                         future.raise(new KafkaException("Topic or Partition " + tp + " does not exist"));
                         return;
                     } else if (error == Errors.TOPIC_AUTHORIZATION_FAILED) {
+                        // 主题授权失败
                         if (unauthorizedTopics == null) {
                             unauthorizedTopics = new HashSet<>();
                         }
                         unauthorizedTopics.add(tp.topic());
                     } else if (error == Errors.UNSTABLE_OFFSET_COMMIT) {
+                        // 位移提交不稳定
                         unstableTxnOffsetTopicPartitions.add(tp);
-                    // 如果消费者使用的是手动分区分配策略
-        } else {
+                    } else {
+                        // 处理其他未预期的错误
                         future.raise(new KafkaException("Unexpected error in fetch offset response for partition " +
                             tp + ": " + error.message()));
                         return;
                     }
                 } else if (partitionData.offset >= 0) {
-                    // record the position with the offset (-1 indicates no committed offset to fetch);
-                    // if there's no committed offset, record as null
+                    // 处理有效的位移数据
                     offsets.put(tp, new OffsetAndMetadata(partitionData.offset, partitionData.leaderEpoch, partitionData.metadata));
-                // 如果消费者使用的是手动分区分配策略
-        } else {
+                } else {
+                    // 处理没有提交位移的情况
                     log.info("Found no committed offset for partition {}", tp);
                     offsets.put(tp, null);
                 }
             }
 
+            // 处理最终的结果
             if (unauthorizedTopics != null) {
+                // 如果存在未授权的主题，抛出异常
                 future.raise(new TopicAuthorizationException(unauthorizedTopics));
             } else if (!unstableTxnOffsetTopicPartitions.isEmpty()) {
-                // just retry
+                // 如果存在不稳定的位移，记录日志并重试
                 log.info("The following partitions still have unstable offsets " +
                              "which are not cleared on the broker side: {}" +
                              ", this could be either " +
                              "transactional offsets waiting for completion, or " +
                              "normal offsets waiting for replication after appending to local log", unstableTxnOffsetTopicPartitions);
                 future.raise(new UnstableOffsetCommitException("There are unstable offsets for the requested topic partitions"));
-            // 如果消费者使用的是手动分区分配策略
-        } else {
+            } else {
+                // 成功获取所有位移，完成 future
                 future.complete(offsets);
             }
         }
     }
 
+    /**
+     * 元数据快照类，用于捕获特定时刻的集群元数据状态。
+     * 
+     * 应用场景：
+     * 1. 在重平衡过程中保存集群的元数据状态
+     * 2. 用于比较两个时间点的元数据是否发生变化
+     * 3. 支持机架感知的分区分配
+     * 
+     * 实现细节：
+     * 1. 包含版本号和每个主题的分区信息
+     * 2. 分区信息包含了机架位置信息
+     * 3. 使用不可变对象模式设计
+     * 
+     * 设计考虑：
+     * 1. 将元数据状态封装为快照，便于后续比较和使用
+     * 2. 通过版本号快速判断元数据是否变化
+     * 3. 支持机架感知的分区分配策略
+     */
     private static class MetadataSnapshot {
+        /**
+         * 元数据版本号
+         * 应用场景：用于快速判断两个快照是否表示相同的元数据状态
+         */
         private final int version;
+        
+        /**
+         * 每个主题的分区信息映射
+         * 应用场景：存储主题的分区列表及其机架位置信息
+         * Key: 主题名称
+         * Value: 该主题的分区列表，包含机架信息
+         */
         private final Map<String, List<PartitionRackInfo>> partitionsPerTopic;
 
+        /**
+         * 构造函数，创建一个新的元数据快照
+         * 
+         * @param clientRack 客户端所在的机架ID
+         * @param subscription 订阅状态
+         * @param cluster 集群信息
+         * @param version 元数据版本号
+         */
         private MetadataSnapshot(Optional<String> clientRack, SubscriptionState subscription, Cluster cluster, int version) {
+            // 创建主题到分区信息的映射
             Map<String, List<PartitionRackInfo>> partitionsPerTopic = new HashMap<>();
+            // 遍历所有订阅的主题
             for (String topic : subscription.metadataTopics()) {
+                // 获取主题的分区信息
                 List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
                 if (partitions != null) {
+                    // 将分区信息转换为带有机架信息的格式
                     List<PartitionRackInfo> partitionRacks = partitions.stream()
                             .map(p -> new PartitionRackInfo(clientRack, p))
                             .collect(Collectors.toList());
+                    // 保存主题的分区信息
                     partitionsPerTopic.put(topic, partitionRacks);
                 }
             }
+            // 初始化字段
             this.partitionsPerTopic = partitionsPerTopic;
             this.version = version;
         }
 
+        /**
+         * 比较两个元数据快照是否匹配
+         * 
+         * 应用场景：判断元数据是否发生变化，用于决定是否需要触发重平衡
+         * 实现细节：
+         * 1. 首先比较版本号，如果相同则认为匹配
+         * 2. 如果版本号不同，则比较实际的分区数据
+         * 
+         * @param other 要比较的另一个元数据快照
+         * @return 如果两个快照匹配返回true，否则返回false
+         */
         boolean matches(MetadataSnapshot other) {
             return version == other.version || partitionsPerTopic.equals(other.partitionsPerTopic);
         }
@@ -2162,21 +2256,55 @@ public final class ConsumerCoordinator extends AbstractCoordinator { // Consumer
         }
     }
 
+    /**
+     * 消费者协调器的度量指标管理类。
+     * 
+     * 应用场景：
+     * 1. 收集和监控位移提交的性能指标
+     * 2. 跟踪消费者分配的分区数量
+     * 3. 为运维和监控提供必要的度量数据
+     * 
+     * 实现细节：
+     * 1. 使用 Sensor 收集位移提交的延迟指标
+     * 2. 维护分区分配状态的度量指标
+     * 3. 支持平均值、最大值等统计指标
+     * 
+     * 设计考虑：
+     * 1. 将度量指标的管理集中在一个类中，便于维护
+     * 2. 使用 Kafka 的度量框架，保持一致性
+     * 3. 选择关键指标进行监控，避免过多的性能开销
+     */
     private class ConsumerCoordinatorMetrics {
+        /**
+         * 位移提交的度量传感器
+         * 应用场景：用于收集位移提交操作的性能指标
+         */
         private final Sensor commitSensor;
 
+        /**
+         * 构造函数，初始化所有度量指标
+         * 
+         * @param metrics Kafka 度量系统实例
+         * @param metricGrpPrefix 度量指标组的前缀
+         */
         private ConsumerCoordinatorMetrics(Metrics metrics, String metricGrpPrefix) {
+            // 构造度量指标组名称
             String metricGrpName = metricGrpPrefix + COORDINATOR_METRICS_SUFFIX;
 
+            // 创建位移提交延迟的传感器
             this.commitSensor = metrics.sensor("commit-latency");
+            // 添加平均提交延迟指标
             this.commitSensor.add(metrics.metricName("commit-latency-avg",
                 metricGrpName,
                 "The average time taken for a commit request"), new Avg());
+            // 添加最大提交延迟指标
             this.commitSensor.add(metrics.metricName("commit-latency-max",
                 metricGrpName,
                 "The max time taken for a commit request"), new Max());
+            // 添加提交操作计数指标
             this.commitSensor.add(createMeter(metrics, metricGrpName, "commit", "commit calls"));
 
+            // 创建已分配分区数量的度量指标
             Measurable numParts = (config, now) -> subscriptions.numAssignedPartitions();
             metrics.addMetric(metrics.metricName("assigned-partitions",
                 metricGrpName,
@@ -2223,29 +2351,73 @@ public final class ConsumerCoordinator extends AbstractCoordinator { // Consumer
         }
     }
 
+    /**
+     * OffsetCommitCompletion 是一个内部静态类，用于封装偏移量提交操作完成后的回调逻辑。
+     * 应用场景：当异步提交偏移量操作完成后，此类用于执行用户提供的回调函数，并传递提交结果（成功或失败）。
+     * 实现细节：它存储了回调接口、提交的偏移量信息以及可能发生的异常。
+     * 设计考虑：将回调逻辑封装在一个独立的类中，使得偏移量提交的处理更加模块化和清晰。
+     */
     private static class OffsetCommitCompletion {
+        // OffsetCommitCallback 类型的回调接口，用于在偏移量提交完成后调用
         private final OffsetCommitCallback callback;
+        // 存储已提交的 TopicPartition 及其对应的 OffsetAndMetadata 的映射
         private final Map<TopicPartition, OffsetAndMetadata> offsets;
+        // 存储偏移量提交过程中可能发生的异常
         private final Exception exception;
 
+        /**
+         * OffsetCommitCompletion 的构造函数。
+         * @param callback 偏移量提交完成后的回调接口。
+         * @param offsets 已提交的 TopicPartition 及其对应的 OffsetAndMetadata 的映射。
+         * @param exception 偏移量提交过程中发生的异常，如果没有异常则为 null。
+         */
         private OffsetCommitCompletion(OffsetCommitCallback callback, Map<TopicPartition, OffsetAndMetadata> offsets, Exception exception) {
+            // 初始化回调接口
             this.callback = callback;
+            // 初始化已提交的偏移量信息
             this.offsets = offsets;
+            // 初始化异常信息
             this.exception = exception;
         }
 
+        /**
+         * 执行回调方法。
+         * 应用场景：在偏移量提交操作（无论是成功还是失败）完成后，调用此方法来通知用户。
+         * 实现细节：检查回调接口是否为 null，如果不为 null，则调用其 onComplete 方法，并传入偏移量和异常信息。
+         * 设计考虑：提供一个统一的调用点来执行回调，简化了外部代码的逻辑。
+         */
         public void invoke() {
+            // 检查回调接口是否已设置
             if (callback != null)
+                // 如果回调接口不为 null，则调用其 onComplete 方法，传入偏移量和异常信息
                 callback.onComplete(offsets, exception);
         }
     }
 
-    /* test-only classes below */
+    /* 下面是仅供测试使用的类 */
+    /**
+     * 获取当前的再均衡协议。
+     * 应用场景：主要用于测试，以验证消费者协调器内部使用的再均衡协议是否正确。
+     * 实现细节：直接返回内部存储的 protocol 字段。
+     * 设计考虑：提供一个访问内部状态的方法，方便进行单元测试和集成测试。
+     * @return RebalanceProtocol 当前使用的再均衡协议。
+     */
     RebalanceProtocol getProtocol() {
+        // 返回内部存储的再均衡协议实例
         return protocol;
     }
 
+    /**
+     * 轮询消费者协调器的状态，允许指定是否应该阻塞等待协调器准备就绪。
+     * 应用场景：用于测试场景，模拟消费者的轮询操作，并检查协调器的状态变化。
+     * 实现细节：调用另一个重载的 poll 方法，并传递一个指示是否阻塞的布尔值。
+     * 设计考虑：提供一个简化的 poll 方法接口，默认情况下允许阻塞等待。
+     * @param timer 用于控制轮询超时的计时器。
+     * @return boolean 如果轮询成功并且协调器状态发生变化或有事件处理，则返回 true；否则返回 false。
+     */
     boolean poll(Timer timer) {
+        // 调用另一个 poll 方法，并设置 ensureCoordinatorReady 为 true，表示需要确保协调器准备就绪
         return poll(timer, true);
     }
 }
+
