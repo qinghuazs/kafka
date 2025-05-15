@@ -66,37 +66,75 @@ import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 /**
- * {@code ShareConsumeRequestManager} is responsible for generating {@link ShareFetchRequest} and
- * {@link ShareAcknowledgeRequest} to fetch and acknowledge records being delivered for a consumer
- * in a share group.
+ * {@code ShareConsumeRequestManager} 负责生成 {@link ShareFetchRequest} 和
+ * {@link ShareAcknowledgeRequest} 来获取和确认为共享组中的消费者投递的记录。
  */
 @SuppressWarnings({"NPathComplexity", "CyclomaticComplexity"})
 public class ShareConsumeRequestManager implements RequestManager, MemberStateListener, Closeable {
+    // 时间工具，用于获取当前时间和计算超时
     private final Time time;
+    // 日志记录器
     private final Logger log;
+    // 日志上下文，用于创建日志记录器
     private final LogContext logContext;
+    // 消费者组ID
     private final String groupId;
+    // 消费者元数据，包含主题分区信息和集群信息
     private final ConsumerMetadata metadata;
+    // 订阅状态，管理消费者的主题订阅信息
     private final SubscriptionState subscriptions;
+    // 获取配置，包含获取请求的各种参数设置
     private final FetchConfig fetchConfig;
+    // 共享获取缓冲区，用于存储从服务器获取的记录
     protected final ShareFetchBuffer shareFetchBuffer;
+    // 后台事件处理器，用于处理异步事件
     private final BackgroundEventHandler backgroundEventHandler;
+    // 会话处理器映射，按节点ID索引，管理与不同节点的会话
     private final Map<Integer, ShareSessionHandler> sessionHandlers;
+    // 有待处理请求的节点集合，用于跟踪哪些节点有未完成的请求
     private final Set<Integer> nodesWithPendingRequests;
+    // 共享获取指标管理器，用于记录和监控指标
     private final ShareFetchMetricsManager metricsManager;
+    // 幂等关闭器，确保关闭操作只执行一次
     private final IdempotentCloser idempotentCloser = new IdempotentCloser();
+    // 成员ID，标识共享组中的消费者
     private Uuid memberId;
+    // 是否需要获取更多记录的标志
     private boolean fetchMoreRecords = false;
+    // 待发送的获取确认映射，按主题分区ID索引
     private final Map<TopicIdPartition, Acknowledgements> fetchAcknowledgementsToSend;
+    // 正在传输中的获取确认映射，按主题分区ID索引
     private final Map<TopicIdPartition, Acknowledgements> fetchAcknowledgementsInFlight;
+    // 确认请求状态映射，按节点ID索引
     private final Map<Integer, Tuple<AcknowledgeRequestState>> acknowledgeRequestStates;
+    // 重试退避时间（毫秒）
     private final long retryBackoffMs;
+    // 最大重试退避时间（毫秒）
     private final long retryBackoffMaxMs;
+    // 是否正在关闭的标志
     private boolean closing = false;
+    // 关闭完成的Future对象
     private final CompletableFuture<Void> closeFuture;
+    // 是否已注册确认提交回调的标志
     private boolean isAcknowledgementCommitCallbackRegistered = false;
+    // 主题名称映射，用于将主题ID和分区映射到主题名称
     private final Map<IdAndPartition, String> topicNamesMap = new HashMap<>();
 
+    /**
+     * 构造函数，初始化共享消费请求管理器
+     * 
+     * @param time 时间工具，用于获取当前时间和计算超时
+     * @param logContext 日志上下文，用于创建日志记录器
+     * @param groupId 消费者组ID
+     * @param metadata 消费者元数据，包含主题分区信息和集群信息
+     * @param subscriptions 订阅状态，管理消费者的主题订阅信息
+     * @param fetchConfig 获取配置，包含获取请求的各种参数设置
+     * @param shareFetchBuffer 共享获取缓冲区，用于存储从服务器获取的记录
+     * @param backgroundEventHandler 后台事件处理器，用于处理异步事件
+     * @param metricsManager 共享获取指标管理器，用于记录和监控指标
+     * @param retryBackoffMs 重试退避时间（毫秒）
+     * @param retryBackoffMaxMs 最大重试退避时间（毫秒）
+     */
     ShareConsumeRequestManager(final Time time,
                                final LogContext logContext,
                                final String groupId,
@@ -108,109 +146,169 @@ public class ShareConsumeRequestManager implements RequestManager, MemberStateLi
                                final ShareFetchMetricsManager metricsManager,
                                final long retryBackoffMs,
                                final long retryBackoffMaxMs) {
+        // 初始化时间工具
         this.time = time;
+        // 从日志上下文创建日志记录器
         this.log = logContext.logger(ShareConsumeRequestManager.class);
+        // 保存日志上下文
         this.logContext = logContext;
+        // 保存消费者组ID
         this.groupId = groupId;
+        // 保存消费者元数据
         this.metadata = metadata;
+        // 保存订阅状态
         this.subscriptions = subscriptions;
+        // 保存获取配置
         this.fetchConfig = fetchConfig;
+        // 保存共享获取缓冲区
         this.shareFetchBuffer = shareFetchBuffer;
+        // 保存后台事件处理器
         this.backgroundEventHandler = backgroundEventHandler;
+        // 保存共享获取指标管理器
         this.metricsManager = metricsManager;
+        // 保存重试退避时间
         this.retryBackoffMs = retryBackoffMs;
+        // 保存最大重试退避时间
         this.retryBackoffMaxMs = retryBackoffMaxMs;
+        // 初始化会话处理器映射
         this.sessionHandlers = new HashMap<>();
+        // 初始化有待处理请求的节点集合
         this.nodesWithPendingRequests = new HashSet<>();
+        // 初始化确认请求状态映射
         this.acknowledgeRequestStates = new HashMap<>();
+        // 初始化待发送的获取确认映射
         this.fetchAcknowledgementsToSend = new HashMap<>();
+        // 初始化正在传输中的获取确认映射
         this.fetchAcknowledgementsInFlight = new HashMap<>();
+        // 初始化关闭完成的Future对象
         this.closeFuture = new CompletableFuture<>();
     }
 
+    /**
+     * 轮询方法，生成并返回需要发送的请求
+     * 实现了RequestManager接口的poll方法
+     * 
+     * @param currentTimeMs 当前时间（毫秒）
+     * @return 包含待发送请求的轮询结果
+     */
     @Override
     public PollResult poll(long currentTimeMs) {
+        // 如果成员ID为空，表示消费者尚未加入共享组，返回空结果
         if (memberId == null) {
             return PollResult.EMPTY;
         }
 
-        // Send any pending acknowledgements before fetching more records.
+        // 在获取更多记录之前，先处理待发送的确认
         PollResult pollResult = processAcknowledgements(currentTimeMs);
+        // 如果有确认需要发送，直接返回确认请求
         if (pollResult != null) {
             return pollResult;
         }
 
+        // 如果不需要获取更多记录，返回空结果
         if (!fetchMoreRecords) {
             return PollResult.EMPTY;
         }
 
+        // 创建节点到会话处理器的映射
         Map<Node, ShareSessionHandler> handlerMap = new HashMap<>();
+        // 获取主题名称到主题ID的映射
         Map<String, Uuid> topicIds = metadata.topicIds();
+        // 创建已获取分区的集合，用于跟踪
         Set<TopicIdPartition> fetchedPartitions = new HashSet<>();
+        // 遍历需要获取的分区
         for (TopicPartition partition : partitionsToFetch()) {
+            // 获取分区的领导节点
             Optional<Node> leaderOpt = metadata.currentLeader(partition).leader;
 
+            // 如果领导节点不存在，请求更新元数据并继续下一个分区
             if (leaderOpt.isEmpty()) {
                 log.debug("Requesting metadata update for partition {} since current leader node is missing", partition);
                 metadata.requestUpdate(false);
                 continue;
             }
 
+            // 获取主题ID
             Uuid topicId = topicIds.get(partition.topic());
+            // 如果主题ID不存在，请求更新元数据并继续下一个分区
             if (topicId == null) {
                 log.debug("Requesting metadata update for partition {} since topic ID is missing", partition);
                 metadata.requestUpdate(false);
                 continue;
             }
 
+            // 获取领导节点
             Node node = leaderOpt.get();
+            // 如果节点有待处理的请求，跳过此分区
             if (nodesWithPendingRequests.contains(node.id())) {
                 log.trace("Skipping fetch for partition {} because previous fetch request to {} has not been processed", partition, node.id());
             } else {
-                // if there is a leader and no in-flight requests, issue a new fetch
+                // 如果有领导节点且没有正在处理的请求，发起新的获取请求
+                // 获取或创建会话处理器
                 ShareSessionHandler handler = handlerMap.computeIfAbsent(node,
                         k -> sessionHandlers.computeIfAbsent(node.id(), n -> new ShareSessionHandler(logContext, n, memberId)));
 
+                // 创建主题ID分区对象
                 TopicIdPartition tip = new TopicIdPartition(topicId, partition);
+                // 获取并移除待发送的确认
                 Acknowledgements acknowledgementsToSend = fetchAcknowledgementsToSend.remove(tip);
+                // 如果有确认需要发送
                 if (acknowledgementsToSend != null) {
+                    // 记录已发送的确认数量
                     metricsManager.recordAcknowledgementSent(acknowledgementsToSend.size());
+                    // 将确认添加到正在传输的映射中
                     fetchAcknowledgementsInFlight.put(tip, acknowledgementsToSend);
                 }
+                // 向会话处理器添加要获取的分区
                 handler.addPartitionToFetch(tip, acknowledgementsToSend);
+                // 将分区添加到已获取分区集合
                 fetchedPartitions.add(tip);
+                // 更新主题名称映射
                 topicNamesMap.putIfAbsent(new IdAndPartition(tip.topicId(), tip.partition()), tip.topic());
 
                 log.debug("Added fetch request for partition {} to node {}", tip, node.id());
             }
         }
 
-        // Map storing the list of partitions to forget in the upcoming request.
+        // 创建存储即将忘记的分区列表的映射
         Map<Node, List<TopicIdPartition>> partitionsToForgetMap = new HashMap<>();
+        // 获取集群信息
         Cluster cluster = metadata.fetch();
-        // Iterating over the session handlers to see if there are acknowledgements to be sent for partitions
-        // which are no longer part of the current subscription.
+        // 遍历会话处理器，查看是否有需要为不再是当前订阅一部分的分区发送确认
         sessionHandlers.forEach((nodeId, sessionHandler) -> {
+            // 获取节点
             Node node = cluster.nodeById(nodeId);
             if (node != null) {
+                // 如果节点有待处理的请求，跳过
                 if (nodesWithPendingRequests.contains(node.id())) {
                     log.trace("Skipping fetch because previous fetch request to {} has not been processed", node.id());
                 } else {
+                    // 遍历会话中的分区
                     for (TopicIdPartition tip : sessionHandler.sessionPartitions()) {
+                        // 如果分区不在已获取分区集合中
                         if (!fetchedPartitions.contains(tip)) {
+                            // 获取并移除待发送的确认
                             Acknowledgements acknowledgementsToSend = fetchAcknowledgementsToSend.remove(tip);
 
+                            // 如果有确认需要发送
                             if (acknowledgementsToSend != null) {
+                                // 记录已发送的确认数量
                                 metricsManager.recordAcknowledgementSent(acknowledgementsToSend.size());
+                                // 将确认添加到正在传输的映射中
                                 fetchAcknowledgementsInFlight.put(tip, acknowledgementsToSend);
 
+                                // 向会话处理器添加要获取的分区
                                 sessionHandler.addPartitionToFetch(tip, acknowledgementsToSend);
+                                // 将处理器添加到处理器映射
                                 handlerMap.put(node, sessionHandler);
 
+                                // 初始化并添加到要忘记的分区映射
                                 partitionsToForgetMap.putIfAbsent(node, new ArrayList<>());
                                 partitionsToForgetMap.get(node).add(tip);
 
+                                // 更新主题名称映射
                                 topicNamesMap.putIfAbsent(new IdAndPartition(tip.topicId(), tip.partition()), tip.topic());
+                                // 将分区添加到已获取分区集合
                                 fetchedPartitions.add(tip);
                                 log.debug("Added fetch request for previously subscribed partition {} to node {}", tip, node.id());
                             }
@@ -220,85 +318,112 @@ public class ShareConsumeRequestManager implements RequestManager, MemberStateLi
             }
         });
 
+        // 创建节点到请求构建器的映射
         Map<Node, ShareFetchRequest.Builder> builderMap = new LinkedHashMap<>();
+        // 遍历处理器映射，为每个节点创建请求构建器
         for (Map.Entry<Node, ShareSessionHandler> entry : handlerMap.entrySet()) {
+            // 创建共享获取请求构建器
             ShareFetchRequest.Builder builder = entry.getValue().newShareFetchBuilder(groupId, fetchConfig);
             Node node = entry.getKey();
 
+            // 如果有要忘记的分区，更新请求构建器
             if (partitionsToForgetMap.containsKey(node)) {
+                // 如果忘记的主题数据为空，初始化它
                 if (builder.data().forgottenTopicsData() == null) {
                     builder.data().setForgottenTopicsData(new ArrayList<>());
                 }
+                // 更新要忘记的数据
                 builder.updateForgottenData(partitionsToForgetMap.get(node));
             }
 
+            // 将构建器添加到映射
             builderMap.put(node, builder);
         }
 
+        // 创建未发送请求列表
         List<UnsentRequest> requests = builderMap.entrySet().stream().map(entry -> {
+            // 获取目标节点
             Node target = entry.getKey();
             log.trace("Building ShareFetch request to send to node {}", target.id());
+            // 获取请求构建器
             ShareFetchRequest.Builder requestBuilder = entry.getValue();
 
+            // 将节点添加到有待处理请求的节点集合
             nodesWithPendingRequests.add(target.id());
 
+            // 创建响应处理器
             BiConsumer<ClientResponse, Throwable> responseHandler = (clientResponse, error) -> {
+                // 如果有错误，处理获取失败
                 if (error != null) {
                     handleShareFetchFailure(target, requestBuilder.data(), error);
                 } else {
+                    // 否则处理获取成功
                     handleShareFetchSuccess(target, requestBuilder.data(), clientResponse);
                 }
             };
+            // 创建并返回未发送请求，设置完成回调
             return new UnsentRequest(requestBuilder, Optional.of(target)).whenComplete(responseHandler);
         }).collect(Collectors.toList());
 
+        // 返回包含请求的轮询结果
         return new PollResult(requests);
     }
 
+    /**
+     * 设置获取标志并存储确认信息
+     * 
+     * @param acknowledgementsMap 主题分区ID到确认的映射
+     */
     public void fetch(Map<TopicIdPartition, Acknowledgements> acknowledgementsMap) {
+        // 如果当前不需要获取更多记录，设置标志为true
         if (!fetchMoreRecords) {
             log.debug("Fetch more data");
             fetchMoreRecords = true;
         }
 
-        // The acknowledgements sent via ShareFetch are stored in this map.
+        // 将通过ShareFetch发送的确认存储在此映射中
+        // 遍历确认映射，合并到待发送的确认映射中
         acknowledgementsMap.forEach((tip, acks) -> fetchAcknowledgementsToSend.merge(tip, acks, Acknowledgements::merge));
     }
 
     /**
-     * Process acknowledgeRequestStates and prepares a list of acknowledgements to be sent in the poll().
+     * 处理确认请求状态并准备在poll()中发送的确认列表
      *
-     * @param currentTimeMs the current time in ms.
+     * @param currentTimeMs 当前时间（毫秒）
      *
-     * @return the PollResult containing zero or more acknowledgements.
+     * @return 包含零个或多个确认的轮询结果
      */
     private PollResult processAcknowledgements(long currentTimeMs) {
+        // 创建未发送请求列表，用于存储需要发送的确认请求
         List<UnsentRequest> unsentRequests = new ArrayList<>();
+        // 创建原子布尔值，用于标记异步请求是否已发送
         AtomicBoolean isAsyncSent = new AtomicBoolean();
+        // 遍历所有节点的确认请求状态
         for (Map.Entry<Integer, Tuple<AcknowledgeRequestState>> requestStates : acknowledgeRequestStates.entrySet()) {
+            // 获取节点ID
             int nodeId = requestStates.getKey();
-
+            // 检查节点是否空闲，如果不空闲则跳过确认请求
             if (!isNodeFree(nodeId)) {
                 log.trace("Skipping acknowledge request because previous request to {} has not been processed, so acks are not sent", nodeId);
             } else {
                 isAsyncSent.set(false);
-                // First, the acknowledgements from commitAsync is sent.
+                // 首先发送来自commitAsync的确认请求
                 maybeBuildRequest(requestStates.getValue().getAsyncRequest(), currentTimeMs, true, isAsyncSent).ifPresent(unsentRequests::add);
-
-                // Check to ensure we start processing commitSync/close only if there are no commitAsync requests left to process.
+            
+                // 确保只有在没有commitAsync请求需要处理时才开始处理commitSync/close
                 if (isAsyncSent.get()) {
                     if (!isNodeFree(nodeId)) {
                         log.trace("Skipping acknowledge request because previous request to {} has not been processed, so acks are not sent", nodeId);
                         continue;
                     }
-
-                    // We try to process the close request only if we have processed the async and the sync requests for the node.
+            
+                    // 只有在处理完异步和同步请求后才尝试处理关闭请求
                     if (requestStates.getValue().getSyncRequestQueue() == null) {
                         AcknowledgeRequestState closeRequestState = requestStates.getValue().getCloseRequest();
-
+            
                         maybeBuildRequest(closeRequestState, currentTimeMs, false, isAsyncSent).ifPresent(unsentRequests::add);
                     } else {
-                        // Processing the acknowledgements from commitSync
+                        // 处理来自commitSync的确认请求
                         for (AcknowledgeRequestState acknowledgeRequestState : requestStates.getValue().getSyncRequestQueue()) {
                             maybeBuildRequest(acknowledgeRequestState, currentTimeMs, false, isAsyncSent).ifPresent(unsentRequests::add);
                         }
@@ -308,35 +433,49 @@ public class ShareConsumeRequestManager implements RequestManager, MemberStateLi
 
         }
 
+        // 初始化轮询结果为null
         PollResult pollResult = null;
+        // 如果有未发送的请求
         if (!unsentRequests.isEmpty()) {
+            // 创建新的轮询结果对象，包含未发送的请求
             pollResult = new PollResult(unsentRequests);
         } else if (checkAndRemoveCompletedAcknowledgements()) {
-            // Return empty result until all the acknowledgement request states are processed
+            // 检查并移除已完成的确认请求状态
+            // 返回空结果，直到所有确认请求状态被处理完毕
             pollResult = PollResult.EMPTY;
         } else if (closing) {
+            // 如果正在关闭
             if (!closeFuture.isDone()) {
+                // 完成关闭操作
                 closeFuture.complete(null);
             }
+            // 返回空结果
             pollResult = PollResult.EMPTY;
         }
+        // 返回轮询结果
         return pollResult;
     }
 
-    private boolean isNodeFree(int nodeId) {
-        return !nodesWithPendingRequests.contains(nodeId);
-    }
+    // 检查节点是否空闲的方法
+// 如果节点没有待处理请求，则认为节点是空闲的
+private boolean isNodeFree(int nodeId) {
+    return !nodesWithPendingRequests.contains(nodeId);
+}
 
-    public void setAcknowledgementCommitCallbackRegistered(boolean isAcknowledgementCommitCallbackRegistered) {
-        this.isAcknowledgementCommitCallbackRegistered = isAcknowledgementCommitCallbackRegistered;
-    }
+    // 设置是否已注册确认提交回调的方法
+// 用于标记确认提交回调是否已注册
+public void setAcknowledgementCommitCallbackRegistered(boolean isAcknowledgementCommitCallbackRegistered) {
+    this.isAcknowledgementCommitCallbackRegistered = isAcknowledgementCommitCallbackRegistered;
+}
 
-    private void maybeSendShareAcknowledgeCommitCallbackEvent(Map<TopicIdPartition, Acknowledgements> acknowledgementsMap) {
-        if (isAcknowledgementCommitCallbackRegistered) {
-            ShareAcknowledgementCommitCallbackEvent event = new ShareAcknowledgementCommitCallbackEvent(acknowledgementsMap);
-            backgroundEventHandler.add(event);
-        }
+    // 可能发送共享确认提交回调事件的方法
+// 如果确认提交回调已注册，则创建事件并添加到后台事件处理器
+private void maybeSendShareAcknowledgeCommitCallbackEvent(Map<TopicIdPartition, Acknowledgements> acknowledgementsMap) {
+    if (isAcknowledgementCommitCallbackRegistered) {
+        ShareAcknowledgementCommitCallbackEvent event = new ShareAcknowledgementCommitCallbackEvent(acknowledgementsMap);
+        backgroundEventHandler.add(event);
     }
+}
 
     /**
      *
@@ -347,83 +486,90 @@ public class ShareConsumeRequestManager implements RequestManager, MemberStateLi
      *
      * @return Returns the request if it was built.
      */
-    private Optional<UnsentRequest> maybeBuildRequest(AcknowledgeRequestState acknowledgeRequestState,
-                                                      long currentTimeMs,
-                                                      boolean onCommitAsync,
-                                                      AtomicBoolean isAsyncSent) {
-        boolean asyncSent = true;
-        try {
-            if (acknowledgeRequestState == null || (!acknowledgeRequestState.onClose() && acknowledgeRequestState.isEmpty())) {
-                return Optional.empty();
-            }
+    // 可能构建请求的方法
+// 根据确认请求状态和当前时间决定是否构建请求
+// 如果请求状态为空或已过期，则返回空
+// 如果请求可以发送，则构建请求并返回
+private Optional<UnsentRequest> maybeBuildRequest(AcknowledgeRequestState acknowledgeRequestState,
+                                                  long currentTimeMs,
+                                                  boolean onCommitAsync,
+                                                  AtomicBoolean isAsyncSent) {
+    boolean asyncSent = true;
+    try {
+        if (acknowledgeRequestState == null || (!acknowledgeRequestState.onClose() && acknowledgeRequestState.isEmpty())) {
+            return Optional.empty();
+        }
 
-            if (acknowledgeRequestState.maybeExpire()) {
-                // Fill in TimeoutException
-                for (TopicIdPartition tip : acknowledgeRequestState.incompleteAcknowledgements.keySet()) {
-                    metricsManager.recordFailedAcknowledgements(acknowledgeRequestState.getIncompleteAcknowledgementsCount(tip));
-                    acknowledgeRequestState.handleAcknowledgeTimedOut(tip);
-                }
-                acknowledgeRequestState.incompleteAcknowledgements.clear();
-                return Optional.empty();
+        if (acknowledgeRequestState.maybeExpire()) {
+            // 处理超时的确认请求
+            for (TopicIdPartition tip : acknowledgeRequestState.incompleteAcknowledgements.keySet()) {
+                metricsManager.recordFailedAcknowledgements(acknowledgeRequestState.getIncompleteAcknowledgementsCount(tip));
+                acknowledgeRequestState.handleAcknowledgeTimedOut(tip);
             }
+            acknowledgeRequestState.incompleteAcknowledgements.clear();
+            return Optional.empty();
+        }
 
-            if (!acknowledgeRequestState.canSendRequest(currentTimeMs)) {
-                // We wait for the backoff before we can send this request.
-                asyncSent = false;
-                return Optional.empty();
-            }
+        if (!acknowledgeRequestState.canSendRequest(currentTimeMs)) {
+            // 等待退避时间后才能发送请求
+            asyncSent = false;
+            return Optional.empty();
+        }
 
-            UnsentRequest request = acknowledgeRequestState.buildRequest();
-            if (request == null) {
-                asyncSent = false;
-                return Optional.empty();
-            }
+        UnsentRequest request = acknowledgeRequestState.buildRequest();
+        if (request == null) {
+            asyncSent = false;
+            return Optional.empty();
+        }
 
-            acknowledgeRequestState.onSendAttempt(currentTimeMs);
-            return Optional.of(request);
-        } finally {
-            if (onCommitAsync) {
-                isAsyncSent.set(asyncSent);
-            }
+        acknowledgeRequestState.onSendAttempt(currentTimeMs);
+        return Optional.of(request);
+    } finally {
+        if (onCommitAsync) {
+            isAsyncSent.set(asyncSent);
         }
     }
+}
 
     /**
      * Prunes the empty acknowledgementRequestStates in {@link #acknowledgeRequestStates}
      *
      * @return Returns true if there are still any acknowledgements left to be processed.
      */
-    private boolean checkAndRemoveCompletedAcknowledgements() {
-        boolean areAnyAcksLeft = false;
-        Iterator<Map.Entry<Integer, Tuple<AcknowledgeRequestState>>> iterator = acknowledgeRequestStates.entrySet().iterator();
+    // 检查并移除已完成的确认请求的方法
+// 遍历确认请求状态映射，移除已完成的请求
+// 如果请求状态为空或已完成，则从映射中移除
+private boolean checkAndRemoveCompletedAcknowledgements() {
+    boolean areAnyAcksLeft = false;
+    Iterator<Map.Entry<Integer, Tuple<AcknowledgeRequestState>>> iterator = acknowledgeRequestStates.entrySet().iterator();
 
-        while (iterator.hasNext()) {
-            Map.Entry<Integer, Tuple<AcknowledgeRequestState>> acknowledgeRequestStatePair = iterator.next();
-            boolean areAsyncAcksLeft = true, areSyncAcksLeft = true;
-            if (!isRequestStateInProgress(acknowledgeRequestStatePair.getValue().getAsyncRequest())) {
-                acknowledgeRequestStatePair.getValue().setAsyncRequest(null);
-                areAsyncAcksLeft = false;
-            }
-
-            if (!areRequestStatesInProgress(acknowledgeRequestStatePair.getValue().getSyncRequestQueue())) {
-                acknowledgeRequestStatePair.getValue().nullifySyncRequestQueue();
-                areSyncAcksLeft = false;
-            }
-
-            if (!isRequestStateInProgress(acknowledgeRequestStatePair.getValue().getCloseRequest())) {
-                acknowledgeRequestStatePair.getValue().setCloseRequest(null);
-            }
-
-            if (areAsyncAcksLeft || areSyncAcksLeft) {
-                areAnyAcksLeft = true;
-            } else if (acknowledgeRequestStatePair.getValue().getCloseRequest() == null) {
-                iterator.remove();
-            }
+    while (iterator.hasNext()) {
+        Map.Entry<Integer, Tuple<AcknowledgeRequestState>> acknowledgeRequestStatePair = iterator.next();
+        boolean areAsyncAcksLeft = true, areSyncAcksLeft = true;
+        if (!isRequestStateInProgress(acknowledgeRequestStatePair.getValue().getAsyncRequest())) {
+            acknowledgeRequestStatePair.getValue().setAsyncRequest(null);
+            areAsyncAcksLeft = false;
         }
 
-        if (!acknowledgeRequestStates.isEmpty()) areAnyAcksLeft = true;
-        return areAnyAcksLeft;
+        if (!areRequestStatesInProgress(acknowledgeRequestStatePair.getValue().getSyncRequestQueue())) {
+            acknowledgeRequestStatePair.getValue().nullifySyncRequestQueue();
+            areSyncAcksLeft = false;
+        }
+
+        if (!isRequestStateInProgress(acknowledgeRequestStatePair.getValue().getCloseRequest())) {
+            acknowledgeRequestStatePair.getValue().setCloseRequest(null);
+        }
+
+        if (areAsyncAcksLeft || areSyncAcksLeft) {
+            areAnyAcksLeft = true;
+        } else if (acknowledgeRequestStatePair.getValue().getCloseRequest() == null) {
+            iterator.remove();
+        }
     }
+
+    if (!acknowledgeRequestStates.isEmpty()) areAnyAcksLeft = true;
+    return areAnyAcksLeft;
+}
 
     private boolean isRequestStateInProgress(AcknowledgeRequestState acknowledgeRequestState) {
         if (acknowledgeRequestState == null) {
