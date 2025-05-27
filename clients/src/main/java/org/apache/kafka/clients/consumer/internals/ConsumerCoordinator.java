@@ -912,7 +912,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator { // Consumer
      * 5. 尝试异步自动提交位移。
      * 设计考虑：此方法逻辑复杂，因为它整合了消费者协调的多个方面。通过清晰的步骤划分和条件判断来管理不同的协调状态和场景。
      * @param timer 用于限制此方法阻塞时间的计时器
-     * @param waitForJoinGroup布尔标志，指示我们是否应该等待直到重新加入组完成
+     * @param waitForJoinGroup 布尔标志，指示我们是否应该等待直到重新加入组完成
      * @throws KafkaException 如果再平衡回调抛出异常
      * @return 当且仅当操作成功时返回 true
      */
